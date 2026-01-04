@@ -28,11 +28,12 @@ class DynamicForm {
 
     this.ready = new Promise((resolve) => {
       // 初始化 Layui
-      layui.use(["form", "layer", "element", "laydate"], () => {
+      layui.use(["form", "layer", "element", "laydate", "input"], () => {
         this.form = layui.form;
         this.layer = layui.layer;
         this.element = layui.element;
         this.laydate = layui.laydate;
+        this.input = layui.input;
         resolve();
       });
     });
@@ -96,6 +97,11 @@ class DynamicForm {
     // 重新渲染表单
     // switch 也是 checkbox，只需要渲染 checkbox
     this.form.render("checkbox");
+    
+    // 初始化 input 模块（用于 lay-affix 功能，如密码框的眼睛图标）
+    if (this.input) {
+      this.input.render();
+    }
 
     // 初始化字段显示状态
     this.updateAllFieldsVisibility();
@@ -766,6 +772,11 @@ class DynamicForm {
     // switch 也是 checkbox，只需要渲染 checkbox
     if (this.form) {
       this.form.render("checkbox");
+    }
+    
+    // 重新渲染 input 模块（用于 lay-affix 功能）
+    if (this.input) {
+      this.input.render();
     }
     
     // 更新字段显示状态
