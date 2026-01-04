@@ -580,6 +580,39 @@ body {
   }
 }
 
+/* 密码输入框眼睛图标样式 */
+.password-input-wrap {
+  position: relative;
+}
+
+.password-input-wrap .password-input {
+  padding-right: 40px;
+}
+
+.password-toggle-icon {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  color: var(--vscode-descriptionForeground);
+  font-size: 16px;
+  z-index: 10;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+}
+
+.password-toggle-icon:hover {
+  color: var(--vscode-foreground);
+}
+
+.password-toggle-icon i {
+  font-size: 16px;
+}
+
 .layui-form select.native-select {
   display: block !important;
 }

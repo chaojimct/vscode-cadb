@@ -28,12 +28,11 @@ class DynamicForm {
 
     this.ready = new Promise((resolve) => {
       // 初始化 Layui
-      layui.use(["form", "layer", "element", "laydate", "input"], () => {
+      layui.use(["form", "layer", "element", "laydate"], () => {
         this.form = layui.form;
         this.layer = layui.layer;
         this.element = layui.element;
         this.laydate = layui.laydate;
-        this.input = layui.input;
         resolve();
       });
     });
@@ -101,11 +100,9 @@ class DynamicForm {
     // 重新渲染表单
     // switch 也是 checkbox，只需要渲染 checkbox
     this.form.render("checkbox");
-
-    // 初始化 input 模块（用于 lay-affix 功能，如密码框的眼睛图标）
-    if (this.input) {
-      this.input.render();
-    }
+    
+    // 初始化密码框的眼睛图标
+    this.initPasswordFields();
 
     // 初始化字段显示状态
     this.updateAllFieldsVisibility();
@@ -405,24 +402,28 @@ class DynamicForm {
   }
 
   /**
-   * 生成密码输入框字段（使用 lay-affix="eye" 实现密码显隐）
+   * 生成密码输入框字段（手动实现眼睛图标用于密码显隐）
    */
   generatePasswordField(fieldName, config) {
     const required = config.required ? 'lay-verify="required"' : "";
     const placeholder = config.placeholder || "";
+    const fieldId = `${this.formId}-${fieldName}`;
 
     return `
       <label class="layui-form-label">${config.label}</label>
       <div class="layui-input-block">
-        <div class="layui-input-wrap">
+        <div class="layui-input-wrap password-input-wrap">
           <input
             type="password"
             name="${fieldName}"
+            id="${fieldId}"
             placeholder="${placeholder}"
             ${required}
-            lay-affix="eye"
-            class="layui-input"
+            class="layui-input password-input"
           />
+          <span class="password-toggle-icon" data-field-id="${fieldId}">
+            <i class="layui-icon layui-icon-eye"></i>
+          </span>
         </div>
       </div>
     `;
@@ -733,6 +734,39 @@ class DynamicForm {
   }
 
   /**
+   * 初始化密码框的眼睛图标
+   */
+  initPasswordFields() {
+    const self = this;
+    this.container.find(".password-toggle-icon").each(function() {
+      const $icon = $(this);
+      const fieldId = $icon.attr("data-field-id");
+      const $input = self.container.find(`#${fieldId}`);
+      
+      if ($input.length) {
+        // 移除旧的事件监听器
+        $icon.off("click");
+        
+        // 添加点击事件
+        $icon.on("click", function() {
+          const currentType = $input.attr("type");
+          const $iconElement = $icon.find("i");
+          
+          if (currentType === "password") {
+            // 显示密码
+            $input.attr("type", "text");
+            $iconElement.removeClass("layui-icon-eye").addClass("layui-icon-eye-invisible");
+          } else {
+            // 隐藏密码
+            $input.attr("type", "password");
+            $iconElement.removeClass("layui-icon-eye-invisible").addClass("layui-icon-eye");
+          }
+        });
+      }
+    });
+  }
+
+  /**
    * 填充表单数据
    * @param {Object} data 表单数据
    */
@@ -794,12 +828,10 @@ class DynamicForm {
     if (this.form) {
       this.form.render("checkbox");
     }
-
-    // 重新渲染 input 模块（用于 lay-affix 功能）
-    if (this.input) {
-      this.input.render();
-    }
-
+    
+    // 重新初始化密码框的眼睛图标
+    this.initPasswordFields();
+    
     // 更新字段显示状态
     this.updateAllFieldsVisibility();
   }
