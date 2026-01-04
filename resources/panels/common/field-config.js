@@ -14,6 +14,9 @@
       type: "hidden",
 			value: "datasource"
     },
+		extra: {
+			type: "hidden",
+		},
     // 基础字段
     dbType: {
       type: "select",

@@ -1,4 +1,10 @@
-import { createClient, RedisClientType } from "redis";
+import {
+  createClient,
+  RedisClientType,
+  RedisFunctions,
+  RedisModules,
+  RedisScripts,
+} from "redis";
 import { Uri } from "vscode";
 import {
   Dataloader,
@@ -9,32 +15,31 @@ import {
 import { Datasource, DatasourceInputData } from "./datasource";
 
 export class RedisDataloader implements Dataloader {
-	client: RedisClientType;
-	ds: Datasource;
-	constructor(ds: Datasource, input: DatasourceInputData) {
-		this.ds = ds;
-		this.client = createClient({
+  client: RedisClientType;
+  ds: Datasource;
+  constructor(ds: Datasource, input: DatasourceInputData) {
+    this.ds = ds;
+    // 使用类型断言来解决类型不匹配问题
+    this.client = createClient({
       socket: {
         host: input.host,
         port: input.port,
       },
-			password: input.password,
+      password: input.password,
     });
-	}
+  }
   async test(): Promise<PromiseResult> {
-		try {
+    try {
       // 确保客户端已连接
       if (!this.client.isOpen) {
         await this.client.connect();
       }
       const result = await this.client.ping();
-      console.log(result);
       return {
         success: result === "PONG",
         message: result === "PONG" ? "连接成功" : result,
       };
     } catch (error: any) {
-      console.error("Redis connection test failed:", error);
       return {
         success: false,
         message: error.message || "连接失败",
@@ -79,7 +84,9 @@ export class RedisDataloader implements Dataloader {
     throw new Error("Method not implemented.");
   }
   descDatasource(ds: Datasource): Promise<FormResult | undefined> {
-    throw new Error("Method not implemented.");
+    return Promise.resolve({
+      rowData: [ds.data],
+    });
   }
   descUser(ds: Datasource): Promise<FormResult | undefined> {
     throw new Error("Method not implemented.");

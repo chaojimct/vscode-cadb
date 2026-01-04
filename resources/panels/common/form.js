@@ -85,7 +85,11 @@ class DynamicForm {
     });
 
     // 生成表单HTML
-    const formHtml = this.generateFormHtml(baseFields, advanceFields, hiddenFields);
+    const formHtml = this.generateFormHtml(
+      baseFields,
+      advanceFields,
+      hiddenFields
+    );
     this.container.html(formHtml);
 
     // 填充数据
@@ -97,7 +101,7 @@ class DynamicForm {
     // 重新渲染表单
     // switch 也是 checkbox，只需要渲染 checkbox
     this.form.render("checkbox");
-    
+
     // 初始化 input 模块（用于 lay-affix 功能，如密码框的眼睛图标）
     if (this.input) {
       this.input.render();
@@ -175,21 +179,25 @@ class DynamicForm {
     // 按钮组
     html += '<div class="form-divider"></div>';
     html += '<div class="button-group">';
-    
+
     // 测试连接按钮（如果配置了）
     if (this.testButton) {
       const showExpression = this.testButton.show || "";
       const hiddenExpression = this.testButton.hidden || "";
-      const showAttr = showExpression ? `data-show="${showExpression.replace(/"/g, '&quot;')}"` : "";
-      const hiddenAttr = hiddenExpression ? `data-hidden="${hiddenExpression.replace(/"/g, '&quot;')}"` : "";
+      const showAttr = showExpression
+        ? `data-show="${showExpression.replace(/"/g, "&quot;")}"`
+        : "";
+      const hiddenAttr = hiddenExpression
+        ? `data-hidden="${hiddenExpression.replace(/"/g, "&quot;")}"`
+        : "";
       const label = this.testButton.label || "测试连接";
       const icon = this.testButton.icon || "layui-icon-link";
-      
+
       html += `<button type="button" class="layui-btn layui-btn-test" id="testBtn" ${showAttr} ${hiddenAttr}>`;
       html += `<i class="layui-icon ${icon}"></i> ${label}`;
       html += "</button>";
     }
-    
+
     html += '<button type="button" class="layui-btn" id="submitBtn">';
     html += '<i class="layui-icon layui-icon-ok"></i> 保存';
     html += "</button>";
@@ -258,10 +266,14 @@ class DynamicForm {
     // 处理条件显示和隐藏
     const showExpression = config.show || "";
     const hiddenExpression = config.hidden || "";
-    const showAttr = showExpression ? `data-show="${showExpression.replace(/"/g, '&quot;')}"` : "";
-    const hiddenAttr = hiddenExpression ? `data-hidden="${hiddenExpression.replace(/"/g, '&quot;')}"` : "";
+    const showAttr = showExpression
+      ? `data-show="${showExpression.replace(/"/g, "&quot;")}"`
+      : "";
+    const hiddenAttr = hiddenExpression
+      ? `data-hidden="${hiddenExpression.replace(/"/g, "&quot;")}"`
+      : "";
     const fieldAttr = `data-field-name="${fieldName}"`;
-    
+
     let html = `<div class="layui-form-item" ${fieldAttr} ${showAttr} ${hiddenAttr}>`;
 
     switch (config.type) {
@@ -316,9 +328,14 @@ class DynamicForm {
    */
   generateHiddenField(fieldName, config) {
     // 获取值：优先使用配置中的 value，其次使用数据中的值
-    const value = config.value !== undefined ? config.value : (this.currentData[fieldName] || "");
-    
-    return `<input type="hidden" name="${fieldName}" value="${String(value).replace(/"/g, '&quot;')}" />`;
+    const value =
+      config.value !== undefined
+        ? config.value
+        : this.currentData[fieldName] || "";
+
+    return `<input type="hidden" name="${fieldName}" value="${String(
+      value
+    ).replace(/"/g, "&quot;")}" />`;
   }
 
   /**
@@ -356,9 +373,13 @@ class DynamicForm {
     const step = config.step !== undefined ? `step="${config.step}"` : "";
     const min = config.min !== undefined ? `min="${config.min}"` : "";
     const max = config.max !== undefined ? `max="${config.max}"` : "";
-    const precision = config.precision !== undefined ? `lay-precision="${config.precision}"` : "";
+    const precision =
+      config.precision !== undefined
+        ? `lay-precision="${config.precision}"`
+        : "";
     const stepStrictly = config.stepStrictly ? `lay-step-strictly` : "";
-    const wheel = config.wheel !== undefined ? `lay-wheel="${config.wheel}"` : "";
+    const wheel =
+      config.wheel !== undefined ? `lay-wheel="${config.wheel}"` : "";
     const value = config.value !== undefined ? `value="${config.value}"` : "";
 
     return `
@@ -596,7 +617,7 @@ class DynamicForm {
     dateFields.forEach(({ fieldName, config }) => {
       const fieldId = `#${this.formId}-${fieldName}`;
       const $field = this.container.find(fieldId);
-      
+
       if ($field.length) {
         const format = config.format || "yyyy-MM-dd";
         const range = config.range || false;
@@ -637,7 +658,7 @@ class DynamicForm {
     timeFields.forEach(({ fieldName, config }) => {
       const fieldId = `#${this.formId}-${fieldName}`;
       const $field = this.container.find(fieldId);
-      
+
       if ($field.length) {
         const format = config.format || "HH:mm:ss";
         const range = config.range || false;
@@ -669,7 +690,7 @@ class DynamicForm {
     datetimeFields.forEach(({ fieldName, config }) => {
       const fieldId = `#${this.formId}-${fieldName}`;
       const $field = this.container.find(fieldId);
-      
+
       if ($field.length) {
         const format = config.format || "yyyy-MM-dd HH:mm:ss";
         const range = config.range || false;
@@ -773,12 +794,12 @@ class DynamicForm {
     if (this.form) {
       this.form.render("checkbox");
     }
-    
+
     // 重新渲染 input 模块（用于 lay-affix 功能）
     if (this.input) {
       this.input.render();
     }
-    
+
     // 更新字段显示状态
     this.updateAllFieldsVisibility();
   }
@@ -884,7 +905,7 @@ class DynamicForm {
       // 解析并评估表达式，不使用 eval 或 Function
       return this.parseAndEvaluateExpression(expression.trim(), formData);
     } catch (error) {
-      console.error('评估显示表达式失败:', expression, error);
+      console.error("评估显示表达式失败:", expression, error);
       return true; // 出错时默认显示
     }
   }
@@ -898,49 +919,58 @@ class DynamicForm {
   parseAndEvaluateExpression(expression, formData) {
     // 先替换字段引用为实际值
     let processedExpression = expression;
-    
+
     // 处理带 .value 的引用（如 dbType.value）
     const fieldValuePattern = /(\w+)\.value\b/g;
-    processedExpression = processedExpression.replace(fieldValuePattern, (match, fieldName) => {
-      if (formData.hasOwnProperty(fieldName)) {
-        return this.formatValueForExpression(formData[fieldName]);
+    processedExpression = processedExpression.replace(
+      fieldValuePattern,
+      (match, fieldName) => {
+        if (formData.hasOwnProperty(fieldName)) {
+          return this.formatValueForExpression(formData[fieldName]);
+        }
+        return "null";
       }
-      return 'null';
-    });
-    
+    );
+
     // 处理直接字段引用（如 dbType）
     const fieldNames = Object.keys(formData);
-    const keywords = ['true', 'false', 'null', 'undefined'];
-    
+    const keywords = ["true", "false", "null", "undefined"];
+
     // 按长度降序排序，先匹配长的字段名
     fieldNames.sort((a, b) => b.length - a.length);
-    
-    fieldNames.forEach(fieldName => {
+
+    fieldNames.forEach((fieldName) => {
       if (keywords.includes(fieldName)) {
         return; // 跳过关键字
       }
-      
+
       // 使用单词边界匹配字段名
-      const fieldPattern = new RegExp('\\b' + fieldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'g');
-      processedExpression = processedExpression.replace(fieldPattern, (match, offset, string) => {
-        // 检查是否在字符串字面量中
-        const before = string.substring(0, offset);
-        const quoteCount = (before.match(/"/g) || []).length;
-        const singleQuoteCount = (before.match(/'/g) || []).length;
-        
-        // 如果引号数量是奇数，说明在字符串中
-        if (quoteCount % 2 === 1 || singleQuoteCount % 2 === 1) {
-          return match;
+      const fieldPattern = new RegExp(
+        "\\b" + fieldName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b",
+        "g"
+      );
+      processedExpression = processedExpression.replace(
+        fieldPattern,
+        (match, offset, string) => {
+          // 检查是否在字符串字面量中
+          const before = string.substring(0, offset);
+          const quoteCount = (before.match(/"/g) || []).length;
+          const singleQuoteCount = (before.match(/'/g) || []).length;
+
+          // 如果引号数量是奇数，说明在字符串中
+          if (quoteCount % 2 === 1 || singleQuoteCount % 2 === 1) {
+            return match;
+          }
+
+          // 检查前面是否有 .value（已经处理过）
+          if (offset > 0 && string.substring(offset - 6, offset) === ".value") {
+            return match;
+          }
+
+          // 替换为实际值
+          return this.formatValueForExpression(formData[fieldName]);
         }
-        
-        // 检查前面是否有 .value（已经处理过）
-        if (offset > 0 && string.substring(offset - 6, offset) === '.value') {
-          return match;
-        }
-        
-        // 替换为实际值
-        return this.formatValueForExpression(formData[fieldName]);
-      });
+      );
     });
 
     // 使用简单的表达式解析器（不使用 eval）
@@ -954,8 +984,8 @@ class DynamicForm {
    */
   safeEvaluateExpression(expression) {
     // 移除所有空格
-    expression = expression.replace(/\s+/g, '');
-    
+    expression = expression.replace(/\s+/g, "");
+
     // 解析逻辑表达式
     return this.evaluateLogicalExpression(expression);
   }
@@ -967,26 +997,32 @@ class DynamicForm {
    */
   evaluateLogicalExpression(expression) {
     // 处理逻辑非
-    if (expression.startsWith('!')) {
+    if (expression.startsWith("!")) {
       return !this.evaluateLogicalExpression(expression.substring(1));
     }
-    
+
     // 处理逻辑或（优先级最低）
-    const orIndex = this.findOperatorIndex(expression, '||');
+    const orIndex = this.findOperatorIndex(expression, "||");
     if (orIndex !== -1) {
       const left = expression.substring(0, orIndex);
       const right = expression.substring(orIndex + 2);
-      return this.evaluateLogicalExpression(left) || this.evaluateLogicalExpression(right);
+      return (
+        this.evaluateLogicalExpression(left) ||
+        this.evaluateLogicalExpression(right)
+      );
     }
-    
+
     // 处理逻辑与
-    const andIndex = this.findOperatorIndex(expression, '&&');
+    const andIndex = this.findOperatorIndex(expression, "&&");
     if (andIndex !== -1) {
       const left = expression.substring(0, andIndex);
       const right = expression.substring(andIndex + 2);
-      return this.evaluateLogicalExpression(left) && this.evaluateLogicalExpression(right);
+      return (
+        this.evaluateLogicalExpression(left) &&
+        this.evaluateLogicalExpression(right)
+      );
     }
-    
+
     // 处理比较表达式
     return this.evaluateComparisonExpression(expression);
   }
@@ -999,16 +1035,16 @@ class DynamicForm {
   evaluateComparisonExpression(expression) {
     // 尝试各种比较运算符
     const operators = [
-      { op: '!==', len: 3 },
-      { op: '===', len: 3 },
-      { op: '!=', len: 2 },
-      { op: '==', len: 2 },
-      { op: '<=', len: 2 },
-      { op: '>=', len: 2 },
-      { op: '<', len: 1 },
-      { op: '>', len: 1 }
+      { op: "!==", len: 3 },
+      { op: "===", len: 3 },
+      { op: "!=", len: 2 },
+      { op: "==", len: 2 },
+      { op: "<=", len: 2 },
+      { op: ">=", len: 2 },
+      { op: "<", len: 1 },
+      { op: ">", len: 1 },
     ];
-    
+
     for (const { op, len } of operators) {
       const index = expression.indexOf(op);
       if (index !== -1) {
@@ -1016,26 +1052,26 @@ class DynamicForm {
         const right = expression.substring(index + len);
         const leftValue = this.parseValue(left);
         const rightValue = this.parseValue(right);
-        
+
         switch (op) {
-          case '==':
-          case '===':
+          case "==":
+          case "===":
             return this.compareValues(leftValue, rightValue) === 0;
-          case '!=':
-          case '!==':
+          case "!=":
+          case "!==":
             return this.compareValues(leftValue, rightValue) !== 0;
-          case '<':
+          case "<":
             return this.compareValues(leftValue, rightValue) < 0;
-          case '>':
+          case ">":
             return this.compareValues(leftValue, rightValue) > 0;
-          case '<=':
+          case "<=":
             return this.compareValues(leftValue, rightValue) <= 0;
-          case '>=':
+          case ">=":
             return this.compareValues(leftValue, rightValue) >= 0;
         }
       }
     }
-    
+
     // 如果没有比较运算符，尝试解析为布尔值
     const value = this.parseValue(expression);
     return Boolean(value);
@@ -1050,12 +1086,15 @@ class DynamicForm {
   findOperatorIndex(expression, operator) {
     let inString = false;
     let quoteChar = null;
-    
+
     for (let i = 0; i <= expression.length - operator.length; i++) {
       const char = expression[i];
-      
+
       // 处理字符串字面量
-      if ((char === '"' || char === "'") && (i === 0 || expression[i - 1] !== '\\')) {
+      if (
+        (char === '"' || char === "'") &&
+        (i === 0 || expression[i - 1] !== "\\")
+      ) {
         if (!inString) {
           inString = true;
           quoteChar = char;
@@ -1065,7 +1104,7 @@ class DynamicForm {
         }
         continue;
       }
-      
+
       if (!inString) {
         // 检查是否匹配运算符
         if (expression.substring(i, i + operator.length) === operator) {
@@ -1073,7 +1112,7 @@ class DynamicForm {
         }
       }
     }
-    
+
     return -1;
   }
 
@@ -1084,24 +1123,35 @@ class DynamicForm {
    */
   parseValue(valueStr) {
     valueStr = valueStr.trim();
-    
+
     // 字符串字面量
-    if ((valueStr.startsWith('"') && valueStr.endsWith('"')) ||
-        (valueStr.startsWith("'") && valueStr.endsWith("'"))) {
-      return valueStr.substring(1, valueStr.length - 1).replace(/\\"/g, '"').replace(/\\'/g, "'");
+    if (
+      (valueStr.startsWith('"') && valueStr.endsWith('"')) ||
+      (valueStr.startsWith("'") && valueStr.endsWith("'"))
+    ) {
+      return valueStr
+        .substring(1, valueStr.length - 1)
+        .replace(/\\"/g, '"')
+        .replace(/\\'/g, "'");
     }
-    
+
     // 布尔值
-    if (valueStr === 'true') return true;
-    if (valueStr === 'false') return false;
-    if (valueStr === 'null') return null;
-    
+    if (valueStr === "true") {
+      return true;
+    }
+    if (valueStr === "false") {
+      return false;
+    }
+    if (valueStr === "null") {
+      return null;
+    }
+
     // 数字
     const num = parseFloat(valueStr);
     if (!isNaN(num) && isFinite(valueStr)) {
       return num;
     }
-    
+
     return valueStr;
   }
 
@@ -1113,22 +1163,26 @@ class DynamicForm {
    */
   compareValues(a, b) {
     // 类型转换比较（类似 ==）
-    if (a === b) return 0;
-    
+    if (a === b) {
+      return 0;
+    }
+
     // 数字比较
-    if (typeof a === 'number' && typeof b === 'number') {
+    if (typeof a === "number" && typeof b === "number") {
       return a < b ? -1 : 1;
     }
-    
+
     // 字符串比较
-    if (typeof a === 'string' && typeof b === 'string') {
-      return a < b ? -1 : (a > b ? 1 : 0);
+    if (typeof a === "string" && typeof b === "string") {
+      return a < b ? -1 : a > b ? 1 : 0;
     }
-    
+
     // 类型转换
     const aStr = String(a);
     const bStr = String(b);
-    if (aStr === bStr) return 0;
+    if (aStr === bStr) {
+      return 0;
+    }
     return aStr < bStr ? -1 : 1;
   }
 
@@ -1139,12 +1193,12 @@ class DynamicForm {
    */
   formatValueForExpression(value) {
     if (value === null || value === undefined) {
-      return 'null';
-    } else if (typeof value === 'string') {
-      return `"${value.replace(/"/g, '\\"').replace(/\n/g, '\\n')}"`;
-    } else if (typeof value === 'boolean') {
-      return value ? 'true' : 'false';
-    } else if (typeof value === 'number') {
+      return "null";
+    } else if (typeof value === "string") {
+      return `"${value.replace(/"/g, '\\"').replace(/\n/g, "\\n")}"`;
+    } else if (typeof value === "boolean") {
+      return value ? "true" : "false";
+    } else if (typeof value === "number") {
       return value.toString();
     } else {
       return `"${String(value).replace(/"/g, '\\"')}"`;
@@ -1157,29 +1211,32 @@ class DynamicForm {
   updateAllFieldsVisibility() {
     const formData = this.getData();
     const $form = this.container.find("form");
-    
+
     // 更新字段的显示状态
     $form.find("[data-field-name]").each((index, element) => {
       const $item = $(element);
       const fieldName = $item.attr("data-field-name");
       const showExpression = $item.attr("data-show");
       const hiddenExpression = $item.attr("data-hidden");
-      
+
       let shouldShow = true; // 默认显示
-      
+
       // 优先检查 hidden 表达式（优先级更高）
       if (hiddenExpression) {
-        const isHidden = this.evaluateShowExpression(hiddenExpression, formData);
+        const isHidden = this.evaluateShowExpression(
+          hiddenExpression,
+          formData
+        );
         if (isHidden) {
           shouldShow = false;
         }
       }
-      
+
       // 如果 hidden 表达式没有隐藏，再检查 show 表达式
       if (shouldShow && showExpression) {
         shouldShow = this.evaluateShowExpression(showExpression, formData);
       }
-      
+
       // 更新显示状态
       if (shouldShow) {
         $item.show();
@@ -1211,29 +1268,32 @@ class DynamicForm {
         }
       }
     });
-    
+
     // 更新测试按钮的显示状态（如果配置了）
     if (this.testButton) {
       const $testBtn = this.container.find("#testBtn");
       if ($testBtn.length) {
         const showExpression = $testBtn.attr("data-show");
         const hiddenExpression = $testBtn.attr("data-hidden");
-        
+
         let shouldShow = true; // 默认显示
-        
+
         // 优先检查 hidden 表达式（优先级更高）
         if (hiddenExpression) {
-          const isHidden = this.evaluateShowExpression(hiddenExpression, formData);
+          const isHidden = this.evaluateShowExpression(
+            hiddenExpression,
+            formData
+          );
           if (isHidden) {
             shouldShow = false;
           }
         }
-        
+
         // 如果 hidden 表达式没有隐藏，再检查 show 表达式
         if (shouldShow && showExpression) {
           shouldShow = this.evaluateShowExpression(showExpression, formData);
         }
-        
+
         // 更新显示状态
         if (shouldShow) {
           $testBtn.show();
@@ -1243,7 +1303,6 @@ class DynamicForm {
       }
     }
   }
-
 
   /**
    * 绑定事件
@@ -1289,10 +1348,10 @@ class DynamicForm {
 
     // 监听所有字段变化，更新条件显示
     const $form = this.container.find("form");
-    
+
     // 移除旧的事件监听器，避免重复绑定
     $form.off("input change", "input, select, textarea");
-    
+
     // 监听输入框、选择框、文本域变化
     $form.on("input change", "input, select, textarea", function () {
       // 使用 setTimeout 确保值已更新
@@ -1305,12 +1364,12 @@ class DynamicForm {
     // switch 也是 checkbox，所以只需要监听 checkbox 事件
     if (this.form) {
       // 移除旧的事件监听器（如果方法存在）
-      if (typeof this.form.off === 'function') {
+      if (typeof this.form.off === "function") {
         this.form.off("checkbox");
       }
-      
+
       // 监听复选框和开关变化（switch 也会触发 checkbox 事件）
-      this.form.on("checkbox", function(data) {
+      this.form.on("checkbox", function (data) {
         setTimeout(() => {
           self.updateAllFieldsVisibility();
         }, 0);
@@ -1346,7 +1405,7 @@ class DynamicForm {
       });
       this.laydateInstances = {};
     }
-    
+
     this.container.empty();
     this.currentData = null;
   }
