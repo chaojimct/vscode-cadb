@@ -1,4 +1,4 @@
-import { createClient } from "redis";
+import { createClient, RedisClientType } from "redis";
 import { Uri } from "vscode";
 import {
   Dataloader,
@@ -9,10 +9,10 @@ import {
 import { Datasource, DatasourceInputData } from "./datasource";
 
 export class RedisDataloader implements Dataloader {
-	client: any;
+	client: RedisClientType;
 	ds: Datasource;
-	constructor(input: DatasourceInputData) {
-		this.ds = new Datasource(input, this, undefined);
+	constructor(ds: Datasource, input: DatasourceInputData) {
+		this.ds = ds;
 		this.client = createClient({
       socket: {
         host: input.host,
@@ -21,8 +21,25 @@ export class RedisDataloader implements Dataloader {
 			password: input.password,
     });
 	}
-  test(): Promise<PromiseResult> {
-    throw new Error("Method not implemented.");
+  async test(): Promise<PromiseResult> {
+		try {
+      // 确保客户端已连接
+      if (!this.client.isOpen) {
+        await this.client.connect();
+      }
+      const result = await this.client.ping();
+      console.log(result);
+      return {
+        success: result === "PONG",
+        message: result === "PONG" ? "连接成功" : result,
+      };
+    } catch (error: any) {
+      console.error("Redis connection test failed:", error);
+      return {
+        success: false,
+        message: error.message || "连接失败",
+      };
+    }
   }
   connect(): Promise<void> {
     throw new Error("Method not implemented.");

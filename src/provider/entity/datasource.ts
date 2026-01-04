@@ -8,6 +8,7 @@ import {
 } from "./dataloader";
 import { MySQLDataloader } from "./mysql_dataloader";
 import type { CaEditor } from "../component/editor";
+import { RedisDataloader } from "./redis_dataloader";
 
 const iconDir: string[] = ["..", "..", "resources", "icons"];
 
@@ -62,7 +63,7 @@ export class Datasource extends vscode.TreeItem {
         message: "未知错误导致连接失败",
       });
     }
-    return this.dataloder?.test();
+    return this.dataloder.test();
   }
 
   public edit = (): Promise<FormResult | undefined> => {
@@ -316,6 +317,17 @@ export class Datasource extends vscode.TreeItem {
           };
           this.dataloder = new MySQLDataloader(this, input);
           break;
+				case "redis":
+					this.iconPath = {
+            light: vscode.Uri.file(
+              path.join(__filename, ...iconDir, "redis", "Redis_light.svg")
+            ),
+            dark: vscode.Uri.file(
+              path.join(__filename, ...iconDir, "redis", "Redis_dark.svg")
+            ),
+          };
+          this.dataloder = new RedisDataloader(this, input);
+					break;
       }
     } else {
       this.iconPath = {

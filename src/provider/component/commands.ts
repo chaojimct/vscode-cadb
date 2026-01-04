@@ -498,8 +498,12 @@ export function registerDatasourceCommands(
       if (dbType === 'mysql') {
         // MySQL JDBC URL: jdbc:mysql://host:port/database?user=username&password=password
         const params = new URLSearchParams();
-        if (username) params.append('user', username);
-        if (password) params.append('password', password);
+        if (username) {
+					params.append('user', username);
+				}
+        if (password) {
+					params.append('password', password);
+				}
         const queryString = params.toString();
         jdbcUrl = `jdbc:mysql://${host}:${port}${database ? `/${database}` : ''}${queryString ? `?${queryString}` : ''}`;
       } else if (dbType === 'redis') {

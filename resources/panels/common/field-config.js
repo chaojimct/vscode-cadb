@@ -12,6 +12,7 @@
     // 隐藏字段
     type: {
       type: "hidden",
+			value: "datasource"
     },
     // 基础字段
     dbType: {
