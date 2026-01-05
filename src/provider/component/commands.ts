@@ -209,7 +209,7 @@ async function updateUserInfo(
 ): Promise<void> {
   // 用户信息更新需要通过数据库操作
   // 这里调用 item 的 update 方法（如果有的话）
-  if (item.dataloder) {
+  if (item.dataloader) {
     // TODO: 实现用户信息的数据库更新逻辑
     // 这需要在 dataloader 中添加 updateUser 方法
     console.log("更新用户信息:", payload);

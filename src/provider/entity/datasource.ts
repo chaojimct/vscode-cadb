@@ -27,7 +27,9 @@ export interface DatasourceInputData {
     | "userType"
     | "user" // 用户
     | "fileType"
-    | "file"; // 文件
+    | "file" // 文件
+    | "item" // 通用项
+    | "folder"; // 文件夹
 
   name: string;
   tooltip: string;
@@ -42,41 +44,41 @@ export interface DatasourceInputData {
 }
 
 export class Datasource extends vscode.TreeItem {
-	public data: DatasourceInputData;
+  public data: DatasourceInputData;
   public children: Datasource[] = [];
   public root?: Datasource;
   public parent?: Datasource;
   public type: string;
-  public dataloder?: Dataloader;
+  public dataloader?: Dataloader;
 
   public connect(): Promise<void> {
-    if (!this.dataloder) {
+    if (!this.dataloader) {
       return Promise.resolve();
     }
-    return this.dataloder?.connect();
+    return this.dataloader?.connect();
   }
 
   public test(): Promise<PromiseResult> {
-    if (!this.dataloder) {
+    if (!this.dataloader) {
       return Promise.resolve({
         success: false,
         message: "未知错误导致连接失败",
       });
     }
-    return this.dataloder.test();
+    return this.dataloader.test();
   }
 
   public edit = (): Promise<FormResult | undefined> => {
-    if (!this.dataloder) {
+    if (!this.dataloader) {
       return Promise.resolve(undefined);
     }
     switch (this.type) {
-			case "user":
-				return this.dataloder.descUser(this);
-			case "datasource":
-				return this.dataloder.descDatasource(this);
+      case "user":
+        return this.dataloader.descUser(this);
+      case "datasource":
+        return this.dataloader.descDatasource(this);
       case "document":
-        return this.dataloder.descTable(this);
+        return this.dataloader.descTable(this);
       default:
         return Promise.resolve(undefined);
     }
@@ -112,31 +114,31 @@ export class Datasource extends vscode.TreeItem {
             viewColumn: vscode.ViewColumn.Active,
           });
         }
-        this.dataloder?.listFiles(this, dsPath);
+        this.dataloader?.listFiles(this, dsPath);
         break;
     }
   };
 
   public expand = (context: vscode.ExtensionContext): Promise<Datasource[]> => {
-    if (!this.dataloder) {
+    if (!this.dataloader) {
       return Promise.resolve([]);
     }
     switch (this.type) {
       case "datasourceType":
-        return this.dataloder.listDatabases(this);
+        return this.dataloader.listDatabases(this);
       case "collectionType":
-        return this.dataloder.listTables(this);
+        return this.dataloader.listTables(this);
       case "fieldType":
-        return this.dataloder.listColumns(this);
+        return this.dataloader.listColumns(this);
       case "indexType":
-        return this.dataloder.listIndexes(this);
+        return this.dataloader.listIndexes(this);
       case "userType":
-        return this.dataloder.listUsers(this);
+        return this.dataloader.listUsers(this);
       case "fileType":
         if (!this.parent || !this.parent.label) {
           return Promise.resolve([]);
         }
-        return this.dataloder.listFiles(
+        return this.dataloader.listFiles(
           this,
           vscode.Uri.joinPath(
             context.globalStorageUri,
@@ -147,17 +149,19 @@ export class Datasource extends vscode.TreeItem {
       case "datasource":
       case "document":
       case "user":
-        return this.dataloder.listObjects(this, this.type);
+        return this.dataloader.listObjects(this, this.type);
+      case "folder":
+        return this.dataloader.listFolders(this);
       default:
         return Promise.resolve([]);
     }
   };
 
   public listData(): Promise<TableResult | null> {
-    if (!this.dataloder) {
+    if (!this.dataloader) {
       return Promise.resolve(null);
     }
-    return this.dataloder.listData(this);
+    return this.dataloader.listData(this);
   }
 
   public constructor(
@@ -166,8 +170,8 @@ export class Datasource extends vscode.TreeItem {
     parent?: Datasource
   ) {
     super(input.name);
-		this.data = input;
-    this.dataloder = dataloader;
+    this.data = input;
+    this.dataloader = dataloader;
     this.parent = parent;
     this.type = this.contextValue = input.type;
     this.tooltip = input.tooltip;
@@ -176,13 +180,20 @@ export class Datasource extends vscode.TreeItem {
       input.type === "field" ||
       input.type === "index" ||
       input.type === "user" ||
-      input.type === "file"
+      input.type === "file" ||
+      input.type === "item"
     ) {
       this.collapsibleState = vscode.TreeItemCollapsibleState.None;
     } else {
       this.collapsibleState = vscode.TreeItemCollapsibleState.Collapsed;
     }
     switch (input.type) {
+      case "item":
+        this.initItem(input);
+        break;
+      case "folder":
+        this.initFolder(input);
+        break;
       case "datasource":
       case "datasourceType":
         this.initDatasource(input);
@@ -302,6 +313,28 @@ export class Datasource extends vscode.TreeItem {
     };
   }
 
+  private initItem(input: DatasourceInputData): void {
+    this.iconPath = {
+      light: vscode.Uri.file(
+        path.join(__filename, ...iconDir, "Item_light.svg")
+      ),
+      dark: vscode.Uri.file(
+        path.join(__filename, ...iconDir, "Item_dark.svg")
+      ),
+    };
+  }
+
+  private initFolder(input: DatasourceInputData): void {
+    this.iconPath = {
+      light: vscode.Uri.file(
+        path.join(__filename, ...iconDir, "Folder_light.svg")
+      ),
+      dark: vscode.Uri.file(
+        path.join(__filename, ...iconDir, "Folder_dark.svg")
+      ),
+    };
+  }
+
   private initDatasource(input: DatasourceInputData): void {
     if (input.type === "datasource") {
       this.description = `${input.host}:${input.port}`;
@@ -315,10 +348,10 @@ export class Datasource extends vscode.TreeItem {
               path.join(__filename, ...iconDir, "mysql", "MySQL_dark.svg")
             ),
           };
-          this.dataloder = new MySQLDataloader(this, input);
+          this.dataloader = new MySQLDataloader(this, input);
           break;
-				case "redis":
-					this.iconPath = {
+        case "redis":
+          this.iconPath = {
             light: vscode.Uri.file(
               path.join(__filename, ...iconDir, "redis", "Redis_light.svg")
             ),
@@ -326,8 +359,8 @@ export class Datasource extends vscode.TreeItem {
               path.join(__filename, ...iconDir, "redis", "Redis_dark.svg")
             ),
           };
-          this.dataloder = new RedisDataloader(this, input);
-					break;
+          this.dataloader = new RedisDataloader(this, input);
+          break;
       }
     } else {
       this.iconPath = {

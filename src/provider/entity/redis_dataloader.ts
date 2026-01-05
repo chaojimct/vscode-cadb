@@ -1,5 +1,6 @@
 import {
   createClient,
+  RedisArgument,
   RedisClientType,
   RedisFunctions,
   RedisModules,
@@ -27,6 +28,49 @@ export class RedisDataloader implements Dataloader {
       },
       password: input.password,
     });
+  }
+
+  private async scanValues(
+    ds: Datasource,
+    type: string
+  ): Promise<Datasource[]> {
+    const result: Datasource[] = [];
+    // 其他情况
+    for await (const keys of this.client.scanIterator({
+      TYPE: type,
+      MATCH: "*",
+      COUNT: 1000,
+    })) {
+      for (const key of keys) {
+        result.push(
+          new Datasource(
+            { type: "item", name: key.toString(), tooltip: key.toString() },
+            this,
+            ds
+          )
+        );
+      }
+    }
+    return result;
+  }
+  async listFolders(ds: Datasource): Promise<Datasource[]> {
+    if (!this.client.isOpen) {
+      await this.client.connect();
+    }
+    if (ds.tooltip === "String") {
+      ds.children = await this.scanValues(ds, "string");
+    } else if (ds.tooltip === "List") {
+      ds.children = await this.scanValues(ds, "list");
+    } else if (ds.tooltip === "Set") {
+      ds.children = await this.scanValues(ds, "set");
+    } else if (ds.tooltip === "Sorted Set") {
+      ds.children = await this.scanValues(ds, "zset");
+    } else if (ds.tooltip === "Hash") {
+      ds.children = await this.scanValues(ds, "hash");
+    } else if (ds.tooltip === "Stream") {
+      ds.children = await this.scanValues(ds, "stream");
+    }
+    return Promise.resolve(ds.children);
   }
   async test(): Promise<PromiseResult> {
     try {
@@ -65,7 +109,39 @@ export class RedisDataloader implements Dataloader {
     throw new Error("Method not implemented.");
   }
   listObjects(ds: Datasource, type: string): Promise<Datasource[]> {
-    throw new Error("Method not implemented.");
+    ds.children = [];
+    switch (type) {
+      case "datasource":
+        ds.children = [
+          new Datasource(
+            { type: "folder", name: "字符串", tooltip: "String" },
+            this,
+            ds
+          ),
+          new Datasource(
+            { type: "folder", name: "列表", tooltip: "List" },
+            this,
+            ds
+          ),
+          new Datasource(
+            { type: "folder", name: "集合", tooltip: "Set" },
+            this,
+            ds
+          ),
+          new Datasource(
+            { type: "folder", name: "有序集合", tooltip: "Sorted Set" },
+            this,
+            ds
+          ),
+          new Datasource(
+            { type: "folder", name: "哈希表", tooltip: "Hash" },
+            this,
+            ds
+          ),
+        ];
+        break;
+    }
+    return Promise.resolve(ds.children);
   }
   listIndexes(ds: Datasource): Promise<Datasource[]> {
     throw new Error("Method not implemented.");

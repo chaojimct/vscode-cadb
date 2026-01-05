@@ -31,6 +31,9 @@ export class MySQLDataloader implements Dataloader {
     };
     this.conn = createConnection(this.connectionConfig);
   }
+	listFolders(ds: Datasource): Promise<Datasource[]> {
+		throw new Error("Method not implemented.");
+	}
 
   /**
    * 确保连接可用，如果断开则重新连接
@@ -126,7 +129,7 @@ export class MySQLDataloader implements Dataloader {
     });
   }
   descTable(ds: Datasource): Promise<FormResult | undefined> {
-    if (!ds.dataloder || !ds.parent || !ds.parent.parent) {
+    if (!ds.dataloader || !ds.parent || !ds.parent.parent) {
       return Promise.resolve(undefined);
     }
     const table = ds.label || "";

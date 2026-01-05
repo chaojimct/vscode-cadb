@@ -38,6 +38,7 @@ export interface Dataloader {
   listIndexes(ds: Datasource): Promise<Datasource[]>;
   listColumns(ds: Datasource): Promise<Datasource[]>;
   listTables(ds: Datasource): Promise<Datasource[]>;
+	listFolders(ds: Datasource): Promise<Datasource[]>;
   listData(
     ds: Datasource,
     page?: number,

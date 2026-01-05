@@ -220,7 +220,7 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
     datasource: Datasource,
     progress?: vscode.Progress<{ message?: string; increment?: number }>
   ): Promise<void> {
-    if (!datasource.dataloder) {
+    if (!datasource.dataloader) {
       return;
     }
 

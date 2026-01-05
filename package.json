@@ -118,12 +118,12 @@
         },
         {
           "command": "cadb.datasource.edit",
-          "when": "view == datasource && !(viewItem =~ /Type$/)",
+          "when": "view == datasource && !(viewItem =~ /Type$/) && viewItem != folder",
           "group": "inline"
         },
         {
           "command": "cadb.datasource.add",
-          "when": "view == datasource && viewItem =~ /Type$/",
+          "when": "view == datasource && (viewItem =~ /Type$/ || viewItem == folder)",
           "group": "inline"
         },
         {

@@ -194,7 +194,7 @@ export class SQLCodeLensProvider implements vscode.CodeLensProvider {
       async () => {
         try {
           // 获取数据库连接
-          const dataloader = currentConnection.dataloder;
+          const dataloader = currentConnection.dataloader;
           if (!dataloader) {
             throw new Error("无法获取数据库连接");
           }
