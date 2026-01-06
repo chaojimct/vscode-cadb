@@ -230,8 +230,8 @@ layui.use(["form", "layer", "element"], function () {
     });
 
     // 添加保存快捷键 Ctrl+S / Cmd+S
-    $(document).on("keydown", function(e) {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    $(document).on("keydown", function (e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
         saveNotebookAs();
         return false;
@@ -1116,13 +1116,15 @@ layui.use(["form", "layer", "element"], function () {
   function saveNotebookAs() {
     console.log("saveNotebookAs 函数被调用");
     const cells = [];
-    
+
     // 收集所有 cell 的数据
-    $(".sql-cell").each(function() {
+    $(".sql-cell").each(function () {
       const $cell = $(this);
       const cellId = $cell.attr("id");
-      if (!cellId) return;
-      
+      if (!cellId) {
+        return;
+      }
+
       // 获取 SQL 语句
       let sql = "";
       const editor = monacoEditors.get(cellId);
@@ -1134,15 +1136,19 @@ layui.use(["form", "layer", "element"], function () {
           sql = $textarea.val();
         }
       }
-      
+
       // 从 cellDataMap 获取保存的结果和错误
-      const savedData = cellDataMap.get(cellId) || { sql: "", result: null, error: null };
-      
+      const savedData = cellDataMap.get(cellId) || {
+        sql: "",
+        result: null,
+        error: null,
+      };
+
       const cellData = {
         id: cellId,
-        sql: sql || ""
+        sql: sql || "",
       };
-      
+
       // 如果有错误
       if (savedData.error) {
         cellData.error = savedData.error;
@@ -1151,23 +1157,23 @@ layui.use(["form", "layer", "element"], function () {
       else if (savedData.result) {
         cellData.result = savedData.result;
       }
-      
+
       cells.push(cellData);
     });
-    
+
     // 构建 notebook 数据
     const notebookData = {
       datasource: currentDatasource,
       database: currentDatabase,
-      cells: cells
+      cells: cells,
     };
-    
+
     // 发送保存请求（WebviewPanel 另存为）
     if (vscode) {
       console.log("发送 saveNotebookAs 命令到 VSCode", notebookData);
       vscode.postMessage({
         command: "saveNotebookAs",
-        data: notebookData
+        data: notebookData,
       });
     } else {
       console.error("vscode API 未定义");
@@ -1191,7 +1197,7 @@ layui.use(["form", "layer", "element"], function () {
 
   // 初始化
   init();
-  
+
   // 暴露函数以便调试
   window.saveNotebookAs = saveNotebookAs;
 
