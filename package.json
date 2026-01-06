@@ -73,6 +73,14 @@
         }
       },
       {
+        "command": "cadb.book.open",
+        "title": "SQL Notebook",
+        "icon": {
+          "light": "resources/Note_light.svg",
+          "dark": "resources/Note_dark.svg"
+        }
+      },
+      {
         "command": "cadb.datasource.selectDatabases",
         "title": "选择数据库"
       },
@@ -95,10 +103,6 @@
       {
         "command": "cadb.datasource.copyFullConnection",
         "title": "完整连接"
-      },
-      {
-        "command": "cadb.book.open",
-        "title": "打开 SQL Notebook"
       }
     ],
     "menus": {
@@ -116,11 +120,7 @@
         {
           "command": "cadb.book.open",
           "when": "view == datasource",
-          "group": "navigation",
-          "icon": {
-            "light": "resources/icons/Note_light.svg",
-            "dark": "resources/icons/Note_dark.svg"
-          }
+          "group": "navigation"
         }
       ],
       "view/item/context": [
