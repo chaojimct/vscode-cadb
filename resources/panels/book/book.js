@@ -16,7 +16,6 @@ layui.use(["form", "layer", "element"], function () {
     vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : null;
   }
 
-
   // 当前选中的数据源和数据库
   let currentDatasource = null;
   let currentDatabase = null;
@@ -34,17 +33,92 @@ layui.use(["form", "layer", "element"], function () {
 
   // SQL 关键字列表
   const sqlKeywords = [
-    "SELECT", "FROM", "WHERE", "INSERT", "UPDATE", "DELETE", "CREATE", "DROP",
-    "ALTER", "TABLE", "INDEX", "VIEW", "DATABASE", "SCHEMA", "TRUNCATE",
-    "JOIN", "INNER", "LEFT", "RIGHT", "FULL", "OUTER", "ON", "AS", "AND",
-    "OR", "NOT", "IN", "EXISTS", "LIKE", "BETWEEN", "IS", "NULL", "ORDER",
-    "BY", "GROUP", "HAVING", "LIMIT", "OFFSET", "UNION", "ALL", "DISTINCT",
-    "COUNT", "SUM", "AVG", "MAX", "MIN", "CAST", "CONVERT", "CASE", "WHEN",
-    "THEN", "ELSE", "END", "IF", "ELSEIF", "WHILE", "FOR", "LOOP", "BEGIN",
-    "COMMIT", "ROLLBACK", "TRANSACTION", "GRANT", "REVOKE", "PRIMARY", "KEY",
-    "FOREIGN", "REFERENCES", "CONSTRAINT", "UNIQUE", "CHECK", "DEFAULT",
-    "AUTO_INCREMENT", "CHAR", "VARCHAR", "TEXT", "INT", "BIGINT", "DECIMAL",
-    "FLOAT", "DOUBLE", "DATE", "TIME", "DATETIME", "TIMESTAMP", "BOOLEAN"
+    "SELECT",
+    "FROM",
+    "WHERE",
+    "INSERT",
+    "UPDATE",
+    "DELETE",
+    "CREATE",
+    "DROP",
+    "ALTER",
+    "TABLE",
+    "INDEX",
+    "VIEW",
+    "DATABASE",
+    "SCHEMA",
+    "TRUNCATE",
+    "JOIN",
+    "INNER",
+    "LEFT",
+    "RIGHT",
+    "FULL",
+    "OUTER",
+    "ON",
+    "AS",
+    "AND",
+    "OR",
+    "NOT",
+    "IN",
+    "EXISTS",
+    "LIKE",
+    "BETWEEN",
+    "IS",
+    "NULL",
+    "ORDER",
+    "BY",
+    "GROUP",
+    "HAVING",
+    "LIMIT",
+    "OFFSET",
+    "UNION",
+    "ALL",
+    "DISTINCT",
+    "COUNT",
+    "SUM",
+    "AVG",
+    "MAX",
+    "MIN",
+    "CAST",
+    "CONVERT",
+    "CASE",
+    "WHEN",
+    "THEN",
+    "ELSE",
+    "END",
+    "IF",
+    "ELSEIF",
+    "WHILE",
+    "FOR",
+    "LOOP",
+    "BEGIN",
+    "COMMIT",
+    "ROLLBACK",
+    "TRANSACTION",
+    "GRANT",
+    "REVOKE",
+    "PRIMARY",
+    "KEY",
+    "FOREIGN",
+    "REFERENCES",
+    "CONSTRAINT",
+    "UNIQUE",
+    "CHECK",
+    "DEFAULT",
+    "AUTO_INCREMENT",
+    "CHAR",
+    "VARCHAR",
+    "TEXT",
+    "INT",
+    "BIGINT",
+    "DECIMAL",
+    "FLOAT",
+    "DOUBLE",
+    "DATE",
+    "TIME",
+    "DATETIME",
+    "TIMESTAMP",
+    "BOOLEAN",
   ];
 
   // 当前数据库的表和字段信息
@@ -55,19 +129,19 @@ layui.use(["form", "layer", "element"], function () {
   let editorConfig = {
     fontFamily: "Consolas, Monaco, 'Courier New', monospace",
     fontSize: 13,
-    lineHeight: 1.5
+    lineHeight: 1.5,
   };
 
   // Monaco Editor 路径配置
   let monacoBasePath = "";
-  
+
   // 优先使用全局变量中设置的路径
   if (window.MONACO_BASE_PATH) {
     monacoBasePath = window.MONACO_BASE_PATH;
     console.log("使用全局变量中的 Monaco 路径:", monacoBasePath);
   } else {
     // 从页面中提取 node-resources-uri
-    const scripts = document.querySelectorAll('script[src]');
+    const scripts = document.querySelectorAll("script[src]");
     for (let i = 0; i < scripts.length; i++) {
       const src = scripts[i].getAttribute("src");
       if (src && src.includes("monaco") && src.includes("loader.js")) {
@@ -82,7 +156,7 @@ layui.use(["form", "layer", "element"], function () {
         }
       }
     }
-    
+
     // 如果还是没找到，尝试从其他脚本中提取
     if (!monacoBasePath) {
       for (let i = 0; i < scripts.length; i++) {
@@ -235,13 +309,13 @@ layui.use(["form", "layer", "element"], function () {
   function updateDatabasesList(databasesList) {
     databases = databasesList || [];
     const $select = $("#databaseSelect");
-    
+
     if (databases.length === 0) {
       $select.html('<option value="">无可用数据库</option>');
       $select.prop("disabled", true);
       return;
     }
-    
+
     // 清空并填充选项
     $select.html('<option value="">选择数据库</option>');
     databases.forEach((db) => {
@@ -251,7 +325,7 @@ layui.use(["form", "layer", "element"], function () {
           .text(db.label || db.name)
       );
     });
-    
+
     // 启用数据库选择器（使用原生 DOM 操作确保生效）
     const selectElement = $select[0];
     if (selectElement) {
@@ -259,7 +333,7 @@ layui.use(["form", "layer", "element"], function () {
     }
     $select.prop("disabled", false);
     $select.removeAttr("disabled");
-    
+
     // 不使用 Layui 的 form.render，避免 CSP 问题
   }
 
@@ -340,7 +414,7 @@ layui.use(["form", "layer", "element"], function () {
           fontSize: `${editorConfig.fontSize}px`,
           lineHeight: editorConfig.lineHeight,
           resize: "vertical",
-          borderRadius: "2px"
+          borderRadius: "2px",
         });
       $(editorContainer).replaceWith($textarea);
       return;
@@ -351,36 +425,36 @@ layui.use(["form", "layer", "element"], function () {
       if (!monacoBasePath) {
         throw new Error("无法获取 Monaco Editor 路径");
       }
-      
+
       // 构建完整的 vs 路径
       const vsPath = `${monacoBasePath}/monaco-editor/min/vs`;
-      
+
       console.log("Monaco Editor 基础路径:", monacoBasePath);
       console.log("Monaco Editor vs 路径:", vsPath);
-      
+
       // 确保 require 已加载
       if (typeof require === "undefined" || !require.config) {
         throw new Error("Monaco Editor loader 未正确加载");
       }
-      
+
       require.config({
         paths: {
-          vs: vsPath
+          vs: vsPath,
         },
         // 添加错误处理
-        onError: function(err) {
+        onError: function (err) {
           console.error("Monaco Editor require 错误:", err);
-        }
+        },
       });
 
       // 配置 Web Worker
       window.MonacoEnvironment = {
-        getWorkerUrl: function(moduleId, label) {
-          if (label === 'sql') {
+        getWorkerUrl: function (moduleId, label) {
+          if (label === "sql") {
             return `${monacoBasePath}/monaco-editor/min/vs/language/sql/sql.worker.js`;
           }
           return `${monacoBasePath}/monaco-editor/min/vs/base/worker/workerMain.js`;
-        }
+        },
       };
 
       require(["vs/editor/editor.main"], function () {
@@ -397,14 +471,14 @@ layui.use(["form", "layer", "element"], function () {
           roundedSelection: false,
           scrollbar: {
             vertical: "auto",
-            horizontal: "auto"
+            horizontal: "auto",
           },
           wordWrap: "on",
           suggestOnTriggerCharacters: true,
           quickSuggestions: true,
           acceptSuggestionOnEnter: "on",
           fontFamily: editorConfig.fontFamily,
-          lineHeight: editorConfig.lineHeight
+          lineHeight: editorConfig.lineHeight,
         });
 
         // 注册 SQL 语言补全提供者
@@ -419,7 +493,7 @@ layui.use(["form", "layer", "element"], function () {
                 kind: monaco.languages.CompletionItemKind.Keyword,
                 insertText: keyword,
                 documentation: `SQL 关键字: ${keyword}`,
-                detail: "关键字"
+                detail: "关键字",
               });
             });
 
@@ -431,7 +505,7 @@ layui.use(["form", "layer", "element"], function () {
                   kind: monaco.languages.CompletionItemKind.Class,
                   insertText: table.name,
                   documentation: `表: ${table.name}`,
-                  detail: "[表]"
+                  detail: "[表]",
                 });
               });
 
@@ -440,11 +514,13 @@ layui.use(["form", "layer", "element"], function () {
                 startLineNumber: 1,
                 startColumn: 1,
                 endLineNumber: position.lineNumber,
-                endColumn: position.column
+                endColumn: position.column,
               });
 
               // 简单的表名提取（FROM 或 JOIN 后面）
-              const fromMatch = textUntilPosition.match(/(?:FROM|JOIN)\s+(\w+)/i);
+              const fromMatch = textUntilPosition.match(
+                /(?:FROM|JOIN)\s+(\w+)/i
+              );
               if (fromMatch) {
                 const tableName = fromMatch[1];
                 const columns = currentColumns.get(tableName) || [];
@@ -454,7 +530,7 @@ layui.use(["form", "layer", "element"], function () {
                     kind: monaco.languages.CompletionItemKind.Field,
                     insertText: column.name,
                     documentation: `字段: ${column.name} (${column.type})`,
-                    detail: `[字段] ${tableName}`
+                    detail: `[字段] ${tableName}`,
                   });
                 });
               } else {
@@ -466,7 +542,7 @@ layui.use(["form", "layer", "element"], function () {
                       kind: monaco.languages.CompletionItemKind.Field,
                       insertText: `${tableName}.${column.name}`,
                       documentation: `字段: ${column.name} (${column.type})`,
-                      detail: `[字段] ${tableName}`
+                      detail: `[字段] ${tableName}`,
                     });
                   });
                 });
@@ -474,17 +550,20 @@ layui.use(["form", "layer", "element"], function () {
             }
 
             return { suggestions: suggestions };
-          }
+          },
         });
 
         // 存储编辑器实例
         monacoEditors.set(cellId, editor);
 
         // 快捷键：Shift+Enter 运行
-        editor.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.Enter, function () {
-          executeCell($cell, cellId);
-        });
-      }, function(err) {
+        editor.addCommand(
+          monaco.KeyMod.Shift | monaco.KeyCode.Enter,
+          function () {
+            executeCell($cell, cellId);
+          }
+        );
+      }, function (err) {
         // require 加载失败的回调
         console.error("Monaco Editor 模块加载失败:", err);
         console.error("错误详情:", err);
@@ -507,7 +586,7 @@ layui.use(["form", "layer", "element"], function () {
             fontSize: `${editorConfig.fontSize}px`,
             lineHeight: editorConfig.lineHeight,
             resize: "vertical",
-            borderRadius: "2px"
+            borderRadius: "2px",
           });
         $(editorContainer).replaceWith($textarea);
       });
@@ -529,7 +608,7 @@ layui.use(["form", "layer", "element"], function () {
           fontSize: `${editorConfig.fontSize}px`,
           lineHeight: editorConfig.lineHeight,
           resize: "vertical",
-          borderRadius: "2px"
+          borderRadius: "2px",
         });
       $(editorContainer).replaceWith($textarea);
     }
@@ -586,7 +665,7 @@ layui.use(["form", "layer", "element"], function () {
       // 监听 textarea 内容变化
       const $textarea = $cell.find(".sql-textarea");
       if ($textarea.length) {
-        $textarea.on("input", function() {
+        $textarea.on("input", function () {
           clearTimeout(window[`saveTimeout_${cellId}`]);
           window[`saveTimeout_${cellId}`] = setTimeout(() => {
             autoSaveNotebook();
@@ -669,7 +748,9 @@ layui.use(["form", "layer", "element"], function () {
     if (result.error) {
       // 显示错误
       $error
-        .html(`<div class="error-message"><i class="layui-icon layui-icon-close-fill"></i> ${result.error}</div>`)
+        .html(
+          `<div class="error-message"><i class="layui-icon layui-icon-close-fill"></i> ${result.error}</div>`
+        )
         .show();
       $table.empty();
       $info.empty();
@@ -698,7 +779,9 @@ layui.use(["form", "layer", "element"], function () {
 
     $loading.hide();
     $error
-      .html(`<div class="error-message"><i class="layui-icon layui-icon-close-fill"></i> ${error}</div>`)
+      .html(
+        `<div class="error-message"><i class="layui-icon layui-icon-close-fill"></i> ${error}</div>`
+      )
       .show();
     $table.empty();
     $info.empty();
@@ -735,7 +818,7 @@ layui.use(["form", "layer", "element"], function () {
 
     // 创建表格 HTML
     let html = '<table class="layui-table result-table">';
-    
+
     // 表头
     html += "<thead><tr>";
     columns.forEach((col) => {
@@ -749,9 +832,10 @@ layui.use(["form", "layer", "element"], function () {
       html += "<tr>";
       columns.forEach((col) => {
         const colName = col.name || col;
-        const value = row[colName] !== null && row[colName] !== undefined 
-          ? String(row[colName]) 
-          : "";
+        const value =
+          row[colName] !== null && row[colName] !== undefined
+            ? String(row[colName])
+            : "";
         html += `<td>${escapeHtml(value)}</td>`;
       });
       html += "</tr>";
@@ -767,9 +851,8 @@ layui.use(["form", "layer", "element"], function () {
   function displayResultInfo($container, result) {
     const rowCount = result.rowCount || (result.data ? result.data.length : 0);
     const executionTime = result.executionTime || 0;
-    const timeStr = executionTime < 0.001 
-      ? "<0.001s" 
-      : `${executionTime.toFixed(3)}s`;
+    const timeStr =
+      executionTime < 0.001 ? "<0.001s" : `${executionTime.toFixed(3)}s`;
 
     $container.html(
       `<div class="result-info">
@@ -798,7 +881,7 @@ layui.use(["form", "layer", "element"], function () {
   function updateDatabaseSchema(schema) {
     currentTables = schema.tables || [];
     currentColumns.clear();
-    
+
     if (schema.columns) {
       schema.columns.forEach((item) => {
         if (!currentColumns.has(item.table)) {
@@ -806,7 +889,7 @@ layui.use(["form", "layer", "element"], function () {
         }
         currentColumns.get(item.table).push({
           name: item.column,
-          type: item.type || ""
+          type: item.type || "",
         });
       });
     }
@@ -820,25 +903,25 @@ layui.use(["form", "layer", "element"], function () {
       editorConfig = {
         fontFamily: config.fontFamily || editorConfig.fontFamily,
         fontSize: config.fontSize || editorConfig.fontSize,
-        lineHeight: config.lineHeight || editorConfig.lineHeight
+        lineHeight: config.lineHeight || editorConfig.lineHeight,
       };
-      
+
       // 更新所有已存在的编辑器实例
       monacoEditors.forEach((editor) => {
         editor.updateOptions({
           fontSize: editorConfig.fontSize,
           fontFamily: editorConfig.fontFamily,
-          lineHeight: editorConfig.lineHeight
+          lineHeight: editorConfig.lineHeight,
         });
       });
-      
+
       // 更新所有 textarea 后备方案
       $(".sql-textarea").css({
         fontFamily: editorConfig.fontFamily,
         fontSize: `${editorConfig.fontSize}px`,
-        lineHeight: editorConfig.lineHeight
+        lineHeight: editorConfig.lineHeight,
       });
-      
+
       console.log("编辑器配置已更新:", editorConfig);
     }
   }
@@ -848,13 +931,15 @@ layui.use(["form", "layer", "element"], function () {
    */
   function autoSaveNotebook() {
     const cells = [];
-    
+
     // 收集所有 cell 的数据
-    $(".sql-cell").each(function() {
+    $(".sql-cell").each(function () {
       const $cell = $(this);
       const cellId = $cell.attr("id");
-      if (!cellId) return;
-      
+      if (!cellId) {
+        return;
+      }
+
       // 获取 SQL 语句
       let sql = "";
       const editor = monacoEditors.get(cellId);
@@ -866,19 +951,23 @@ layui.use(["form", "layer", "element"], function () {
           sql = $textarea.val();
         }
       }
-      
+
       // 从 cellDataMap 获取保存的结果和错误
-      const savedData = cellDataMap.get(cellId) || { sql: "", result: null, error: null };
-      
+      const savedData = cellDataMap.get(cellId) || {
+        sql: "",
+        result: null,
+        error: null,
+      };
+
       const cellData = {
         id: cellId,
-        sql: sql || ""
+        sql: sql || "",
       };
-      
+
       // 更新保存的 SQL
       savedData.sql = sql;
       cellDataMap.set(cellId, savedData);
-      
+
       // 如果有错误
       if (savedData.error) {
         cellData.error = savedData.error;
@@ -887,22 +976,22 @@ layui.use(["form", "layer", "element"], function () {
       else if (savedData.result) {
         cellData.result = savedData.result;
       }
-      
+
       cells.push(cellData);
     });
-    
+
     // 构建 notebook 数据
     const notebookData = {
       datasource: currentDatasource,
       database: currentDatabase,
-      cells: cells
+      cells: cells,
     };
-    
+
     // 发送更新请求（更新文档内容，但不自动保存文件）
     if (vscode) {
       vscode.postMessage({
         command: "updateNotebook",
-        data: notebookData
+        data: notebookData,
       });
     }
   }
@@ -911,8 +1000,10 @@ layui.use(["form", "layer", "element"], function () {
    * 加载 Notebook
    */
   function loadNotebook(data) {
-    if (!data) return;
-    
+    if (!data) {
+      return;
+    }
+
     // 清空现有 cells
     $("#notebookContainer").empty();
     monacoEditors.forEach((editor) => {
@@ -920,12 +1011,12 @@ layui.use(["form", "layer", "element"], function () {
     });
     monacoEditors.clear();
     cellCounter = 0;
-    
+
     // 恢复数据源和数据库选择
     if (data.datasource) {
       currentDatasource = data.datasource;
       $("#datasourceSelect").val(data.datasource).trigger("change");
-      
+
       // 等待数据库列表加载后再选择数据库
       setTimeout(() => {
         if (data.database) {
@@ -934,7 +1025,7 @@ layui.use(["form", "layer", "element"], function () {
         }
       }, 500);
     }
-    
+
     // 恢复 cells
     if (data.cells && Array.isArray(data.cells)) {
       data.cells.forEach((cellData) => {
@@ -967,13 +1058,13 @@ layui.use(["form", "layer", "element"], function () {
             </div>
           </div>
         `;
-        
+
         const $cell = $(cellHtml);
         $("#notebookContainer").append($cell);
-        
+
         // 初始化编辑器并设置 SQL
         initMonacoEditor(cellId, $cell, cellData.sql || "");
-        
+
         // 如果有结果或错误，恢复显示
         if (cellData.result) {
           setTimeout(() => {
@@ -984,7 +1075,7 @@ layui.use(["form", "layer", "element"], function () {
             handleQueryError(cellId, cellData.error);
           }, 100);
         }
-        
+
         // 绑定事件
         bindCellEvents($cell, cellId);
       });
@@ -1018,4 +1109,3 @@ layui.use(["form", "layer", "element"], function () {
     });
   }
 });
-
