@@ -397,34 +397,37 @@ export class SqlNotebookProvider implements vscode.CustomTextEditorProvider {
               return;
             }
             
-            // 如果内容与初始内容相同，说明已经保存过了，不应该标记为 dirty
-            // 但这里我们仍然需要更新，因为用户可能做了修改
-            // VSCode 会自动比较并设置 dirty 状态
+            // 标记为内部更新，避免触发 onDidChangeTextDocument
+            isInternalUpdate = true;
             
             // 使用 WorkspaceEdit 来更新文档内容
             // VSCode 会自动检测内容变化并标记文档为 dirty（显示圆点）
             const edit = new vscode.WorkspaceEdit();
             
-            // 如果文档为空，使用 insert，否则使用 replace
-            if (document.lineCount === 0) {
-              edit.insert(document.uri, new vscode.Position(0, 0), content);
-            } else {
-              edit.replace(
-                document.uri,
-                new vscode.Range(0, 0, document.lineCount, 0),
-                content
-              );
-            }
+            // 替换整个文档内容
+            const fullRange = new vscode.Range(
+              0,
+              0,
+              document.lineCount,
+              document.lineAt(document.lineCount - 1).text.length
+            );
+            
+            edit.replace(document.uri, fullRange, content);
             
             const success = await vscode.workspace.applyEdit(edit);
+            
+            // 恢复标记
+            isInternalUpdate = false;
             
             if (success) {
               // 文档已被标记为 dirty，VSCode 会自动在文件标签上显示圆点
               // WorkspaceEdit 会自动处理文档的 dirty 状态
               // 当用户按 Ctrl+S 保存后，圆点会自动消失
+              console.log("Notebook 文档已更新，标记为 dirty");
             }
             // 不调用 document.save()，让用户通过 Ctrl+S 手动保存
           } catch (error) {
+            isInternalUpdate = false;
             console.error("更新 notebook 失败:", error);
           }
           break;
@@ -454,14 +457,17 @@ export class SqlNotebookProvider implements vscode.CustomTextEditorProvider {
     });
 
     // 监听文档变化（当文件被外部修改或保存时）
+    // 跟踪是否正在进行内部更新，避免循环触发
+    let isInternalUpdate = false;
+    
     const changeDocumentSubscription = vscode.workspace.onDidChangeTextDocument(
       (e) => {
         if (
           e.document.uri.toString() === document.uri.toString() &&
-          e.document === document
+          e.document === document &&
+          !isInternalUpdate
         ) {
           // 文件被外部修改，重新加载
-          // 但需要检查是否是我们的更新导致的（避免循环）
           try {
             const content = e.document.getText();
             if (content.trim()) {
