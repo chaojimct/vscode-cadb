@@ -124,17 +124,9 @@ body {
   padding: 12px;
 }
 
-.sql-editor-container {
-  width: 100%;
-  min-height: 120px;
-  border: 1px solid var(--vscode-input-border, #3c3c3c);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
 .sql-textarea {
   width: 100%;
-  min-height: 80px;
+  min-height: 120px;
   padding: 8px;
   border: 1px solid var(--vscode-input-border, #3c3c3c);
   background-color: var(--vscode-input-background, #3c3c3c);
