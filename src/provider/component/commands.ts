@@ -652,7 +652,7 @@ export function registerBookCommands(
       bookPanel.webview.onDidReceiveMessage(async (message) => {
         switch (message.command) {
           case "ready":
-            // 页面已准备好，发送数据源列表
+            // 页面已准备好，发送数据源列表和配置
             const connections = provider.model.map((conn) => ({
               name: conn.name,
               label: conn.name,
@@ -660,6 +660,19 @@ export function registerBookCommands(
             bookPanel?.webview.postMessage({
               command: "datasourcesList",
               datasources: connections,
+            });
+            // 发送编辑器配置
+            const config = vscode.workspace.getConfiguration("cadb.sqlNotebook");
+            const fontFamily = config.get<string>("fontFamily", "Consolas, Monaco, 'Courier New', monospace");
+            const fontSize = config.get<number>("fontSize", 13);
+            const lineHeight = config.get<number>("lineHeight", 1.5);
+            bookPanel?.webview.postMessage({
+              command: "editorConfig",
+              config: {
+                fontFamily: fontFamily,
+                fontSize: fontSize,
+                lineHeight: lineHeight
+              }
             });
             break;
 
@@ -938,9 +951,29 @@ export function registerBookCommands(
         }
       });
 
+      // 监听配置变化
+      const configWatcher = vscode.workspace.onDidChangeConfiguration((e) => {
+        if (e.affectsConfiguration("cadb.sqlNotebook") && bookPanel) {
+          const config = vscode.workspace.getConfiguration("cadb.sqlNotebook");
+          const fontFamily = config.get<string>("fontFamily", "Consolas, Monaco, 'Courier New', monospace");
+          const fontSize = config.get<number>("fontSize", 13);
+          const lineHeight = config.get<number>("lineHeight", 1.5);
+          
+          bookPanel.webview.postMessage({
+            command: "editorConfig",
+            config: {
+              fontFamily: fontFamily,
+              fontSize: fontSize,
+              lineHeight: lineHeight
+            }
+          });
+        }
+      });
+
       // 监听面板关闭
       bookPanel.onDidDispose(() => {
         bookPanel = undefined;
+        configWatcher.dispose();
       });
     }
   );

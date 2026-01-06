@@ -55,6 +55,40 @@
     <script nonce="{{resource-nonce}}">
       // 在页面加载时设置 Monaco Editor 路径
       window.MONACO_BASE_PATH = "{{node-resources-uri}}";
+      
+      // 屏蔽 VSCode 快捷键
+      document.addEventListener('keydown', function(e) {
+        // 屏蔽 F1 (命令面板)
+        if (e.key === 'F1') {
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }
+        // 屏蔽 Ctrl+Shift+P (命令面板)
+        if (e.ctrlKey && e.shiftKey && e.key === 'P') {
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }
+        // 屏蔽 Ctrl+K (快捷键命令)
+        if (e.ctrlKey && e.key === 'k') {
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }
+        // 屏蔽 Ctrl+Shift+E (资源管理器)
+        if (e.ctrlKey && e.shiftKey && e.key === 'E') {
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }
+        // 屏蔽 Ctrl+B (侧边栏切换)
+        if (e.ctrlKey && e.key === 'b') {
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        }
+      }, true);
     </script>
     <script
       nonce="{{resource-nonce}}"

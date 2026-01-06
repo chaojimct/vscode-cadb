@@ -105,6 +105,18 @@
         "title": "完整连接"
       }
     ],
+    "customEditors": [
+      {
+        "viewType": "cadb.sqlNotebook",
+        "displayName": "SQL Notebook",
+        "selector": [
+          {
+            "filenamePattern": "*.jsql"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
     "menus": {
       "view/title": [
         {
@@ -172,7 +184,31 @@
         "id": "cadb.datasource.copyConnectionSubmenu",
         "label": "复制连接地址"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "CADB",
+      "properties": {
+        "cadb.sqlNotebook.fontFamily": {
+          "type": "string",
+          "default": "Consolas, Monaco, 'Courier New', monospace",
+          "description": "SQL Notebook 编辑器字体"
+        },
+        "cadb.sqlNotebook.fontSize": {
+          "type": "number",
+          "default": 13,
+          "minimum": 8,
+          "maximum": 24,
+          "description": "SQL Notebook 编辑器字体大小（像素）"
+        },
+        "cadb.sqlNotebook.lineHeight": {
+          "type": "number",
+          "default": 1.5,
+          "minimum": 1.0,
+          "maximum": 3.0,
+          "description": "SQL Notebook 编辑器行高"
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
