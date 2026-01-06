@@ -948,6 +948,60 @@ export function registerBookCommands(
               });
             }
             break;
+
+          case "saveNotebookAs":
+            // 从 WebviewPanel 保存 notebook 为新文件
+            try {
+              const notebookData = message.data;
+              const content = JSON.stringify(notebookData, null, 2);
+              
+              console.log("收到 saveNotebookAs 请求", notebookData);
+              
+              // 显示保存对话框
+              const uri = await vscode.window.showSaveDialog({
+                filters: {
+                  'SQL Notebook': ['jsql']
+                },
+                defaultUri: vscode.Uri.file('untitled.jsql')
+              });
+              
+              if (uri) {
+                // 写入文件
+                await vscode.workspace.fs.writeFile(uri, Buffer.from(content, 'utf-8'));
+                
+                console.log("文件已保存到:", uri.fsPath);
+                
+                // 通知保存成功
+                bookPanel?.webview.postMessage({
+                  command: "saveNotebookSuccess",
+                });
+                
+                // 提示用户是否要在编辑器中打开
+                const action = await vscode.window.showInformationMessage(
+                  '文件已保存。是否在编辑器中打开？',
+                  '打开', '取消'
+                );
+                
+                if (action === '打开') {
+                  // 关闭当前 panel
+                  bookPanel?.dispose();
+                  bookPanel = undefined;
+                  
+                  // 打开文件（会自动使用 CustomTextEditor）
+                  const document = await vscode.workspace.openTextDocument(uri);
+                  await vscode.window.showTextDocument(document);
+                }
+              } else {
+                console.log("用户取消了保存");
+              }
+            } catch (error) {
+              console.error("保存 notebook 失败:", error);
+              bookPanel?.webview.postMessage({
+                command: "saveNotebookError",
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
+            break;
         }
       });
 
