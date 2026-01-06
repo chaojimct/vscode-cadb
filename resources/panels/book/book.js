@@ -109,15 +109,20 @@ layui.use(["form", "layer", "element"], function () {
       const datasourceName = data.value;
       if (datasourceName) {
         currentDatasource = datasourceName;
-        loadDatabases(datasourceName);
-        // 禁用数据库选择器
-        $("#databaseSelect").prop("disabled", false);
+        currentDatabase = null; // 清空当前数据库选择
+        // 先禁用并清空数据库选择器
+        const $dbSelect = $("#databaseSelect");
+        $dbSelect.prop("disabled", true);
+        $dbSelect.html('<option value="">加载中...</option>');
         form.render("select");
+        // 加载数据库列表
+        loadDatabases(datasourceName);
       } else {
         currentDatasource = null;
         currentDatabase = null;
-        $("#databaseSelect").prop("disabled", true);
-        $("#databaseSelect").html('<option value="">选择数据库</option>');
+        const $dbSelect = $("#databaseSelect");
+        $dbSelect.prop("disabled", true);
+        $dbSelect.html('<option value="">选择数据库</option>');
         form.render("select");
       }
     });
@@ -181,6 +186,15 @@ layui.use(["form", "layer", "element"], function () {
   function updateDatabasesList(databasesList) {
     databases = databasesList || [];
     const $select = $("#databaseSelect");
+    
+    if (databases.length === 0) {
+      $select.html('<option value="">无可用数据库</option>');
+      $select.prop("disabled", true);
+      form.render("select");
+      return;
+    }
+    
+    // 清空并填充选项
     $select.html('<option value="">选择数据库</option>');
     databases.forEach((db) => {
       $select.append(
@@ -189,9 +203,27 @@ layui.use(["form", "layer", "element"], function () {
           .text(db.label || db.name)
       );
     });
-    // 启用数据库选择器并重新渲染
+    
+    // 启用数据库选择器（使用原生 DOM 操作确保生效）
+    const selectElement = $select[0];
+    if (selectElement) {
+      selectElement.disabled = false;
+    }
     $select.prop("disabled", false);
+    $select.removeAttr("disabled");
+    
+    // 重新渲染 Layui select 组件
     form.render("select");
+    
+    // 延迟再次确保启用（Layui 可能会覆盖我们的设置）
+    setTimeout(function() {
+      if (selectElement) {
+        selectElement.disabled = false;
+      }
+      $select.prop("disabled", false);
+      $select.removeAttr("disabled");
+      form.render("select");
+    }, 50);
   }
 
   /**
@@ -247,14 +279,38 @@ layui.use(["form", "layer", "element"], function () {
       return;
     }
 
-    // 配置 Monaco Editor 路径
-    require.config({
-      paths: {
-        vs: `${nodeResourcesUri}/monaco-editor/min/vs`
-      }
-    });
+    // 检查 require 是否可用（Monaco Editor loader）
+    if (typeof require === "undefined") {
+      // 如果 require 不可用，使用简单的 textarea 作为后备
+      const $textarea = $("<textarea>")
+        .addClass("sql-textarea")
+        .attr("placeholder", "输入 SQL 语句...")
+        .css({
+          width: "100%",
+          minHeight: "120px",
+          padding: "8px",
+          border: "1px solid var(--vscode-input-border, #3c3c3c)",
+          backgroundColor: "var(--vscode-input-background, #3c3c3c)",
+          color: "var(--vscode-input-foreground, #cccccc)",
+          fontFamily: "Consolas, Monaco, 'Courier New', monospace",
+          fontSize: "13px",
+          lineHeight: "1.5",
+          resize: "vertical",
+          borderRadius: "2px"
+        });
+      $(editorContainer).replaceWith($textarea);
+      return;
+    }
 
-    require(["vs/editor/editor.main"], function () {
+    // 配置 Monaco Editor 路径
+    try {
+      require.config({
+        paths: {
+          vs: `${nodeResourcesUri}/monaco-editor/min/vs`
+        }
+      });
+
+      require(["vs/editor/editor.main"], function () {
       const editor = monaco.editor.create(editorContainer, {
         value: "",
         language: "sql",
@@ -348,7 +404,28 @@ layui.use(["form", "layer", "element"], function () {
       editor.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.Enter, function () {
         executeCell($cell, cellId);
       });
-    });
+      });
+    } catch (error) {
+      console.error("Monaco Editor 初始化失败:", error);
+      // 使用简单的 textarea 作为后备
+      const $textarea = $("<textarea>")
+        .addClass("sql-textarea")
+        .attr("placeholder", "输入 SQL 语句...")
+        .css({
+          width: "100%",
+          minHeight: "120px",
+          padding: "8px",
+          border: "1px solid var(--vscode-input-border, #3c3c3c)",
+          backgroundColor: "var(--vscode-input-background, #3c3c3c)",
+          color: "var(--vscode-input-foreground, #cccccc)",
+          fontFamily: "Consolas, Monaco, 'Courier New', monospace",
+          fontSize: "13px",
+          lineHeight: "1.5",
+          resize: "vertical",
+          borderRadius: "2px"
+        });
+      $(editorContainer).replaceWith($textarea);
+    }
   }
 
   /**
