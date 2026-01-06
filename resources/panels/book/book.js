@@ -216,7 +216,12 @@ layui.use(["form", "layer", "element"], function () {
   function bindEvents() {
     // 保存按钮
     $("#btnSaveNotebook").on("click", function () {
-      saveNotebookAs();
+      console.log("保存按钮被点击");
+      if (typeof saveNotebookAs === 'function') {
+        saveNotebookAs();
+      } else {
+        console.error("saveNotebookAs 函数未定义");
+      }
     });
 
     // 添加 Cell 按钮
@@ -1109,6 +1114,7 @@ layui.use(["form", "layer", "element"], function () {
    * 保存 Notebook 为文件（从 WebviewPanel）
    */
   function saveNotebookAs() {
+    console.log("saveNotebookAs 函数被调用");
     const cells = [];
     
     // 收集所有 cell 的数据
@@ -1158,10 +1164,14 @@ layui.use(["form", "layer", "element"], function () {
     
     // 发送保存请求（WebviewPanel 另存为）
     if (vscode) {
+      console.log("发送 saveNotebookAs 命令到 VSCode", notebookData);
       vscode.postMessage({
         command: "saveNotebookAs",
         data: notebookData
       });
+    } else {
+      console.error("vscode API 未定义");
+      layer.msg("无法保存：VSCode API 未初始化", { icon: 2 });
     }
   }
 
