@@ -52,6 +52,10 @@
       <!-- SQL Cell 将动态添加到这里 -->
     </div>
 
+    <script nonce="{{resource-nonce}}">
+      // 在页面加载时设置 Monaco Editor 路径
+      window.MONACO_BASE_PATH = "{{node-resources-uri}}";
+    </script>
     <script
       nonce="{{resource-nonce}}"
       src="{{resources-uri}}/book/book.js"

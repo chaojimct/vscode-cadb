@@ -49,16 +49,42 @@ layui.use(["form", "layer", "element"], function () {
   let currentColumns = new Map(); // tableName -> columns[]
 
   // Monaco Editor 路径配置
-  let monacoPath = "";
-  // 从页面中提取 node-resources-uri
-  const scripts = document.querySelectorAll('script[src]');
-  for (let i = 0; i < scripts.length; i++) {
-    const src = scripts[i].getAttribute("src");
-    if (src && (src.includes("monaco") || src.includes("layui"))) {
-      const match = src.match(/(https?:\/\/[^\/]+)/);
-      if (match) {
-        monacoPath = match[1];
-        break;
+  let monacoBasePath = "";
+  
+  // 优先使用全局变量中设置的路径
+  if (window.MONACO_BASE_PATH) {
+    monacoBasePath = window.MONACO_BASE_PATH;
+    console.log("使用全局变量中的 Monaco 路径:", monacoBasePath);
+  } else {
+    // 从页面中提取 node-resources-uri
+    const scripts = document.querySelectorAll('script[src]');
+    for (let i = 0; i < scripts.length; i++) {
+      const src = scripts[i].getAttribute("src");
+      if (src && src.includes("monaco") && src.includes("loader.js")) {
+        // 从 loader.js 的完整路径中提取基础 URI
+        // 例如: https://xxx/monaco-editor/min/vs/loader.js
+        // 提取: https://xxx
+        const match = src.match(/(https?:\/\/[^\/]+)/);
+        if (match) {
+          monacoBasePath = match[1];
+          console.log("从脚本提取 Monaco 基础路径:", monacoBasePath);
+          break;
+        }
+      }
+    }
+    
+    // 如果还是没找到，尝试从其他脚本中提取
+    if (!monacoBasePath) {
+      for (let i = 0; i < scripts.length; i++) {
+        const src = scripts[i].getAttribute("src");
+        if (src) {
+          const match = src.match(/(https?:\/\/[^\/]+)/);
+          if (match) {
+            monacoBasePath = match[1];
+            console.log("从其他脚本提取基础路径:", monacoBasePath);
+            break;
+          }
+        }
       }
     }
   }
@@ -295,38 +321,43 @@ layui.use(["form", "layer", "element"], function () {
 
     // 配置 Monaco Editor
     try {
-      if (!monacoPath) {
+      if (!monacoBasePath) {
         throw new Error("无法获取 Monaco Editor 路径");
       }
       
-      const vsPath = `${monacoPath}/monaco-editor/min/vs`;
+      // 构建完整的 vs 路径
+      const vsPath = `${monacoBasePath}/monaco-editor/min/vs`;
+      
+      console.log("Monaco Editor 基础路径:", monacoBasePath);
+      console.log("Monaco Editor vs 路径:", vsPath);
+      
+      // 确保 require 已加载
+      if (typeof require === "undefined" || !require.config) {
+        throw new Error("Monaco Editor loader 未正确加载");
+      }
       
       require.config({
         paths: {
           vs: vsPath
+        },
+        // 添加错误处理
+        onError: function(err) {
+          console.error("Monaco Editor require 错误:", err);
         }
       });
 
       // 配置 Web Worker
-      if (window.MonacoEnvironment) {
-        window.MonacoEnvironment.getWorkerUrl = function(moduleId, label) {
+      window.MonacoEnvironment = {
+        getWorkerUrl: function(moduleId, label) {
           if (label === 'sql') {
-            return `${monacoPath}/monaco-editor/min/vs/language/sql/sql.worker.js`;
+            return `${monacoBasePath}/monaco-editor/min/vs/language/sql/sql.worker.js`;
           }
-          return `${monacoPath}/monaco-editor/min/vs/base/worker/workerMain.js`;
-        };
-      } else {
-        window.MonacoEnvironment = {
-          getWorkerUrl: function(moduleId, label) {
-            if (label === 'sql') {
-              return `${monacoPath}/monaco-editor/min/vs/language/sql/sql.worker.js`;
-            }
-            return `${monacoPath}/monaco-editor/min/vs/base/worker/workerMain.js`;
-          }
-        };
-      }
+          return `${monacoBasePath}/monaco-editor/min/vs/base/worker/workerMain.js`;
+        }
+      };
 
       require(["vs/editor/editor.main"], function () {
+        console.log("Monaco Editor 主模块加载成功");
         const editor = monaco.editor.create(editorContainer, {
           value: "",
           language: "sql",
@@ -424,6 +455,31 @@ layui.use(["form", "layer", "element"], function () {
         editor.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.Enter, function () {
           executeCell($cell, cellId);
         });
+      }, function(err) {
+        // require 加载失败的回调
+        console.error("Monaco Editor 模块加载失败:", err);
+        console.error("错误详情:", err);
+        if (err && err.requireModules) {
+          console.error("失败的模块:", err.requireModules);
+        }
+        // 使用 textarea 作为后备
+        const $textarea = $("<textarea>")
+          .addClass("sql-textarea")
+          .attr("placeholder", "输入 SQL 语句...")
+          .css({
+            width: "100%",
+            minHeight: "120px",
+            padding: "8px",
+            border: "1px solid var(--vscode-input-border, #3c3c3c)",
+            backgroundColor: "var(--vscode-input-background, #3c3c3c)",
+            color: "var(--vscode-input-foreground, #cccccc)",
+            fontFamily: "Consolas, Monaco, 'Courier New', monospace",
+            fontSize: "13px",
+            lineHeight: "1.5",
+            resize: "vertical",
+            borderRadius: "2px"
+          });
+        $(editorContainer).replaceWith($textarea);
       });
     } catch (error) {
       console.error("Monaco Editor 初始化失败:", error);
