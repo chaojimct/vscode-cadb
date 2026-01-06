@@ -140,6 +140,11 @@ layui.use(["form", "layer", "element"], function () {
    * 绑定事件
    */
   function bindEvents() {
+    // 保存按钮
+    $("#btnSaveNotebook").on("click", function () {
+      saveNotebookAs();
+    });
+
     // 添加 Cell 按钮
     $("#btnAddCell").on("click", function () {
       addCell();
