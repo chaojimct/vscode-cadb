@@ -439,11 +439,15 @@ export class SqlNotebookProvider implements vscode.CustomTextEditorProvider {
       }
     });
 
-    // 监听文档变化
+    // 监听文档变化（当文件被外部修改或保存时）
     const changeDocumentSubscription = vscode.workspace.onDidChangeTextDocument(
       (e) => {
-        if (e.document.uri.toString() === document.uri.toString()) {
+        if (
+          e.document.uri.toString() === document.uri.toString() &&
+          e.document === document
+        ) {
           // 文件被外部修改，重新加载
+          // 但需要检查是否是我们的更新导致的（避免循环）
           try {
             const content = e.document.getText();
             if (content.trim()) {
@@ -456,6 +460,16 @@ export class SqlNotebookProvider implements vscode.CustomTextEditorProvider {
           } catch (error) {
             console.error("重新加载 notebook 失败:", error);
           }
+        }
+      }
+    );
+
+    // 监听文档保存事件（当用户按 Ctrl+S 时）
+    const saveDocumentSubscription = vscode.workspace.onDidSaveTextDocument(
+      (savedDocument) => {
+        if (savedDocument.uri.toString() === document.uri.toString()) {
+          // 文件已保存，可以在这里做一些处理（如果需要）
+          console.log("Notebook 文件已保存");
         }
       }
     );
