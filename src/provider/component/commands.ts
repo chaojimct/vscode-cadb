@@ -46,7 +46,7 @@ function createWebview(
     default-src 'none';
 		font-src ${panel.webview.cspSource};
     style-src ${panel.webview.cspSource} 'unsafe-inline';
-    script-src 'nonce-${nonce}';
+    script-src 'nonce-${nonce}' ${panel.webview.cspSource};
     connect-src ${panel.webview.cspSource};
   `.trim()
     )
@@ -719,6 +719,103 @@ export function registerBookCommands(
               bookPanel?.webview.postMessage({
                 command: "databasesList",
                 databases: [],
+              });
+            }
+            break;
+
+          case "getDatabaseSchema":
+            // 获取数据库的表和字段信息
+            try {
+              const { datasource: dsName, database: dbName } = message;
+              const datasourceData = provider.model.find(
+                (ds) => ds.name === dsName
+              );
+              if (!datasourceData) {
+                bookPanel?.webview.postMessage({
+                  command: "databaseSchema",
+                  schema: { tables: [], columns: [] },
+                });
+                return;
+              }
+
+              const datasource = new Datasource(datasourceData);
+              const objects = await datasource.expand(provider.context);
+              const datasourceTypeNode = objects.find(
+                (obj) => obj.type === "datasourceType"
+              );
+
+              if (!datasourceTypeNode) {
+                bookPanel?.webview.postMessage({
+                  command: "databaseSchema",
+                  schema: { tables: [], columns: [] },
+                });
+                return;
+              }
+
+              const databases = await datasourceTypeNode.expand(
+                provider.context
+              );
+              const database = databases.find(
+                (db) => db.label?.toString() === dbName
+              );
+
+              if (!database) {
+                bookPanel?.webview.postMessage({
+                  command: "databaseSchema",
+                  schema: { tables: [], columns: [] },
+                });
+                return;
+              }
+
+              // 获取数据库下的对象
+              const dbObjects = await database.expand(provider.context);
+              const tableTypeNode = dbObjects.find(
+                (obj) => obj.type === "collectionType"
+              );
+
+              const tables: any[] = [];
+              const columns: any[] = [];
+
+              if (tableTypeNode) {
+                const tableList = await tableTypeNode.expand(
+                  provider.context
+                );
+                tables.push(
+                  ...tableList.map((table) => ({
+                    name: table.label?.toString() || "",
+                  }))
+                );
+
+                // 获取每个表的字段
+                for (const table of tableList) {
+                  const tableObjects = await table.expand(provider.context);
+                  const fieldTypeNode = tableObjects.find(
+                    (obj) => obj.type === "fieldType"
+                  );
+
+                  if (fieldTypeNode) {
+                    const fields = await fieldTypeNode.expand(
+                      provider.context
+                    );
+                    fields.forEach((field) => {
+                      columns.push({
+                        table: table.label?.toString() || "",
+                        column: field.label?.toString() || "",
+                        type: field.description?.toString() || "",
+                      });
+                    });
+                  }
+                }
+              }
+
+              bookPanel?.webview.postMessage({
+                command: "databaseSchema",
+                schema: { tables, columns },
+              });
+            } catch (error) {
+              bookPanel?.webview.postMessage({
+                command: "databaseSchema",
+                schema: { tables: [], columns: [] },
               });
             }
             break;

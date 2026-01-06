@@ -112,6 +112,15 @@
           "command": "cadb.datasource.add",
           "when": "view == datasource",
           "group": "navigation"
+        },
+        {
+          "command": "cadb.book.open",
+          "when": "view == datasource",
+          "group": "navigation",
+          "icon": {
+            "light": "resources/icons/Note_light.svg",
+            "dark": "resources/icons/Note_dark.svg"
+          }
         }
       ],
       "view/item/context": [
