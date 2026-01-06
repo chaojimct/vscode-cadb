@@ -11,7 +11,7 @@ import { DatabaseSelector } from "./database_selector";
 
 function createWebview(
   provider: DataSourceProvider,
-  viewType: "settings" | "datasourceTable" | "tableEdit",
+  viewType: "settings" | "datasourceTable" | "tableEdit" | "book",
   title: string
 ): vscode.WebviewPanel {
   const panel = vscode.window.createWebviewPanel(
@@ -625,4 +625,227 @@ export function registerResultCommands(resultProvider: ResultWebviewProvider) {
     "cadb.result.showError",
     (error: string, sql: string) => resultProvider.showError(error, sql)
   );
+}
+
+/**
+ * 注册 Book (SQL Notebook) 面板命令
+ */
+export function registerBookCommands(
+  provider: DataSourceProvider,
+  editor: CaEditor
+): vscode.Disposable {
+  let bookPanel: vscode.WebviewPanel | undefined = undefined;
+
+  // 打开 Book 面板命令
+  const openBookCommand = vscode.commands.registerCommand(
+    "cadb.book.open",
+    () => {
+      if (bookPanel) {
+        bookPanel.reveal();
+        return;
+      }
+
+      bookPanel = createWebview(provider, "book", "SQL Notebook");
+
+      // 监听来自 webview 的消息
+      bookPanel.webview.onDidReceiveMessage(async (message) => {
+        switch (message.command) {
+          case "ready":
+            // 页面已准备好，发送数据源列表
+            const connections = provider.model.map((conn) => ({
+              name: conn.name,
+              label: conn.name,
+            }));
+            bookPanel?.webview.postMessage({
+              command: "datasourcesList",
+              datasources: connections,
+            });
+            break;
+
+          case "getDatasources":
+            // 获取数据源列表
+            const datasources = provider.model.map((conn) => ({
+              name: conn.name,
+              label: conn.name,
+            }));
+            bookPanel?.webview.postMessage({
+              command: "datasourcesList",
+              datasources: datasources,
+            });
+            break;
+
+          case "getDatabases":
+            // 获取数据库列表
+            try {
+              const datasourceName = message.datasource;
+              const datasourceData = provider.model.find(
+                (ds) => ds.name === datasourceName
+              );
+              if (!datasourceData) {
+                bookPanel?.webview.postMessage({
+                  command: "databasesList",
+                  databases: [],
+                });
+                return;
+              }
+
+              const datasource = new Datasource(datasourceData);
+              const objects = await datasource.expand(provider.context);
+              const datasourceTypeNode = objects.find(
+                (obj) => obj.type === "datasourceType"
+              );
+
+              if (!datasourceTypeNode) {
+                bookPanel?.webview.postMessage({
+                  command: "databasesList",
+                  databases: [],
+                });
+                return;
+              }
+
+              const databases = await datasourceTypeNode.expand(
+                provider.context
+              );
+              const databaseList = databases.map((db) => ({
+                name: db.label?.toString() || "",
+                label: db.label?.toString() || "",
+              }));
+
+              bookPanel?.webview.postMessage({
+                command: "databasesList",
+                databases: databaseList,
+              });
+            } catch (error) {
+              bookPanel?.webview.postMessage({
+                command: "databasesList",
+                databases: [],
+              });
+            }
+            break;
+
+          case "executeSql":
+            // 执行 SQL
+            try {
+              const { cellId, sql, datasource: dsName, database: dbName } =
+                message;
+
+              // 查找数据源
+              const datasourceData = provider.model.find(
+                (ds) => ds.name === dsName
+              );
+              if (!datasourceData) {
+                bookPanel?.webview.postMessage({
+                  command: "queryError",
+                  cellId: cellId,
+                  error: "数据源不存在",
+                });
+                return;
+              }
+
+              // 创建数据源实例
+              const datasource = await Datasource.createInstance(
+                provider.model,
+                provider.context,
+                datasourceData,
+                false
+              );
+
+              if (!datasource.dataloader) {
+                bookPanel?.webview.postMessage({
+                  command: "queryError",
+                  cellId: cellId,
+                  error: "无法创建数据库连接",
+                });
+                return;
+              }
+
+              // 获取连接
+              let connection = datasource.dataloader.getConnection();
+              if (!connection) {
+                await datasource.dataloader.connect();
+                connection = datasource.dataloader.getConnection();
+                if (!connection) {
+                  bookPanel?.webview.postMessage({
+                    command: "queryError",
+                    cellId: cellId,
+                    error: "无法获取数据库连接",
+                  });
+                  return;
+                }
+              }
+
+              // 执行 SQL
+              const startTime = Date.now();
+              connection.changeUser({ database: dbName }, (err: any) => {
+                if (err) {
+                  bookPanel?.webview.postMessage({
+                    command: "queryError",
+                    cellId: cellId,
+                    error: err.message,
+                  });
+                  return;
+                }
+
+                connection.query(
+                  sql,
+                  (error: any, results: any, fields: any) => {
+                    const executionTime = (Date.now() - startTime) / 1000;
+
+                    if (error) {
+                      bookPanel?.webview.postMessage({
+                        command: "queryError",
+                        cellId: cellId,
+                        error: error.message,
+                      });
+                      return;
+                    }
+
+                    // 格式化结果
+                    const columns = fields
+                      ? fields.map((f: any) => ({
+                          name: f.name,
+                          type: f.type,
+                        }))
+                      : [];
+                    const data = Array.isArray(results)
+                      ? results
+                      : results.affectedRows !== undefined
+                      ? []
+                      : [];
+
+                    bookPanel?.webview.postMessage({
+                      command: "queryResult",
+                      cellId: cellId,
+                      result: {
+                        columns: columns,
+                        data: data,
+                        rowCount: Array.isArray(results)
+                          ? results.length
+                          : results.affectedRows || 0,
+                        executionTime: executionTime,
+                      },
+                    });
+                  }
+                );
+              });
+            } catch (error) {
+              bookPanel?.webview.postMessage({
+                command: "queryError",
+                cellId: message.cellId,
+                error:
+                  error instanceof Error ? error.message : String(error),
+              });
+            }
+            break;
+        }
+      });
+
+      // 监听面板关闭
+      bookPanel.onDidDispose(() => {
+        bookPanel = undefined;
+      });
+    }
+  );
+
+  return openBookCommand;
 }

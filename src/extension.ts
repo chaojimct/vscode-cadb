@@ -8,6 +8,7 @@ import {
   registerDatasourceItemCommands,
   registerEditorCommands,
   registerResultCommands,
+  registerBookCommands,
 } from "./provider/component/commands";
 import { SQLCodeLensProvider } from "./provider/sql_provider";
 import { CaEditor } from "./provider/component/editor";
@@ -93,6 +94,10 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
   registerResultCommands(resultProvider);
+
+  // SQL Notebook (Book) 面板
+  const bookCommand = registerBookCommands(provider, editor);
+  context.subscriptions.push(bookCommand);
 
   // SQL 自动补全
   const completionProvider = new CaCompletionItemProvider();

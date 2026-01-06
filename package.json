@@ -95,6 +95,10 @@
       {
         "command": "cadb.datasource.copyFullConnection",
         "title": "完整连接"
+      },
+      {
+        "command": "cadb.book.open",
+        "title": "打开 SQL Notebook"
       }
     ],
     "menus": {
