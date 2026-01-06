@@ -46,8 +46,9 @@ function createWebview(
     default-src 'none';
 		font-src ${panel.webview.cspSource};
     style-src ${panel.webview.cspSource} 'unsafe-inline';
-    script-src 'nonce-${nonce}' ${panel.webview.cspSource};
+    script-src 'nonce-${nonce}' ${panel.webview.cspSource} 'self';
     connect-src ${panel.webview.cspSource};
+    worker-src ${panel.webview.cspSource} blob:;
   `.trim()
     )
     .replace(/{{node-resources-uri}}/g, nodeResourcesUri.toString())
