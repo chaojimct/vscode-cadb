@@ -145,6 +145,15 @@ layui.use(["form", "layer", "element"], function () {
       addCell();
     });
 
+    // 添加保存快捷键 Ctrl+S / Cmd+S
+    $(document).on("keydown", function(e) {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        saveNotebookAs();
+        return false;
+      }
+    });
+
     // 数据源选择变化（使用原生 change 事件，避免 Layui 的 CSP 问题）
     $("#datasourceSelect").on("change", function () {
       const datasourceName = $(this).val();
@@ -201,6 +210,12 @@ layui.use(["form", "layer", "element"], function () {
           break;
         case "loadNotebook":
           loadNotebook(message.data);
+          break;
+        case "saveNotebookSuccess":
+          layer.msg("保存成功", { icon: 1 });
+          break;
+        case "saveNotebookError":
+          layer.msg("保存失败: " + (message.error || "未知错误"), { icon: 2 });
           break;
         case "queryResult":
           handleQueryResult(message.cellId, message.result);
@@ -995,6 +1010,66 @@ layui.use(["form", "layer", "element"], function () {
   }
 
   /**
+   * 保存 Notebook 为文件（从 WebviewPanel）
+   */
+  function saveNotebookAs() {
+    const cells = [];
+    
+    // 收集所有 cell 的数据
+    $(".sql-cell").each(function() {
+      const $cell = $(this);
+      const cellId = $cell.attr("id");
+      if (!cellId) return;
+      
+      // 获取 SQL 语句
+      let sql = "";
+      const editor = monacoEditors.get(cellId);
+      if (editor) {
+        sql = editor.getValue();
+      } else {
+        const $textarea = $cell.find(".sql-textarea");
+        if ($textarea.length) {
+          sql = $textarea.val();
+        }
+      }
+      
+      // 从 cellDataMap 获取保存的结果和错误
+      const savedData = cellDataMap.get(cellId) || { sql: "", result: null, error: null };
+      
+      const cellData = {
+        id: cellId,
+        sql: sql || ""
+      };
+      
+      // 如果有错误
+      if (savedData.error) {
+        cellData.error = savedData.error;
+      }
+      // 如果有结果
+      else if (savedData.result) {
+        cellData.result = savedData.result;
+      }
+      
+      cells.push(cellData);
+    });
+    
+    // 构建 notebook 数据
+    const notebookData = {
+      datasource: currentDatasource,
+      database: currentDatabase,
+      cells: cells
+    };
+    
+    // 发送保存请求（WebviewPanel 另存为）
+    if (vscode) {
+      vscode.postMessage({
+        command: "saveNotebookAs",
+        data: notebookData
+      });
+    }
+  }
+
+  /**
    * HTML 转义
    */
   function escapeHtml(text) {
@@ -1010,6 +1085,9 @@ layui.use(["form", "layer", "element"], function () {
 
   // 初始化
   init();
+  
+  // 暴露函数以便调试
+  window.saveNotebookAs = saveNotebookAs;
 
   // 通知 VSCode 页面已准备好
   if (vscode) {

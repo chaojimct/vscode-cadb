@@ -640,7 +640,7 @@ export function registerBookCommands(
   // 打开 Book 面板命令
   const openBookCommand = vscode.commands.registerCommand(
     "cadb.book.open",
-    () => {
+    async () => {
       if (bookPanel) {
         bookPanel.reveal();
         return;
