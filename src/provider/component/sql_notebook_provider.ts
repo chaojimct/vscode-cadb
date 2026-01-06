@@ -385,7 +385,7 @@ export class SqlNotebookProvider implements vscode.CustomTextEditorProvider {
 
         case "updateNotebook":
           // 更新 notebook 数据到文档（标记为已修改，但不自动保存文件）
-          // 这样 Ctrl+S 可以正常工作，文件标题会显示 * 表示未保存
+          // 这样 Ctrl+S 可以正常工作，文件标题会显示圆点表示未保存
           try {
             const notebookData: NotebookData = message.data;
             const content = JSON.stringify(notebookData, null, 2);
@@ -397,17 +397,31 @@ export class SqlNotebookProvider implements vscode.CustomTextEditorProvider {
               return;
             }
             
+            // 如果内容与初始内容相同，说明已经保存过了，不应该标记为 dirty
+            // 但这里我们仍然需要更新，因为用户可能做了修改
+            // VSCode 会自动比较并设置 dirty 状态
+            
+            // 使用 WorkspaceEdit 来更新文档内容
+            // VSCode 会自动检测内容变化并标记文档为 dirty（显示圆点）
             const edit = new vscode.WorkspaceEdit();
-            edit.replace(
-              document.uri,
-              new vscode.Range(0, 0, document.lineCount, 0),
-              content
-            );
+            
+            // 如果文档为空，使用 insert，否则使用 replace
+            if (document.lineCount === 0) {
+              edit.insert(document.uri, new vscode.Position(0, 0), content);
+            } else {
+              edit.replace(
+                document.uri,
+                new vscode.Range(0, 0, document.lineCount, 0),
+                content
+              );
+            }
+            
             const success = await vscode.workspace.applyEdit(edit);
             
             if (success) {
-              // 标记文档为已修改（dirty），这样 Ctrl+S 可以保存
-              // VSCode 会自动处理文档的 dirty 状态
+              // 文档已被标记为 dirty，VSCode 会自动在文件标签上显示圆点
+              // WorkspaceEdit 会自动处理文档的 dirty 状态
+              // 当用户按 Ctrl+S 保存后，圆点会自动消失
             }
             // 不调用 document.save()，让用户通过 Ctrl+S 手动保存
           } catch (error) {
