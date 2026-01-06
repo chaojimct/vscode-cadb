@@ -213,10 +213,6 @@ body {
   color: var(--vscode-foreground, #cccccc);
 }
 
-.result-table tr:nth-child(even) {
-  background-color: var(--vscode-list-inactiveSelectionBackground, #2a2d2e);
-}
-
 .result-table tr:hover {
   background-color: var(--vscode-list-hoverBackground, #2a2d2e);
 }
