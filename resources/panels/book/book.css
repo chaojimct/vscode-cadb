@@ -41,8 +41,8 @@ body {
   min-width: 150px;
 }
 
-.datasource-selector .layui-select,
-.database-selector .layui-select {
+.datasource-selector .native-select,
+.database-selector .native-select {
   width: 100%;
   height: 32px;
   line-height: 32px;
@@ -51,12 +51,21 @@ body {
   background-color: var(--vscode-input-background, #3c3c3c);
   color: var(--vscode-input-foreground, #cccccc);
   border-radius: 2px;
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
 }
 
-.datasource-selector .layui-select:disabled,
-.database-selector .layui-select:disabled {
+.datasource-selector .native-select:focus,
+.database-selector .native-select:focus {
+  border-color: var(--vscode-focusBorder, #007acc);
+}
+
+.datasource-selector .native-select:disabled,
+.database-selector .native-select:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  background-color: var(--vscode-input-background, #3c3c3c);
 }
 
 /* Notebook 容器 */

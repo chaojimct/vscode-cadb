@@ -104,9 +104,9 @@ layui.use(["form", "layer", "element"], function () {
       addCell();
     });
 
-    // 数据源选择变化
-    form.on("select(datasourceSelect)", function (data) {
-      const datasourceName = data.value;
+    // 数据源选择变化（使用原生 change 事件，避免 Layui 的 CSP 问题）
+    $("#datasourceSelect").on("change", function () {
+      const datasourceName = $(this).val();
       if (datasourceName) {
         currentDatasource = datasourceName;
         currentDatabase = null; // 清空当前数据库选择
@@ -114,7 +114,6 @@ layui.use(["form", "layer", "element"], function () {
         const $dbSelect = $("#databaseSelect");
         $dbSelect.prop("disabled", true);
         $dbSelect.html('<option value="">加载中...</option>');
-        form.render("select");
         // 加载数据库列表
         loadDatabases(datasourceName);
       } else {
@@ -123,13 +122,12 @@ layui.use(["form", "layer", "element"], function () {
         const $dbSelect = $("#databaseSelect");
         $dbSelect.prop("disabled", true);
         $dbSelect.html('<option value="">选择数据库</option>');
-        form.render("select");
       }
     });
 
-    // 数据库选择变化
-    form.on("select(databaseSelect)", function (data) {
-      currentDatabase = data.value;
+    // 数据库选择变化（使用原生 change 事件）
+    $("#databaseSelect").on("change", function () {
+      currentDatabase = $(this).val();
       if (currentDatabase && currentDatasource) {
         // 加载当前数据库的表和字段信息
         loadDatabaseSchema(currentDatasource, currentDatabase);
@@ -177,7 +175,7 @@ layui.use(["form", "layer", "element"], function () {
           .text(ds.label || ds.name)
       );
     });
-    form.render("select");
+    // 不使用 Layui 的 form.render，避免 CSP 问题
   }
 
   /**
@@ -190,7 +188,6 @@ layui.use(["form", "layer", "element"], function () {
     if (databases.length === 0) {
       $select.html('<option value="">无可用数据库</option>');
       $select.prop("disabled", true);
-      form.render("select");
       return;
     }
     
@@ -212,18 +209,7 @@ layui.use(["form", "layer", "element"], function () {
     $select.prop("disabled", false);
     $select.removeAttr("disabled");
     
-    // 重新渲染 Layui select 组件
-    form.render("select");
-    
-    // 延迟再次确保启用（Layui 可能会覆盖我们的设置）
-    setTimeout(function() {
-      if (selectElement) {
-        selectElement.disabled = false;
-      }
-      $select.prop("disabled", false);
-      $select.removeAttr("disabled");
-      form.render("select");
-    }, 50);
+    // 不使用 Layui 的 form.render，避免 CSP 问题
   }
 
   /**
