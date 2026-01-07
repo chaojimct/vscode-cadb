@@ -31,8 +31,51 @@ export class MySQLDataloader implements Dataloader {
     };
     this.conn = createConnection(this.connectionConfig);
   }
+	listCollations(): Promise<Datasource[]> {
+		return new Promise((resolve) => {
+			this.ensureConnection().then(() => {
+				this.conn.query("SHOW COLLATION", (err, results: any[]) => {
+					if (err) {
+						resolve([]);
+						return;
+					}
+					const collations = results.map((row) => new Datasource({
+						name: row.Collation,
+						type: 'item',
+						tooltip: row.Charset,
+						extra: row.Id
+					}, this.ds.dataloader, this.ds));
+					resolve(collations);
+				});
+			}).catch(() => resolve([]));
+		});
+	}
+
+  async createDatabase(params: any): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const { name, collation } = params;
+      if (!name) {
+        reject(new Error("Database name is required"));
+        return;
+      }
+      let sql = `CREATE DATABASE \`${name}\``;
+      if (collation) {
+        sql += ` COLLATE ${collation}`;
+      }
+      this.ensureConnection().then(() => {
+        this.conn.query(sql, (err) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
+      }).catch(reject);
+    });
+  }
+
 	listFolders(ds: Datasource): Promise<Datasource[]> {
-		throw new Error("Method not implemented.");
+		return Promise.resolve([]);
 	}
 
   /**
@@ -42,7 +85,6 @@ export class MySQLDataloader implements Dataloader {
     return new Promise<void>((resolve, reject) => {
       // 设置 ping 超时
       const pingTimeout = setTimeout(() => {
-        console.log('连接 ping 超时，正在重新连接...');
         this.reconnect().then(resolve).catch(reject);
       }, 1000); // 1 秒超时
       
@@ -51,7 +93,6 @@ export class MySQLDataloader implements Dataloader {
         clearTimeout(pingTimeout);
         
         if (err) {
-          console.log('连接 ping 失败，正在重新连接...');
           this.reconnect().then(resolve).catch(reject);
         } else {
           // 连接正常
@@ -89,7 +130,6 @@ export class MySQLDataloader implements Dataloader {
           console.error('重新连接失败:', connectErr.message);
           reject(connectErr);
         } else {
-          console.log('重新连接成功');
           resolve();
         }
       });
@@ -273,7 +313,7 @@ export class MySQLDataloader implements Dataloader {
       return this.listAllUsers(ds);
     }
     
-    if (!this.ds.root || !this.ds.parent) {
+    if (!this.ds.parent) {
       return [];
     }
     

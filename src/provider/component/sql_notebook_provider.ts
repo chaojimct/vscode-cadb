@@ -489,7 +489,6 @@ export class SqlNotebookProvider implements vscode.CustomTextEditorProvider {
       (savedDocument) => {
         if (savedDocument.uri.toString() === document.uri.toString()) {
           // 文件已保存，可以在这里做一些处理（如果需要）
-          console.log("Notebook 文件已保存");
         }
       }
     );

@@ -29,6 +29,12 @@ export class RedisDataloader implements Dataloader {
       password: input.password,
     });
   }
+	listCollations(): Promise<Datasource[]> {
+		return Promise.resolve([]);
+	}
+  createDatabase(params: any): Promise<void> {
+    return Promise.reject(new Error("Method not implemented."));
+  }
 
   private async scanValues(
     ds: Datasource,

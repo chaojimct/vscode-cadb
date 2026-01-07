@@ -28,6 +28,9 @@ export interface Dataloader {
   connect(): Promise<void>;
   getConnection(): any; // 返回数据库连接对象
 
+  // 列举所有支持的排序规则
+  listCollations(): Promise<Datasource[]>;
+  createDatabase(params: any): Promise<void>;
   listFiles(ds: Datasource, path: vscode.Uri): Promise<Datasource[]>;
 
   listUsers(ds: Datasource): Promise<Datasource[]>;
@@ -38,7 +41,7 @@ export interface Dataloader {
   listIndexes(ds: Datasource): Promise<Datasource[]>;
   listColumns(ds: Datasource): Promise<Datasource[]>;
   listTables(ds: Datasource): Promise<Datasource[]>;
-	listFolders(ds: Datasource): Promise<Datasource[]>;
+  listFolders(ds: Datasource): Promise<Datasource[]>;
   listData(
     ds: Datasource,
     page?: number,

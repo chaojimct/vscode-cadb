@@ -46,7 +46,6 @@ export interface DatasourceInputData {
 export class Datasource extends vscode.TreeItem {
   public data: DatasourceInputData;
   public children: Datasource[] = [];
-  public root?: Datasource;
   public parent?: Datasource;
   public type: string;
   public dataloader?: Dataloader;
@@ -89,6 +88,9 @@ export class Datasource extends vscode.TreeItem {
     editor?: CaEditor
   ): Promise<void> => {
     switch (this.type) {
+			case "datasourceType":
+				// TODO: 创建数据库
+				break;
       case "fileType":
         if (!this.parent || !this.parent.label) {
           return Promise.resolve();

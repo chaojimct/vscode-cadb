@@ -162,12 +162,17 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
     return null;
   }
 
-  public refresh = (): void => {
-    this.model = this.context.globalState.get<DatasourceInputData[]>(
-      "cadb.connections",
-      []
-    );
-    this._onDidChangeTreeData.fire();
+  public refresh = (item?: Datasource): void => {
+    if (item) {
+      item.children = [];
+      this._onDidChangeTreeData.fire(item);
+    } else {
+      this.model = this.context.globalState.get<DatasourceInputData[]>(
+        "cadb.connections",
+        []
+      );
+      this._onDidChangeTreeData.fire();
+    }
     // 刷新后保存树状态
     this.saveTreeState();
   };

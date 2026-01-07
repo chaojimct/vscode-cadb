@@ -183,7 +183,6 @@ export class CaEditor {
    * @param database - 数据库 Datasource 对象（type: collection）
    */
   public setCurrentDatabase(database: Datasource): void {
-		console.log(database);
     // 查找数据库的连接节点
     // 结构: datasource -> datasourceType -> collection
     let connectionNode: Datasource | undefined = undefined;

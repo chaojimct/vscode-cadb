@@ -444,6 +444,24 @@
     },
   };
 
+  // ==================== 数据库配置 ====================
+  const databaseFieldMapping = {
+    name: {
+      type: "text",
+      label: "数据库名",
+      category: "base",
+      required: true,
+      placeholder: "请输入数据库名称"
+    },
+    collation: {
+      type: "select",
+      label: "排序规则",
+      category: "base",
+      required: true,
+      options: [] // 将在运行时动态填充
+    }
+  };
+
   // ==================== 导出配置 ====================
 
   // 如果是在浏览器环境中（通过 script 标签引入）
@@ -451,6 +469,7 @@
     window.FieldConfig = {
       datasource: datasourceFieldMapping,
       user: userFieldMapping,
+      database: databaseFieldMapping,
       tableField: tableFieldMapping,
       index: indexFieldMapping,
       privilegeFields: privilegeFields,
@@ -465,6 +484,7 @@
     module.exports = {
       datasource: datasourceFieldMapping,
       user: userFieldMapping,
+      database: databaseFieldMapping,
       tableField: tableFieldMapping,
       index: indexFieldMapping,
       privilegeFields: privilegeFields,

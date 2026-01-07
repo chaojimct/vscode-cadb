@@ -8,62 +8,7 @@ import { generateNonce } from "../utils";
 import { CaEditor } from "./editor";
 import { ResultWebviewProvider } from "../result_provider";
 import { DatabaseSelector } from "./database_selector";
-
-function createWebview(
-  provider: DataSourceProvider,
-  viewType: "settings" | "datasourceTable" | "tableEdit" | "book",
-  title: string
-): vscode.WebviewPanel {
-  const panel = vscode.window.createWebviewPanel(
-    viewType,
-    title,
-    vscode.ViewColumn.One,
-    {
-      enableScripts: true,
-      retainContextWhenHidden: true,
-      localResourceRoots: [
-        vscode.Uri.file(
-          path.join(provider.context.extensionPath, "resources", "panels")
-        ),
-        vscode.Uri.file(
-          path.join(provider.context.extensionPath, "node_modules")
-        ),
-      ],
-    }
-  );
-
-  const resourcesUri = panel.webview.asWebviewUri(
-    vscode.Uri.joinPath(provider.context.extensionUri, "resources", "panels")
-  );
-  const nodeResourcesUri = panel.webview.asWebviewUri(
-    vscode.Uri.joinPath(provider.context.extensionUri, "node_modules")
-  );
-  const nonce = generateNonce();
-  panel.webview.html = provider.panels[viewType]
-    .replace(
-      /{{csp}}/g,
-      `
-    default-src 'none';
-		font-src ${panel.webview.cspSource} data:;
-    style-src ${panel.webview.cspSource} 'unsafe-inline';
-    script-src 'nonce-${nonce}' ${panel.webview.cspSource} 'self' 'unsafe-eval';
-    connect-src ${panel.webview.cspSource};
-    worker-src ${panel.webview.cspSource} blob:;
-  `.trim()
-    )
-    .replace(/{{node-resources-uri}}/g, nodeResourcesUri.toString())
-    .replace(/{{resources-uri}}/g, resourcesUri.toString())
-    .replace(/{{resource-nonce}}/g, nonce);
-  panel.iconPath = vscode.Uri.file(
-    path.join(
-      provider.context.extensionPath,
-      "resources",
-      "panels",
-      "favicon.ico"
-    )
-  );
-  return panel;
-}
+import { createWebview } from "../webview_helper";
 
 async function editEntry(provider: DataSourceProvider, item: Datasource) {
   let panel = null;
@@ -90,7 +35,6 @@ async function editEntry(provider: DataSourceProvider, item: Datasource) {
   }
   
   const data: FormResult | undefined = await item.edit();
-	console.log(data);
   panel.webview.postMessage({
     command: "load",
     configType: configType,
@@ -213,7 +157,6 @@ async function updateUserInfo(
   if (item.dataloader) {
     // TODO: 实现用户信息的数据库更新逻辑
     // 这需要在 dataloader 中添加 updateUser 方法
-    console.log("更新用户信息:", payload);
     vscode.window.showInformationMessage("用户信息已更新（需要实现数据库更新逻辑）");
   } else {
     throw new Error("无法获取数据库连接");
@@ -221,6 +164,55 @@ async function updateUserInfo(
 }
 
 async function addEntry(item: any, provider: DataSourceProvider) {
+  if (item && item.type === "datasourceType") {
+    const dataloader = (item as Datasource).dataloader;
+    if (!dataloader) {
+      return;
+    }
+
+    const collations = await dataloader.listCollations();
+    const options = collations.map((c) => ({
+      label: c.label?.toString() || "",
+      value: c.label?.toString() || "",
+    }));
+
+    const panel = createWebview(provider, "settings", "创建数据库");
+    panel.webview.postMessage({
+      command: "load",
+      configType: "database",
+      options: { collation: options },
+    });
+
+    panel.webview.onDidReceiveMessage(async (message) => {
+      switch (message.command) {
+        case "save":
+          try {
+            await dataloader.createDatabase(message.payload);
+            panel.webview.postMessage({
+              command: "status",
+              success: true,
+              message: "✔️ 数据库创建成功",
+            });
+            setTimeout(() => panel.dispose(), 1000);
+            provider.refresh(item);
+          } catch (error) {
+            panel.webview.postMessage({
+              command: "status",
+              success: false,
+              message: `❗ 创建失败: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            });
+          }
+          break;
+        case "cancel":
+          panel.dispose();
+          break;
+      }
+    });
+    return;
+  }
+
   if (item) {
     await (item as Datasource).create(provider.context, provider.editor);
     provider.refresh();
@@ -313,7 +305,12 @@ export function registerDatasourceCommands(
   }));
   
   disposables.push(vscode.commands.registerCommand("cadb.datasource.add", async (item) => {
-    await addEntry(item, provider);
+    try {
+      await addEntry(item, provider);
+    } catch (error) {
+      console.error("addEntry 执行失败:", error);
+      vscode.window.showErrorMessage(`添加数据源失败: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }));
   
   disposables.push(vscode.commands.registerCommand("cadb.datasource.edit", (item) =>
@@ -549,7 +546,6 @@ export function registerDatasourceItemCommands(provider: DataSourceProvider) {
     panel.webview.onDidReceiveMessage(async (message) => {
       switch (message.command) {
         case "save":
-          console.log(message.data);
           break;
       }
     });

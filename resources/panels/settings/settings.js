@@ -15,6 +15,7 @@ let dynamicForm = null;
 const CONFIG_TYPES = {
   DATASOURCE: "datasource",
   USER: "user",
+  DATABASE: "database"
 };
 
 // ==================== 从全局配置获取字段映射 ====================
@@ -23,6 +24,7 @@ const CONFIG_TYPES = {
 const FieldConfig = window.FieldConfig;
 const datasourceFieldMapping = FieldConfig.datasource;
 const userFieldMapping = FieldConfig.user;
+const databaseFieldMapping = FieldConfig.database;
 const privilegeFields = FieldConfig.privilegeFields;
 
 // ==================== 自定义表单类 ====================
@@ -170,6 +172,32 @@ function initUserForm(data = {}) {
   }, 100);
 }
 
+/**
+ * 初始化数据库创建表单
+ */
+function initDatabaseForm(data = {}, options = {}) {
+  $("#pageTitle").text("创建数据库");
+  $("#pageSubtitle").text("创建一个新的数据库");
+
+  // 复制字段配置，避免修改全局配置
+  const mapping = JSON.parse(JSON.stringify(databaseFieldMapping));
+  
+  // 如果提供了排序规则选项，更新下拉框
+  if (options && options.collation) {
+    mapping.collation.options = options.collation;
+  }
+
+  dynamicForm = new DynamicForm({
+    container: "#formContainer",
+    fieldMapping: mapping,
+    formId: "database-form",
+    onSubmit: handleDatabaseSave,
+    onCancel: handleCancel
+  });
+
+  dynamicForm.load(data);
+}
+
 // ==================== 事件处理 ====================
 
 /**
@@ -215,6 +243,18 @@ function handleUserSave(data) {
   });
 
   showStatus("正在保存用户配置...", "success");
+}
+
+/**
+ * 处理数据库创建保存
+ */
+function handleDatabaseSave(data) {
+  vscode.postMessage({
+    command: "save",
+    payload: data,
+  });
+
+  showStatus("正在创建数据库...", "success");
 }
 
 /**
@@ -312,6 +352,9 @@ window.addEventListener("message", (event) => {
           });
           initUserForm(defaultData);
         }
+      } else if (currentConfigType === CONFIG_TYPES.DATABASE) {
+        // 数据库创建
+        initDatabaseForm(message.data || {}, message.options || {});
       }
       break;
     }
