@@ -55,8 +55,8 @@ class DatabaseTableData {
       // 启用行选择
       selectable: true,
       selectableRangeMode: "click",
-      // 启用列排序
-      headerSort: true,
+      // 禁用列排序（通过列定义单独控制）
+      headerSort: false,
       // 启用列调整大小
       resizableColumns: true,
       // 占位符文本
@@ -147,7 +147,8 @@ class DatabaseTableData {
         self._handleRowSelectClick(e, cell);
       },
       headerClick: function(e, column) {
-        self._handleColumnSelectClick(e, column);
+        // 点击选择列头时选择整个表
+        self._handleSelectAllClick(e, column);
       },
       cssClass: "select-column"
     });
@@ -159,6 +160,7 @@ class DatabaseTableData {
         field: c.field,
         editor: "input",
         resizable: true,
+        headerSort: false, // 取消列的排序功能
         cellEdited: this._cellEdited.bind(this),
         rawData: c,
         headerClick: function(e, column) {
@@ -208,16 +210,55 @@ class DatabaseTableData {
         this.lastSelectedRowIndex = rowIndex;
       }
     } else {
-      // 普通点击：如果已选中则取消选择，否则单选
-      if (isCurrentlySelected && this.selectedRows.size === 1) {
-        // 如果只有这一行被选中，则取消选择
-        this.selectedRows.clear();
-        this.lastSelectedRowIndex = null;
+      // 普通点击：切换选择状态（不取消已选择的行）
+      if (isCurrentlySelected) {
+        // 如果已选中，则取消选择这一行
+        this.selectedRows.delete(rowIndex);
+        // 如果清除了最后选择的行，更新 lastSelectedRowIndex
+        if (this.lastSelectedRowIndex === rowIndex) {
+          const remaining = Array.from(this.selectedRows);
+          this.lastSelectedRowIndex = remaining.length > 0 ? remaining[remaining.length - 1] : null;
+        }
       } else {
-        // 否则选中这一行
-        this.selectedRows.clear();
+        // 如果未选中，则添加选择（不取消其他已选择的行）
         this.selectedRows.add(rowIndex);
         this.lastSelectedRowIndex = rowIndex;
+      }
+    }
+    
+    this._updateRowSelection();
+    this._updateTableSelection();
+  }
+  
+  /**
+   * 处理选择列头的点击（全选/取消全选）
+   */
+  _handleSelectAllClick(e, column) {
+    e.stopPropagation();
+    
+    if (column.getField() !== '_select') {
+      return;
+    }
+    
+    // 检查是否所有行都已选中
+    const rows = this.table.getRows();
+    const allSelected = rows.length > 0 && rows.every(row => {
+      const rowIndex = row.getPosition();
+      return this.selectedRows.has(rowIndex);
+    });
+    
+    if (allSelected) {
+      // 如果全部选中，则取消全选
+      this.selectedRows.clear();
+      this.lastSelectedRowIndex = null;
+    } else {
+      // 否则全选所有行
+      rows.forEach(row => {
+        const rowIndex = row.getPosition();
+        this.selectedRows.add(rowIndex);
+      });
+      if (rows.length > 0) {
+        this.lastSelectedRowIndex = rows[rows.length - 1].getPosition();
       }
     }
     
