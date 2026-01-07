@@ -16,28 +16,50 @@ $(function () {
 
   // 初始化 SQL 输入增强
   let whereInput, orderByInput;
-  
+
   const initSQLInputs = (fields = []) => {
     // WHERE 输入框
     whereInput = new SQLInput("#input-where", {
       onEnter: applyFilter,
       fields: fields,
       keywords: [
-        'AND', 'OR', 'NOT', 'IN', 'BETWEEN', 'LIKE', 'IS', 'NULL',
-        'TRUE', 'FALSE', 'EXISTS', 'ANY', 'ALL',
-        '=', '!=', '<>', '<', '>', '<=', '>=',
-        'COUNT', 'SUM', 'AVG', 'MAX', 'MIN',
-        'UPPER', 'LOWER', 'LENGTH', 'TRIM',
-      ]
+        "AND",
+        "OR",
+        "NOT",
+        "IN",
+        "BETWEEN",
+        "LIKE",
+        "IS",
+        "NULL",
+        "TRUE",
+        "FALSE",
+        "EXISTS",
+        "ANY",
+        "ALL",
+        "=",
+        "!=",
+        "<>",
+        "<",
+        ">",
+        "<=",
+        ">=",
+        "COUNT",
+        "SUM",
+        "AVG",
+        "MAX",
+        "MIN",
+        "UPPER",
+        "LOWER",
+        "LENGTH",
+        "TRIM",
+      ],
     });
 
     // ORDER BY 输入框
     orderByInput = new SQLInput("#input-orderby", {
       onEnter: applyFilter,
       fields: fields,
-      keywords: [
-        'ASC', 'DESC', 'NULLS', 'FIRST', 'LAST',
-      ]
+      keywords: ["ASC", "DESC", "NULLS", "FIRST", "LAST"],
     });
   };
 
@@ -54,7 +76,7 @@ $(function () {
   // 应用过滤
   const applyFilter = () => {
     if (!whereInput || !orderByInput) {
-      console.warn('请等待数据加载完成');
+      console.warn("请等待数据加载完成");
       return;
     }
 
@@ -72,8 +94,12 @@ $(function () {
   $("#btn-refresh").on("click", () => {
     dbTable.refreshTable();
     // 清空过滤条件
-    if (whereInput) whereInput.clear();
-    if (orderByInput) orderByInput.clear();
+    if (whereInput) {
+      whereInput.clear();
+    }
+    if (orderByInput) {
+      orderByInput.clear();
+    }
   });
   $("#btn-delete").on("click", dbTable.deleteRow);
   $("#btn-export-csv").on("click", dbTable.exportCSV);
@@ -84,7 +110,7 @@ $(function () {
   $("#btn-save").on("click", () => {
     const changedRows = dbTable.getChangedRows();
     if (changedRows.length === 0) {
-      console.log('没有需要保存的修改');
+      console.log("没有需要保存的修改");
       return;
     }
 
@@ -102,10 +128,10 @@ $(function () {
 
     if (command === "load") {
       dbTable.init(data.columnDefs, data.rowData, data.queryTime);
-      
+
       // 提取字段名称并更新到 SQL 输入组件
-      const fields = data.columnDefs.map(col => col.field);
-      
+      const fields = data.columnDefs.map((col) => col.field);
+
       // 如果 SQL 输入还未初始化，先初始化
       if (!whereInput || !orderByInput) {
         initSQLInputs(fields);
@@ -114,7 +140,12 @@ $(function () {
         updateSQLInputFields(fields);
       }
     } else if (command === "status") {
-      console.log('操作状态:', data.success ? '成功' : '失败', '-', data.message || "操作完成");
+      console.log(
+        "操作状态:",
+        data.success ? "成功" : "失败",
+        "-",
+        data.message || "操作完成"
+      );
     }
   });
 

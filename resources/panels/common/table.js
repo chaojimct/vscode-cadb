@@ -34,28 +34,33 @@ class DatabaseTableData {
     const self = this;
     this.table = new Tabulator(this.tableSelector, {
       height: "100%",
-      layout: "fitColumns",
+      layout: "fitDataStretch",
       pagination: "local",
       paginationSize: 50,
-      paginationCounter: function(pageSize, currentRow, currentPage, totalRows, totalPages) {
+      paginationCounter: function (
+        pageSize,
+        currentRow,
+        currentPage,
+        totalRows,
+        totalPages
+      ) {
         // 自定义显示查询时间
-        const timeDisplay = self.queryTime < 0.001 
-          ? '<0.001s' 
-          : `${self.queryTime.toFixed(3)}s`;
+        const timeDisplay =
+          self.queryTime < 0.001 ? "<0.001s" : `${self.queryTime.toFixed(3)}s`;
         return `查询时间: ${timeDisplay} | ${totalRows} 行`;
       },
       columns: this._buildColumns(),
       data: [],
-      
+
       // 启用范围选择
       selectableRange: 1,
       selectableRangeColumns: true,
       selectableRangeRows: true,
       selectableRangeClearCells: true,
-      
+
       // 双击编辑单元格
       editTriggerEvent: "dblclick",
-      
+
       // 配置剪贴板支持范围格式
       clipboard: true,
       clipboardCopyStyled: false,
@@ -66,7 +71,7 @@ class DatabaseTableData {
       clipboardCopyRowRange: "range",
       clipboardPasteParser: "range",
       clipboardPasteAction: "range",
-      
+
       // 行头显示行号
       rowHeader: {
         resizable: false,
@@ -75,9 +80,10 @@ class DatabaseTableData {
         hozAlign: "center",
         formatter: "rownum",
         cssClass: "range-header-col",
-        editor: false
+        headerSort: false,
+        editor: false,
       },
-      
+
       // 禁用列排序
       headerSort: false,
       // 启用列调整大小
@@ -101,7 +107,7 @@ class DatabaseTableData {
    */
   _buildColumns() {
     const cols = [];
-    
+
     // 添加数据列（使用列默认配置）
     this.columns.forEach((c) => {
       cols.push({
@@ -109,7 +115,7 @@ class DatabaseTableData {
         field: c.field,
         headerHozAlign: "center",
         editor: "input",
-        resizable: "header",
+        resizable: true,
         width: 100,
         headerSort: false,
         cellEdited: this._cellEdited.bind(this),
@@ -119,7 +125,6 @@ class DatabaseTableData {
     });
     return cols;
   }
-  
 
   /**
    * 单元格编辑回调
@@ -163,8 +168,8 @@ class DatabaseTableData {
 
     this.table.replaceData(this.tableData);
     this.changedRows.clear();
-    
-    console.log('表格已刷新');
+
+    console.log("表格已刷新");
   };
 
   /**
@@ -178,16 +183,16 @@ class DatabaseTableData {
     // 使用 Tabulator 的范围选择 API 获取选中的单元格
     const selectedCells = this.table.getSelectedCells();
     if (selectedCells.length === 0) {
-      console.warn('请先选择要删除的行');
+      console.warn("请先选择要删除的行");
       return;
     }
-    
+
     // 获取选中的行（去重）
     const selectedRowsSet = new Set();
-    selectedCells.forEach(cell => {
+    selectedCells.forEach((cell) => {
       selectedRowsSet.add(cell.getRow());
     });
-    
+
     const selectedRowsArray = Array.from(selectedRowsSet);
 
     const self = this;
@@ -203,7 +208,7 @@ class DatabaseTableData {
           // 用户确认删除
           selectedRowsArray.forEach((row) => row.delete());
           layer.close(index);
-          console.log('删除成功');
+          console.log("删除成功");
         }
       );
     });
@@ -233,7 +238,7 @@ class DatabaseTableData {
    * 导出为 SQL
    */
   exportSQL = () => {
-    console.log('SQL 导出功能开发中...');
+    console.log("SQL 导出功能开发中...");
   };
 
   /**
@@ -278,9 +283,9 @@ class DatabaseTableData {
     if (orderByClause && orderByClause.trim()) {
       try {
         filteredData = this.sortByOrderByClause(filteredData, orderByClause);
-        
+
         if (!whereClause) {
-          console.log('✓ 已应用 ORDER BY 排序');
+          console.log("✓ 已应用 ORDER BY 排序");
         }
       } catch (error) {
         console.error(`✗ ORDER BY 子句错误: ${error.message}`);
@@ -293,7 +298,7 @@ class DatabaseTableData {
 
     // 如果没有过滤和排序，显示提示
     if (!whereClause && !orderByClause) {
-      console.log('已清除过滤和排序');
+      console.log("已清除过滤和排序");
     }
   }
 
@@ -304,35 +309,38 @@ class DatabaseTableData {
    * @returns {Array} 过滤后的数据
    */
   filterByWhereClause(data, whereClause) {
-    console.log('=== WHERE 过滤开始 ===');
-    console.log('原始 WHERE 子句:', whereClause);
-    console.log('数据行数:', data.length);
-    console.log('可用字段:', this.columns.map(c => c.field));
-    
+    console.log("=== WHERE 过滤开始 ===");
+    console.log("原始 WHERE 子句:", whereClause);
+    console.log("数据行数:", data.length);
+    console.log(
+      "可用字段:",
+      this.columns.map((c) => c.field)
+    );
+
     try {
       // 解析 WHERE 条件（不使用 eval 或 new Function）
       const condition = this.parseWhereCondition(whereClause);
-      
-      const filteredData = data.filter(row => {
+
+      const filteredData = data.filter((row) => {
         try {
           const result = this.evaluateCondition(condition, row);
           if (result) {
-            console.log('✓ 匹配的行:', row);
+            console.log("✓ 匹配的行:", row);
           }
           return result;
         } catch (error) {
-          console.error('✗ 评估行时出错:', error.message);
+          console.error("✗ 评估行时出错:", error.message);
           return false;
         }
       });
-      
-      console.log('过滤后行数:', filteredData.length);
-      console.log('=== WHERE 过滤结束 ===');
-      
+
+      console.log("过滤后行数:", filteredData.length);
+      console.log("=== WHERE 过滤结束 ===");
+
       return filteredData;
     } catch (error) {
-      console.error('✗ WHERE 解析错误:', error.message);
-      console.log('=== WHERE 过滤结束 ===');
+      console.error("✗ WHERE 解析错误:", error.message);
+      console.log("=== WHERE 过滤结束 ===");
       throw error;
     }
   }
@@ -344,26 +352,26 @@ class DatabaseTableData {
    */
   parseWhereCondition(whereClause) {
     const clause = whereClause.trim();
-    
+
     // 处理 AND/OR 逻辑运算符（优先级：OR < AND）
     // 先处理 OR
-    const orParts = this.splitByOperator(clause, 'OR');
+    const orParts = this.splitByOperator(clause, "OR");
     if (orParts.length > 1) {
       return {
-        type: 'OR',
-        conditions: orParts.map(part => this.parseWhereCondition(part))
+        type: "OR",
+        conditions: orParts.map((part) => this.parseWhereCondition(part)),
       };
     }
-    
+
     // 再处理 AND
-    const andParts = this.splitByOperator(clause, 'AND');
+    const andParts = this.splitByOperator(clause, "AND");
     if (andParts.length > 1) {
       return {
-        type: 'AND',
-        conditions: andParts.map(part => this.parseWhereCondition(part))
+        type: "AND",
+        conditions: andParts.map((part) => this.parseWhereCondition(part)),
       };
     }
-    
+
     // 处理单个比较条件
     return this.parseComparison(clause);
   }
@@ -373,15 +381,15 @@ class DatabaseTableData {
    */
   splitByOperator(str, operator) {
     const parts = [];
-    let current = '';
+    let current = "";
     let inQuote = false;
-    let quoteChar = '';
+    let quoteChar = "";
     let i = 0;
-    
+
     while (i < str.length) {
       const char = str[i];
-      
-      if ((char === '"' || char === "'") && (i === 0 || str[i-1] !== '\\')) {
+
+      if ((char === '"' || char === "'") && (i === 0 || str[i - 1] !== "\\")) {
         if (!inQuote) {
           inQuote = true;
           quoteChar = char;
@@ -390,20 +398,23 @@ class DatabaseTableData {
         }
         current += char;
         i++;
-      } else if (!inQuote && str.substr(i, operator.length + 2).toUpperCase() === ` ${operator} `) {
+      } else if (
+        !inQuote &&
+        str.substr(i, operator.length + 2).toUpperCase() === ` ${operator} `
+      ) {
         parts.push(current.trim());
-        current = '';
+        current = "";
         i += operator.length + 2;
       } else {
         current += char;
         i++;
       }
     }
-    
+
     if (current.trim()) {
       parts.push(current.trim());
     }
-    
+
     return parts.length > 1 ? parts : [str];
   }
 
@@ -412,43 +423,45 @@ class DatabaseTableData {
    */
   parseComparison(expr) {
     expr = expr.trim();
-    
+
     // 处理 IS NULL / IS NOT NULL
     const isNullMatch = expr.match(/^(\w+)\s+IS\s+NULL$/i);
     if (isNullMatch) {
-      return { type: 'IS_NULL', field: isNullMatch[1] };
+      return { type: "IS_NULL", field: isNullMatch[1] };
     }
-    
+
     const isNotNullMatch = expr.match(/^(\w+)\s+IS\s+NOT\s+NULL$/i);
     if (isNotNullMatch) {
-      return { type: 'IS_NOT_NULL', field: isNotNullMatch[1] };
+      return { type: "IS_NOT_NULL", field: isNotNullMatch[1] };
     }
-    
+
     // 处理 LIKE
     const likeMatch = expr.match(/^(\w+)\s+LIKE\s+['"]([^'"]+)['"]$/i);
     if (likeMatch) {
-      return { type: 'LIKE', field: likeMatch[1], value: likeMatch[2] };
+      return { type: "LIKE", field: likeMatch[1], value: likeMatch[2] };
     }
-    
+
     // 处理比较运算符: =, !=, <>, <, >, <=, >=
     const comparisonMatch = expr.match(/^(\w+)\s*(=|!=|<>|<=|>=|<|>)\s*(.+)$/);
     if (comparisonMatch) {
       let value = comparisonMatch[3].trim();
-      
+
       // 移除引号
-      if ((value.startsWith('"') && value.endsWith('"')) || 
-          (value.startsWith("'") && value.endsWith("'"))) {
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
         value = value.slice(1, -1);
       }
-      
+
       return {
-        type: 'COMPARISON',
+        type: "COMPARISON",
         field: comparisonMatch[1],
-        operator: comparisonMatch[2] === '<>' ? '!=' : comparisonMatch[2],
-        value: value
+        operator: comparisonMatch[2] === "<>" ? "!=" : comparisonMatch[2],
+        value: value,
       };
     }
-    
+
     throw new Error(`无法解析条件: ${expr}`);
   }
 
@@ -457,32 +470,42 @@ class DatabaseTableData {
    */
   evaluateCondition(condition, row) {
     switch (condition.type) {
-      case 'AND':
-        return condition.conditions.every(c => this.evaluateCondition(c, row));
-        
-      case 'OR':
-        return condition.conditions.some(c => this.evaluateCondition(c, row));
-        
-      case 'IS_NULL':
+      case "AND":
+        return condition.conditions.every((c) =>
+          this.evaluateCondition(c, row)
+        );
+
+      case "OR":
+        return condition.conditions.some((c) => this.evaluateCondition(c, row));
+
+      case "IS_NULL":
         const nullValue = row[condition.field];
-        return nullValue === null || nullValue === undefined || nullValue === '';
-        
-      case 'IS_NOT_NULL':
+        return (
+          nullValue === null || nullValue === undefined || nullValue === ""
+        );
+
+      case "IS_NOT_NULL":
         const notNullValue = row[condition.field];
-        return notNullValue !== null && notNullValue !== undefined && notNullValue !== '';
-        
-      case 'LIKE':
+        return (
+          notNullValue !== null &&
+          notNullValue !== undefined &&
+          notNullValue !== ""
+        );
+
+      case "LIKE":
         const likeValue = row[condition.field];
-        if (likeValue === null || likeValue === undefined) return false;
+        if (likeValue === null || likeValue === undefined) {
+          return false;
+        }
         return likeValue.toString().includes(condition.value);
-        
-      case 'COMPARISON':
+
+      case "COMPARISON":
         return this.compareValues(
           row[condition.field],
           condition.operator,
           condition.value
         );
-        
+
       default:
         throw new Error(`未知的条件类型: ${condition.type}`);
     }
@@ -494,30 +517,30 @@ class DatabaseTableData {
   compareValues(fieldValue, operator, compareValue) {
     // 处理 null/undefined
     if (fieldValue === null || fieldValue === undefined) {
-      return operator === '!=' && compareValue !== '';
+      return operator === "!=" && compareValue !== "";
     }
-    
+
     // 转换为字符串进行比较
     const fieldStr = fieldValue.toString();
     const compareStr = compareValue.toString();
-    
+
     // 尝试数值比较
     const fieldNum = parseFloat(fieldStr);
     const compareNum = parseFloat(compareStr);
     const isNumeric = !isNaN(fieldNum) && !isNaN(compareNum);
-    
+
     switch (operator) {
-      case '=':
+      case "=":
         return isNumeric ? fieldNum === compareNum : fieldStr === compareStr;
-      case '!=':
+      case "!=":
         return isNumeric ? fieldNum !== compareNum : fieldStr !== compareStr;
-      case '<':
+      case "<":
         return isNumeric ? fieldNum < compareNum : fieldStr < compareStr;
-      case '>':
+      case ">":
         return isNumeric ? fieldNum > compareNum : fieldStr > compareStr;
-      case '<=':
+      case "<=":
         return isNumeric ? fieldNum <= compareNum : fieldStr <= compareStr;
-      case '>=':
+      case ">=":
         return isNumeric ? fieldNum >= compareNum : fieldStr >= compareStr;
       default:
         throw new Error(`未知的运算符: ${operator}`);
@@ -532,10 +555,10 @@ class DatabaseTableData {
    */
   sortByOrderByClause(data, orderByClause) {
     // 解析 ORDER BY 子句：field1 ASC, field2 DESC
-    const sortRules = orderByClause.split(',').map(rule => {
+    const sortRules = orderByClause.split(",").map((rule) => {
       const parts = rule.trim().split(/\s+/);
       const field = parts[0];
-      const direction = (parts[1] || 'ASC').toUpperCase();
+      const direction = (parts[1] || "ASC").toUpperCase();
       return { field, direction };
     });
 
@@ -549,20 +572,26 @@ class DatabaseTableData {
         const bVal = b[rule.field];
 
         // 处理 null 和 undefined
-        if (aVal == null && bVal == null) continue;
-        if (aVal == null) return rule.direction === 'ASC' ? 1 : -1;
-        if (bVal == null) return rule.direction === 'ASC' ? -1 : 1;
+        if (aVal === null && bVal === null) {
+          continue;
+        }
+        if (aVal === null) {
+          return rule.direction === "ASC" ? 1 : -1;
+        }
+        if (bVal === null) {
+          return rule.direction === "ASC" ? -1 : 1;
+        }
 
         // 比较值
         let comparison = 0;
-        if (typeof aVal === 'string' && typeof bVal === 'string') {
+        if (typeof aVal === "string" && typeof bVal === "string") {
           comparison = aVal.localeCompare(bVal);
         } else {
           comparison = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
         }
 
         if (comparison !== 0) {
-          return rule.direction === 'DESC' ? -comparison : comparison;
+          return rule.direction === "DESC" ? -comparison : comparison;
         }
       }
       return 0;
