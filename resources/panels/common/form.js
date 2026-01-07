@@ -47,16 +47,18 @@ class DynamicForm {
     await this.ready;
 
     this.currentData = data || {};
-    const fields = Object.keys(this.currentData);
+    const dataFields = Object.keys(this.currentData);
 
     // 分类字段
     const baseFields = [];
     const advanceFields = [];
     const hiddenFields = [];
+    const processedFields = new Set(); // 记录已处理的字段
 
     // 处理数据中的字段
-    fields.forEach((fieldName) => {
+    dataFields.forEach((fieldName) => {
       const config = this.getFieldConfig(fieldName);
+      processedFields.add(fieldName);
       if (config.type === "hidden") {
         hiddenFields.push({ name: fieldName, config });
         return;
@@ -68,10 +70,17 @@ class DynamicForm {
       }
     });
 
-    // 处理配置中定义但数据中不存在的隐藏字段（用于传递固定值）
+    // 处理配置中定义但数据中不存在的字段
     Object.keys(this.fieldMapping).forEach((fieldName) => {
+      // 如果已经处理过，跳过
+      if (processedFields.has(fieldName)) {
+        return;
+      }
+      
       const config = this.fieldMapping[fieldName];
-      if (config.type === "hidden" && !fields.includes(fieldName)) {
+      
+      // 处理隐藏字段（用于传递固定值）
+      if (config.type === "hidden") {
         // 如果配置了 value，也要生成隐藏字段
         if (config.value !== undefined) {
           hiddenFields.push({ name: fieldName, config });
@@ -79,6 +88,18 @@ class DynamicForm {
           if (!this.currentData[fieldName]) {
             this.currentData[fieldName] = config.value;
           }
+        }
+      } else {
+        // 处理普通字段（非隐藏字段）：即使数据中不存在，也要根据配置生成表单字段
+        // 这对于新建表单很重要（如创建数据库时，数据是空对象，但需要显示配置的字段）
+        if (config.category === "advance") {
+          advanceFields.push({ name: fieldName, config });
+        } else {
+          baseFields.push({ name: fieldName, config });
+        }
+        // 如果数据中没有这个字段，初始化为空值
+        if (!this.currentData[fieldName]) {
+          this.currentData[fieldName] = "";
         }
       }
     });
@@ -98,7 +119,8 @@ class DynamicForm {
     this.initDateFields();
 
     // 重新渲染表单
-    // switch 也是 checkbox，只需要渲染 checkbox
+    // 渲染 select 和 checkbox（switch 也是 checkbox）
+    this.form.render("select");
     this.form.render("checkbox");
     
     // 初始化密码框的眼睛图标
