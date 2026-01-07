@@ -179,6 +179,13 @@ function initDatabaseForm(data = {}, options = {}) {
   $("#pageTitle").text("创建数据库");
   $("#pageSubtitle").text("创建一个新的数据库");
 
+  // 检查字段配置是否已加载
+  if (!databaseFieldMapping) {
+    console.error("databaseFieldMapping 未定义，FieldConfig 可能未正确加载");
+    showStatus("字段配置未加载，请刷新页面重试", "error");
+    return;
+  }
+
   // 复制字段配置，避免修改全局配置
   const mapping = JSON.parse(JSON.stringify(databaseFieldMapping));
   
@@ -186,6 +193,10 @@ function initDatabaseForm(data = {}, options = {}) {
   if (options && options.collation) {
     mapping.collation.options = options.collation;
   }
+
+  console.log("初始化数据库表单，字段配置:", mapping);
+  console.log("数据:", data);
+  console.log("选项:", options);
 
   dynamicForm = new DynamicForm({
     container: "#formContainer",

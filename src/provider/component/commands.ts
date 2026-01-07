@@ -177,12 +177,16 @@ async function addEntry(item: any, provider: DataSourceProvider) {
     }));
 
     const panel = createWebview(provider, "settings", "创建数据库");
+    
+    // 直接发送初始化数据（页面加载时会自动处理）
     panel.webview.postMessage({
       command: "load",
       configType: "database",
+      data: {}, // 新建数据库，使用空数据
       options: { collation: options },
     });
-
+    
+    // 监听来自 webview 的消息
     panel.webview.onDidReceiveMessage(async (message) => {
       switch (message.command) {
         case "save":
