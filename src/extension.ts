@@ -67,20 +67,20 @@ export function activate(context: vscode.ExtensionContext) {
       }
     }
   });
-  // 数据项命令
-  registerDatasourceItemCommands(provider);
-
-  // CodeLens
-  const sqlCodeLens = new SQLCodeLensProvider(outputChannel);
-  vscode.languages.registerCodeLensProvider("sql", sqlCodeLens);
-	registerCodeLensCommands(sqlCodeLens);
-
   // SQL 编辑器（带数据库选择器）
   const editor = new CaEditor(provider);
   provider.setEditor(editor);
   const databaseSelector = registerEditorCommands(editor);
   context.subscriptions.push(editor);
   context.subscriptions.push(databaseSelector); // 注册数据库选择器
+
+  // 数据项命令
+  registerDatasourceItemCommands(provider, outputChannel, editor);
+
+  // CodeLens
+  const sqlCodeLens = new SQLCodeLensProvider(outputChannel);
+  vscode.languages.registerCodeLensProvider("sql", sqlCodeLens);
+	registerCodeLensCommands(sqlCodeLens);
 
   // SQL 执行器需要 editor 引用
   sqlCodeLens.setEditor(editor);

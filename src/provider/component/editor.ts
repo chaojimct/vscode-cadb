@@ -78,7 +78,7 @@ export class CaEditor {
   /**
    * 选择连接
    */
-  private async selectConnection(): Promise<Datasource | undefined> {
+  public async selectConnection(): Promise<Datasource | undefined> {
     const connections = this.provider.model.map((conn) => new Datasource(conn));
 
     if (connections.length === 0) {
@@ -109,7 +109,7 @@ export class CaEditor {
   /**
    * 从指定连接中选择数据库
    */
-  private async selectDatabaseFromConnection(
+  public async selectDatabaseFromConnection(
     connection: Datasource
   ): Promise<Datasource | undefined> {
     return await vscode.window.withProgress(

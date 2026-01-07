@@ -103,6 +103,10 @@
       {
         "command": "cadb.datasource.copyFullConnection",
         "title": "完整连接"
+      },
+      {
+        "command": "cadb.file.execute",
+        "title": "执行"
       }
     ],
     "customEditors": [
@@ -164,6 +168,11 @@
         {
           "submenu": "cadb.datasource.copyConnectionSubmenu",
           "when": "view == datasource && viewItem == datasource",
+          "group": "context"
+        },
+        {
+          "command": "cadb.file.execute",
+          "when": "view == datasource && viewItem == file",
           "group": "context"
         }
       ],

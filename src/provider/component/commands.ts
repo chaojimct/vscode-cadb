@@ -534,7 +534,11 @@ export function registerDatasourceCommands(
   return disposables;
 }
 
-export function registerDatasourceItemCommands(provider: DataSourceProvider) {
+export function registerDatasourceItemCommands(
+  provider: DataSourceProvider,
+  outputChannel: vscode.OutputChannel,
+  editor: CaEditor
+) {
   vscode.commands.registerCommand("cadb.item.showData", async (args) => {
     const datasource = args as Datasource;
     const data = await datasource.listData();
@@ -581,6 +585,322 @@ export function registerDatasourceItemCommands(provider: DataSourceProvider) {
       vscode.window.showErrorMessage(`打开文件失败: ${error}`);
     }
   });
+
+  // 注册执行 SQL 文件命令
+  vscode.commands.registerCommand("cadb.file.execute", async (args) => {
+    const fileItem = args as Datasource;
+    if (!fileItem || fileItem.type !== "file") {
+      vscode.window.showErrorMessage("无法执行：不是有效的文件项");
+      return;
+    }
+
+    // 获取文件路径（从 tooltip 获取完整路径）
+    const filePath =
+      typeof fileItem.tooltip === "string"
+        ? fileItem.tooltip
+        : fileItem.tooltip?.value || "";
+    if (!filePath) {
+      vscode.window.showErrorMessage("无法获取文件路径");
+      return;
+    }
+
+    try {
+      // 步骤 1: 读取 SQL 文件内容
+      const fileUri = vscode.Uri.file(filePath);
+      const fileContent = await vscode.workspace.fs.readFile(fileUri);
+      const sqlContent = Buffer.from(fileContent).toString("utf-8");
+
+      if (!sqlContent.trim()) {
+        vscode.window.showWarningMessage("SQL 文件为空");
+        return;
+      }
+
+      // 步骤 2: 选择数据源和数据库
+      const selectedConnection = await editor.selectConnection();
+      if (!selectedConnection) {
+        return; // 用户取消
+      }
+
+      const selectedDatabase = await editor.selectDatabaseFromConnection(
+        selectedConnection
+      );
+      if (!selectedDatabase) {
+        return; // 用户取消
+      }
+
+      // 步骤 3: 执行 SQL（带事务）
+      await executeSqlFileWithTransaction(
+        sqlContent,
+        selectedConnection,
+        selectedDatabase,
+        outputChannel,
+        provider
+      );
+    } catch (error) {
+      vscode.window.showErrorMessage(
+        `执行 SQL 文件失败: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
+    }
+  });
+}
+
+/**
+ * 执行 SQL 文件（带事务支持）
+ */
+async function executeSqlFileWithTransaction(
+  sqlContent: string,
+  connection: Datasource,
+  database: Datasource,
+  outputChannel: vscode.OutputChannel,
+  provider: DataSourceProvider
+): Promise<void> {
+  return await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: "正在执行 SQL 文件...",
+      cancellable: false,
+    },
+    async () => {
+      // 创建数据源实例
+      const connectionData = provider.model.find(
+        (ds) => ds.name === connection.label?.toString()
+      );
+      if (!connectionData) {
+        throw new Error("数据源不存在");
+      }
+
+      const datasource = await Datasource.createInstance(
+        provider.model,
+        provider.context,
+        connectionData,
+        false
+      );
+
+      if (!datasource.dataloader) {
+        throw new Error("无法创建数据库连接");
+      }
+
+      // 获取连接
+      let connectionObj = datasource.dataloader.getConnection();
+      if (!connectionObj) {
+        await datasource.dataloader.connect();
+        connectionObj = datasource.dataloader.getConnection();
+        if (!connectionObj) {
+          throw new Error("无法获取数据库连接");
+        }
+      }
+
+      const databaseName = database.label?.toString() || "";
+      const timestamp = formatTimestamp(new Date());
+
+      // 切换到指定数据库
+      await new Promise<void>((resolve, reject) => {
+        connectionObj.changeUser({ database: databaseName }, (err: any) => {
+          if (err) {
+            const errorMsg = `[${timestamp} ${databaseName}, ERROR] ${err.message}`;
+            outputChannel.appendLine(errorMsg);
+            outputChannel.show(true);
+            return reject(err);
+          }
+          resolve();
+        });
+      });
+
+      // 分割 SQL 语句（按分号分割，但要注意字符串中的分号）
+      const sqlStatements = splitSqlStatements(sqlContent);
+
+      // 开始事务
+      outputChannel.appendLine(
+        `[${timestamp} ${databaseName}] 开始事务`
+      );
+      outputChannel.show(true);
+
+      await new Promise<void>((resolve, reject) => {
+        connectionObj.query("START TRANSACTION", (err: any) => {
+          if (err) {
+            const errorMsg = `[${timestamp} ${databaseName}, ERROR] 开始事务失败: ${err.message}`;
+            outputChannel.appendLine(errorMsg);
+            outputChannel.show(true);
+            return reject(err);
+          }
+          resolve();
+        });
+      });
+
+      let executedCount = 0;
+      let errorOccurred = false;
+      let errorMessage = "";
+
+      // 执行每个 SQL 语句
+      for (const sql of sqlStatements) {
+        const trimmedSql = sql.trim();
+        if (!trimmedSql) {
+          continue; // 跳过空语句
+        }
+
+        const statementTimestamp = formatTimestamp(new Date());
+        const startTime = Date.now();
+
+        // 显示正在执行的语句
+        const sqlOneLine = trimmedSql.replace(/\s+/g, " ").trim();
+        outputChannel.appendLine(
+          `[${statementTimestamp} ${databaseName}] 执行: ${sqlOneLine}`
+        );
+        outputChannel.show(true);
+
+        try {
+          await new Promise<void>((resolve, reject) => {
+            connectionObj.query(trimmedSql, (error: any, results: any) => {
+              const executionTime = (Date.now() - startTime) / 1000;
+              const spendTime =
+                executionTime < 0.001
+                  ? "<0.001s"
+                  : `${executionTime.toFixed(3)}s`;
+
+              if (error) {
+                const errorMsg = `[${statementTimestamp} ${databaseName}, ERROR] ${error.message} - ${sqlOneLine}`;
+                outputChannel.appendLine(errorMsg);
+                outputChannel.show(true);
+                errorOccurred = true;
+                errorMessage = error.message;
+                return reject(error);
+              }
+
+              // 成功日志
+              const rowCount = Array.isArray(results)
+                ? results.length
+                : results.affectedRows || 0;
+              const logMsg = `[${statementTimestamp} ${databaseName}, ${spendTime}] (${rowCount} rows) ${sqlOneLine}`;
+              outputChannel.appendLine(logMsg);
+              outputChannel.show(true);
+
+              executedCount++;
+              resolve();
+            });
+          });
+        } catch (error) {
+          // 发生错误，跳出循环
+          break;
+        }
+      }
+
+      // 根据执行结果提交或回滚
+      const finalTimestamp = formatTimestamp(new Date());
+      if (errorOccurred) {
+        // 回滚事务
+        outputChannel.appendLine(
+          `[${finalTimestamp} ${databaseName}] 发生错误，回滚事务`
+        );
+        outputChannel.show(true);
+
+        await new Promise<void>((resolve, reject) => {
+          connectionObj.query("ROLLBACK", (err: any) => {
+            if (err) {
+              const errorMsg = `[${finalTimestamp} ${databaseName}, ERROR] 回滚失败: ${err.message}`;
+              outputChannel.appendLine(errorMsg);
+              outputChannel.show(true);
+              return reject(err);
+            }
+            const rollbackMsg = `[${finalTimestamp} ${databaseName}] 事务已回滚`;
+            outputChannel.appendLine(rollbackMsg);
+            outputChannel.show(true);
+            resolve();
+          });
+        });
+
+        vscode.window.showErrorMessage(
+          `SQL 执行失败: ${errorMessage}。已回滚所有更改。`
+        );
+      } else {
+        // 提交事务
+        outputChannel.appendLine(
+          `[${finalTimestamp} ${databaseName}] 提交事务`
+        );
+        outputChannel.show(true);
+
+        await new Promise<void>((resolve, reject) => {
+          connectionObj.query("COMMIT", (err: any) => {
+            if (err) {
+              const errorMsg = `[${finalTimestamp} ${databaseName}, ERROR] 提交失败: ${err.message}`;
+              outputChannel.appendLine(errorMsg);
+              outputChannel.show(true);
+              return reject(err);
+            }
+            const commitMsg = `[${finalTimestamp} ${databaseName}] 事务已提交 (共执行 ${executedCount} 条语句)`;
+            outputChannel.appendLine(commitMsg);
+            outputChannel.show(true);
+            resolve();
+          });
+        });
+
+        vscode.window.showInformationMessage(
+          `SQL 执行成功！共执行 ${executedCount} 条语句。`
+        );
+      }
+    }
+  );
+}
+
+/**
+ * 分割 SQL 语句（按分号分割，但忽略字符串中的分号）
+ */
+function splitSqlStatements(sql: string): string[] {
+  const statements: string[] = [];
+  let currentStatement = "";
+  let inString = false;
+  let stringChar = "";
+  let i = 0;
+
+  while (i < sql.length) {
+    const char = sql[i];
+    const nextChar = i + 1 < sql.length ? sql[i + 1] : "";
+
+    // 处理字符串
+    if (!inString && (char === "'" || char === '"' || char === "`")) {
+      inString = true;
+      stringChar = char;
+      currentStatement += char;
+    } else if (inString && char === stringChar) {
+      // 检查是否是转义的引号
+      if (nextChar === stringChar) {
+        currentStatement += char + nextChar;
+        i++; // 跳过下一个字符
+      } else {
+        inString = false;
+        stringChar = "";
+        currentStatement += char;
+      }
+    } else if (char === ";" && !inString) {
+      // 遇到分号且不在字符串中，结束当前语句
+      statements.push(currentStatement.trim());
+      currentStatement = "";
+    } else {
+      currentStatement += char;
+    }
+    i++;
+  }
+
+  // 添加最后一个语句（如果有）
+  if (currentStatement.trim()) {
+    statements.push(currentStatement.trim());
+  }
+
+  return statements.filter((stmt) => stmt.length > 0);
+}
+
+/**
+ * 格式化时间戳
+ */
+function formatTimestamp(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
 export function registerCodeLensCommands(provider: SQLCodeLensProvider) {
