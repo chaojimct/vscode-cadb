@@ -107,6 +107,14 @@
       {
         "command": "cadb.file.execute",
         "title": "执行"
+      },
+      {
+        "command": "cadb.file.rename",
+        "title": "重命名"
+      },
+      {
+        "command": "cadb.file.delete",
+        "title": "删除"
       }
     ],
     "customEditors": [
@@ -172,6 +180,16 @@
         },
         {
           "command": "cadb.file.execute",
+          "when": "view == datasource && viewItem == file",
+          "group": "context"
+        },
+        {
+          "command": "cadb.file.rename",
+          "when": "view == datasource && viewItem == file",
+          "group": "context"
+        },
+        {
+          "command": "cadb.file.delete",
           "when": "view == datasource && viewItem == file",
           "group": "context"
         }

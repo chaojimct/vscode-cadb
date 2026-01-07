@@ -2,6 +2,7 @@
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from "vscode";
 import { DataSourceProvider } from "./provider/database_provider";
+import { Datasource } from "./provider/entity/datasource";
 import {
 	registerCodeLensCommands,
   registerDatasourceCommands,
@@ -34,6 +35,63 @@ export function activate(context: vscode.ExtensionContext) {
   });
   const datasourceCommands = registerDatasourceCommands(provider, treeView);
   datasourceCommands.forEach(cmd => context.subscriptions.push(cmd));
+  
+  // 监听 TreeView 展开/收起事件，保存状态
+  treeView.onDidExpandElement((e) => {
+    provider.addExpandedNode(e.element);
+  });
+  
+  treeView.onDidCollapseElement((e) => {
+    provider.removeExpandedNode(e.element);
+  });
+  
+  // 恢复展开状态（延迟执行，等待树视图初始化完成）
+  setTimeout(() => {
+    (async () => {
+      try {
+        const treeState = (provider as any).treeState;
+        if (treeState && treeState.expandedNodes && treeState.expandedNodes.length > 0) {
+          // 递归恢复展开状态
+          const restoreExpandedState = async (
+            element: Datasource,
+            expandedNodes: string[],
+            treeView: vscode.TreeView<Datasource>,
+            provider: DataSourceProvider
+          ): Promise<void> => {
+            const nodePath = provider.getNodePath(element);
+            if (expandedNodes.includes(nodePath)) {
+              try {
+                await treeView.reveal(element, { expand: true });
+                // 等待展开完成后再处理子节点
+                await new Promise(resolve => setTimeout(resolve, 100));
+              } catch (e) {
+                // 忽略错误，节点可能还未加载
+              }
+            }
+            
+            // 递归处理子节点
+            if (element.children && element.children.length > 0) {
+              for (const child of element.children) {
+                await restoreExpandedState(child, expandedNodes, treeView, provider);
+              }
+            }
+          };
+          
+          // 从根节点开始恢复
+          const { Datasource: DatasourceClass } = await import('./provider/entity/datasource');
+          const rootItems = (provider as any).model.map((e: any) => 
+            new DatasourceClass(e)
+          );
+          for (const rootItem of rootItems) {
+            await restoreExpandedState(rootItem, treeState.expandedNodes, treeView, provider);
+          }
+        }
+      } catch (error) {
+        console.error('恢复展开状态失败:', error);
+      }
+    })();
+  }, 1000);
+  
   treeView.onDidChangeVisibility((e) => {
     if (e.visible) {
       provider.refresh();

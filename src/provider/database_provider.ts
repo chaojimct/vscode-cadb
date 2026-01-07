@@ -209,6 +209,55 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
   }
 
   /**
+   * 获取节点的唯一路径标识符
+   */
+  public getNodePath(element: Datasource): string {
+    const path: string[] = [];
+    let current: Datasource | undefined = element;
+    
+    while (current) {
+      const label = current.label?.toString() || '';
+      const type = current.type || '';
+      // 使用 type:label 作为路径段
+      path.unshift(`${type}:${label}`);
+      current = current.parent;
+    }
+    
+    return path.join('/');
+  }
+
+  /**
+   * 检查节点是否应该展开
+   */
+  public shouldExpandNode(element: Datasource): boolean {
+    const nodePath = this.getNodePath(element);
+    return this.treeState.expandedNodes.includes(nodePath);
+  }
+
+  /**
+   * 添加展开的节点
+   */
+  public addExpandedNode(element: Datasource): void {
+    const nodePath = this.getNodePath(element);
+    if (!this.treeState.expandedNodes.includes(nodePath)) {
+      this.treeState.expandedNodes.push(nodePath);
+      this.saveTreeState();
+    }
+  }
+
+  /**
+   * 移除展开的节点
+   */
+  public removeExpandedNode(element: Datasource): void {
+    const nodePath = this.getNodePath(element);
+    const index = this.treeState.expandedNodes.indexOf(nodePath);
+    if (index !== -1) {
+      this.treeState.expandedNodes.splice(index, 1);
+      this.saveTreeState();
+    }
+  }
+
+  /**
    * 设置连接的选中数据库
    */
   public setSelectedDatabases(connectionName: string, databases: string[]): void {

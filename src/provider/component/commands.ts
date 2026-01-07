@@ -611,6 +611,120 @@ export function registerDatasourceItemCommands(
     }
   });
 
+  // 注册重命名 SQL 文件命令
+  vscode.commands.registerCommand("cadb.file.rename", async (args) => {
+    const fileItem = args as Datasource;
+    if (!fileItem || fileItem.type !== "file") {
+      vscode.window.showErrorMessage("无法重命名：不是有效的文件项");
+      return;
+    }
+
+    // 获取文件路径（从 tooltip 获取完整路径）
+    const filePath =
+      typeof fileItem.tooltip === "string"
+        ? fileItem.tooltip
+        : fileItem.tooltip?.value || "";
+    if (!filePath) {
+      vscode.window.showErrorMessage("无法获取文件路径");
+      return;
+    }
+
+    try {
+      const currentName = fileItem.label?.toString() || "";
+      const newName = await vscode.window.showInputBox({
+        prompt: "输入新文件名",
+        value: currentName,
+        validateInput: (value) => {
+          if (!value || value.trim() === "") {
+            return "文件名不能为空";
+          }
+          if (value.includes("/") || value.includes("\\")) {
+            return "文件名不能包含路径分隔符";
+          }
+          return null;
+        },
+      });
+
+      if (!newName || newName === currentName) {
+        return; // 用户取消或未修改
+      }
+
+      const fileUri = vscode.Uri.file(filePath);
+      const dirUri = vscode.Uri.file(path.dirname(filePath));
+      const newFileUri = vscode.Uri.joinPath(dirUri, newName);
+
+      // 检查新文件名是否已存在
+      try {
+        await vscode.workspace.fs.stat(newFileUri);
+        vscode.window.showErrorMessage(`文件 "${newName}" 已存在`);
+        return;
+      } catch (e) {
+        // 文件不存在，可以重命名
+      }
+
+      // 重命名文件
+      await vscode.workspace.fs.rename(fileUri, newFileUri, { overwrite: false });
+
+      vscode.window.showInformationMessage(`文件已重命名为 "${newName}"`);
+
+      // 刷新父节点以更新文件列表
+      if (fileItem.parent) {
+        provider.refresh(fileItem.parent);
+      }
+    } catch (error) {
+      vscode.window.showErrorMessage(
+        `重命名文件失败: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  });
+
+  // 注册删除 SQL 文件命令
+  vscode.commands.registerCommand("cadb.file.delete", async (args) => {
+    const fileItem = args as Datasource;
+    if (!fileItem || fileItem.type !== "file") {
+      vscode.window.showErrorMessage("无法删除：不是有效的文件项");
+      return;
+    }
+
+    // 获取文件路径（从 tooltip 获取完整路径）
+    const filePath =
+      typeof fileItem.tooltip === "string"
+        ? fileItem.tooltip
+        : fileItem.tooltip?.value || "";
+    if (!filePath) {
+      vscode.window.showErrorMessage("无法获取文件路径");
+      return;
+    }
+
+    const fileName = fileItem.label?.toString() || "";
+    const confirm = await vscode.window.showWarningMessage(
+      `确定要删除文件 "${fileName}" 吗？此操作无法撤销。`,
+      { modal: true },
+      "删除",
+      "取消"
+    );
+
+    if (confirm !== "删除") {
+      return; // 用户取消
+    }
+
+    try {
+      const fileUri = vscode.Uri.file(filePath);
+      await vscode.workspace.fs.delete(fileUri, { recursive: false, useTrash: true });
+
+      vscode.window.showInformationMessage(`文件 "${fileName}" 已删除`);
+
+      // 刷新父节点以更新文件列表
+      if (fileItem.parent) {
+        provider.refresh(fileItem.parent);
+      }
+    } catch (error) {
+      vscode.window.showErrorMessage(
+        `删除文件失败: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  });
+
   // 注册执行 SQL 文件命令
   vscode.commands.registerCommand("cadb.file.execute", async (args) => {
     const fileItem = args as Datasource;
