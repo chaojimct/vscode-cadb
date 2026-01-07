@@ -82,6 +82,43 @@ class DatabaseTableData {
       this._updateRowSelection();
       this._updateColumnSelection();
     });
+    
+    // 监听表格容器外的点击事件，点击空白处取消选择
+    setTimeout(() => {
+      const tableElement = document.querySelector(this.tableSelector);
+      if (tableElement) {
+        const container = tableElement.closest('.table-wrapper') || tableElement.parentElement;
+        if (container) {
+          // 使用事件委托，监听容器点击
+          const handleContainerClick = (e) => {
+            const target = e.target;
+            // 如果点击的不是表格单元格、行选择按钮或列头，则清除选择
+            if (!target.closest('.tabulator-cell') && 
+                !target.closest('.row-select-btn') && 
+                !target.closest('.tabulator-header .tabulator-col')) {
+              this._clearAllSelection();
+            }
+          };
+          
+          container.addEventListener('click', handleContainerClick);
+          
+          // 保存事件处理器以便后续清理
+          this._containerClickHandler = handleContainerClick;
+        }
+      }
+    }, 100);
+  }
+  
+  /**
+   * 清除所有选择
+   */
+  _clearAllSelection() {
+    this.selectedRows.clear();
+    this.selectedColumns.clear();
+    this.lastSelectedRowIndex = null;
+    this.lastSelectedColumn = null;
+    this._updateRowSelection();
+    this._updateColumnSelection();
   }
 
   /**
@@ -147,6 +184,7 @@ class DatabaseTableData {
     // 获取修饰键状态
     const ctrlKey = e.ctrlKey || e.metaKey;
     const shiftKey = e.shiftKey;
+    const isCurrentlySelected = this.selectedRows.has(rowIndex);
     
     if (shiftKey && this.lastSelectedRowIndex !== null) {
       // Shift 点击：选择范围
@@ -158,18 +196,31 @@ class DatabaseTableData {
       }
     } else if (ctrlKey) {
       // Ctrl 点击：切换选择
-      if (this.selectedRows.has(rowIndex)) {
+      if (isCurrentlySelected) {
         this.selectedRows.delete(rowIndex);
+        // 如果清除了最后选择的行，更新 lastSelectedRowIndex
+        if (this.lastSelectedRowIndex === rowIndex) {
+          const remaining = Array.from(this.selectedRows);
+          this.lastSelectedRowIndex = remaining.length > 0 ? remaining[remaining.length - 1] : null;
+        }
       } else {
         this.selectedRows.add(rowIndex);
+        this.lastSelectedRowIndex = rowIndex;
       }
     } else {
-      // 普通点击：单选
-      this.selectedRows.clear();
-      this.selectedRows.add(rowIndex);
+      // 普通点击：如果已选中则取消选择，否则单选
+      if (isCurrentlySelected && this.selectedRows.size === 1) {
+        // 如果只有这一行被选中，则取消选择
+        this.selectedRows.clear();
+        this.lastSelectedRowIndex = null;
+      } else {
+        // 否则选中这一行
+        this.selectedRows.clear();
+        this.selectedRows.add(rowIndex);
+        this.lastSelectedRowIndex = rowIndex;
+      }
     }
     
-    this.lastSelectedRowIndex = rowIndex;
     this._updateRowSelection();
     this._updateTableSelection();
   }
@@ -210,12 +261,19 @@ class DatabaseTableData {
         this.selectedColumns.add(columnField);
       }
     } else {
-      // 普通点击：单选
-      this.selectedColumns.clear();
-      this.selectedColumns.add(columnField);
+      // 普通点击：如果已选中则取消选择，否则单选
+      if (this.selectedColumns.has(columnField) && this.selectedColumns.size === 1) {
+        // 如果只有这一列被选中，则取消选择
+        this.selectedColumns.clear();
+        this.lastSelectedColumn = null;
+      } else {
+        // 否则选中这一列
+        this.selectedColumns.clear();
+        this.selectedColumns.add(columnField);
+        this.lastSelectedColumn = columnField;
+      }
     }
     
-    this.lastSelectedColumn = columnField;
     this._updateColumnSelection();
   }
   
