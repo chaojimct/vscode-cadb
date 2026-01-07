@@ -14,12 +14,6 @@ class DatabaseTableData {
     this.columns = [];
     this.changedRows = new Set();
     this.queryTime = 0; // 查询时间（秒）
-    
-    // 选择状态管理
-    this.selectedRows = new Set(); // 选中的行索引
-    this.selectedColumns = new Set(); // 选中的列字段名
-    this.lastSelectedRowIndex = null; // 最后选中的行索引（用于 Shift 选择）
-    this.lastSelectedColumn = null; // 最后选中的列（用于 Shift 选择）
   }
 
   /**
@@ -52,10 +46,39 @@ class DatabaseTableData {
       },
       columns: this._buildColumns(),
       data: [],
-      // 启用行选择
-      selectable: true,
-      selectableRangeMode: "click",
-      // 禁用列排序（通过列定义单独控制）
+      
+      // 启用范围选择
+      selectableRange: 1,
+      selectableRangeColumns: true,
+      selectableRangeRows: true,
+      selectableRangeClearCells: true,
+      
+      // 双击编辑单元格
+      editTriggerEvent: "dblclick",
+      
+      // 配置剪贴板支持范围格式
+      clipboard: true,
+      clipboardCopyStyled: false,
+      clipboardCopyConfig: {
+        rowHeaders: false,
+        columnHeaders: false,
+      },
+      clipboardCopyRowRange: "range",
+      clipboardPasteParser: "range",
+      clipboardPasteAction: "range",
+      
+      // 行头显示行号
+      rowHeader: {
+        resizable: false,
+        frozen: true,
+        width: 40,
+        hozAlign: "center",
+        formatter: "rownum",
+        cssClass: "range-header-col",
+        editor: false
+      },
+      
+      // 禁用列排序
       headerSort: false,
       // 启用列调整大小
       resizableColumns: true,
@@ -70,335 +93,33 @@ class DatabaseTableData {
     // 异步加载数据
     requestAnimationFrame(() => {
       this.table.setData(this.tableData);
-      // 数据加载后更新选择状态
-      setTimeout(() => {
-        this._updateRowSelection();
-        this._updateColumnSelection();
-      }, 100);
     });
-    
-    // 监听数据更新事件
-    this.table.on("dataLoaded", () => {
-      this._updateRowSelection();
-      this._updateColumnSelection();
-    });
-    
-    // 监听表格容器外的点击事件，点击空白处取消选择
-    setTimeout(() => {
-      const tableElement = document.querySelector(this.tableSelector);
-      if (tableElement) {
-        const container = tableElement.closest('.table-wrapper') || tableElement.parentElement;
-        if (container) {
-          // 使用事件委托，监听容器点击
-          const handleContainerClick = (e) => {
-            const target = e.target;
-            // 如果点击的不是表格单元格、行选择按钮或列头，则清除选择
-            if (!target.closest('.tabulator-cell') && 
-                !target.closest('.row-select-btn') && 
-                !target.closest('.tabulator-header .tabulator-col')) {
-              this._clearAllSelection();
-            }
-          };
-          
-          container.addEventListener('click', handleContainerClick);
-          
-          // 保存事件处理器以便后续清理
-          this._containerClickHandler = handleContainerClick;
-        }
-      }
-    }, 100);
-  }
-  
-  /**
-   * 清除所有选择
-   */
-  _clearAllSelection() {
-    this.selectedRows.clear();
-    this.selectedColumns.clear();
-    this.lastSelectedRowIndex = null;
-    this.lastSelectedColumn = null;
-    this._updateRowSelection();
-    this._updateColumnSelection();
   }
 
   /**
    * 构建列定义
    */
   _buildColumns() {
-    const self = this;
     const cols = [];
     
-    // 添加选择列作为第一列
-    cols.push({
-      title: "",
-      field: "_select",
-      width: 40,
-      resizable: false,
-      headerSort: false,
-      frozen: true,
-      formatter: function(cell, formatterParams) {
-        const rowIndex = cell.getRow().getPosition();
-        const isSelected = self.selectedRows.has(rowIndex);
-        return `<button class="row-select-btn ${isSelected ? 'selected' : ''}" 
-                        data-row-index="${rowIndex}"
-                        title="选择行"></button>`;
-      },
-      cellClick: function(e, cell) {
-        self._handleRowSelectClick(e, cell);
-      },
-      headerClick: function(e, column) {
-        // 点击选择列头时选择整个表
-        self._handleSelectAllClick(e, column);
-      },
-      cssClass: "select-column"
-    });
-    
-    // 添加数据列
+    // 添加数据列（使用列默认配置）
     this.columns.forEach((c) => {
       cols.push({
         title: c.field.toUpperCase(),
         field: c.field,
+        headerHozAlign: "center",
         editor: "input",
-        resizable: true,
-        headerSort: false, // 取消列的排序功能
+        resizable: "header",
+        width: 100,
+        headerSort: false,
         cellEdited: this._cellEdited.bind(this),
         rawData: c,
-        headerClick: function(e, column) {
-          self._handleColumnSelectClick(e, column);
-        },
       });
       this.newRow[c.field] = c.defaultValue || "";
     });
     return cols;
   }
   
-  /**
-   * 处理行选择点击
-   */
-  _handleRowSelectClick(e, cell) {
-    e.stopPropagation();
-    const row = cell.getRow();
-    const rowIndex = row.getPosition();
-    const button = e.target.closest('.row-select-btn');
-    
-    if (!button) return;
-    
-    // 获取修饰键状态
-    const ctrlKey = e.ctrlKey || e.metaKey;
-    const shiftKey = e.shiftKey;
-    const isCurrentlySelected = this.selectedRows.has(rowIndex);
-    
-    if (shiftKey && this.lastSelectedRowIndex !== null) {
-      // Shift 点击：选择范围
-      const start = Math.min(this.lastSelectedRowIndex, rowIndex);
-      const end = Math.max(this.lastSelectedRowIndex, rowIndex);
-      
-      for (let i = start; i <= end; i++) {
-        this.selectedRows.add(i);
-      }
-    } else if (ctrlKey) {
-      // Ctrl 点击：切换选择
-      if (isCurrentlySelected) {
-        this.selectedRows.delete(rowIndex);
-        // 如果清除了最后选择的行，更新 lastSelectedRowIndex
-        if (this.lastSelectedRowIndex === rowIndex) {
-          const remaining = Array.from(this.selectedRows);
-          this.lastSelectedRowIndex = remaining.length > 0 ? remaining[remaining.length - 1] : null;
-        }
-      } else {
-        this.selectedRows.add(rowIndex);
-        this.lastSelectedRowIndex = rowIndex;
-      }
-    } else {
-      // 普通点击：切换选择状态（不取消已选择的行）
-      if (isCurrentlySelected) {
-        // 如果已选中，则取消选择这一行
-        this.selectedRows.delete(rowIndex);
-        // 如果清除了最后选择的行，更新 lastSelectedRowIndex
-        if (this.lastSelectedRowIndex === rowIndex) {
-          const remaining = Array.from(this.selectedRows);
-          this.lastSelectedRowIndex = remaining.length > 0 ? remaining[remaining.length - 1] : null;
-        }
-      } else {
-        // 如果未选中，则添加选择（不取消其他已选择的行）
-        this.selectedRows.add(rowIndex);
-        this.lastSelectedRowIndex = rowIndex;
-      }
-    }
-    
-    this._updateRowSelection();
-    this._updateTableSelection();
-  }
-  
-  /**
-   * 处理选择列头的点击（全选/取消全选）
-   */
-  _handleSelectAllClick(e, column) {
-    e.stopPropagation();
-    
-    if (column.getField() !== '_select') {
-      return;
-    }
-    
-    // 检查是否所有行都已选中
-    const rows = this.table.getRows();
-    const allSelected = rows.length > 0 && rows.every(row => {
-      const rowIndex = row.getPosition();
-      return this.selectedRows.has(rowIndex);
-    });
-    
-    if (allSelected) {
-      // 如果全部选中，则取消全选
-      this.selectedRows.clear();
-      this.lastSelectedRowIndex = null;
-    } else {
-      // 否则全选所有行
-      rows.forEach(row => {
-        const rowIndex = row.getPosition();
-        this.selectedRows.add(rowIndex);
-      });
-      if (rows.length > 0) {
-        this.lastSelectedRowIndex = rows[rows.length - 1].getPosition();
-      }
-    }
-    
-    this._updateRowSelection();
-    this._updateTableSelection();
-  }
-  
-  /**
-   * 处理列选择点击
-   */
-  _handleColumnSelectClick(e, column) {
-    // 如果是选择列本身，不处理列选择
-    if (column.getField() === '_select') {
-      return;
-    }
-    
-    e.stopPropagation();
-    const columnField = column.getField();
-    const ctrlKey = e.ctrlKey || e.metaKey;
-    const shiftKey = e.shiftKey;
-    
-    if (shiftKey && this.lastSelectedColumn !== null) {
-      // Shift 点击：选择列范围
-      const allColumns = this.columns.map(c => c.field);
-      const startIndex = allColumns.indexOf(this.lastSelectedColumn);
-      const endIndex = allColumns.indexOf(columnField);
-      
-      if (startIndex !== -1 && endIndex !== -1) {
-        const start = Math.min(startIndex, endIndex);
-        const end = Math.max(startIndex, endIndex);
-        
-        for (let i = start; i <= end; i++) {
-          this.selectedColumns.add(allColumns[i]);
-        }
-      }
-    } else if (ctrlKey) {
-      // Ctrl 点击：切换选择
-      if (this.selectedColumns.has(columnField)) {
-        this.selectedColumns.delete(columnField);
-      } else {
-        this.selectedColumns.add(columnField);
-      }
-    } else {
-      // 普通点击：如果已选中则取消选择，否则单选
-      if (this.selectedColumns.has(columnField) && this.selectedColumns.size === 1) {
-        // 如果只有这一列被选中，则取消选择
-        this.selectedColumns.clear();
-        this.lastSelectedColumn = null;
-      } else {
-        // 否则选中这一列
-        this.selectedColumns.clear();
-        this.selectedColumns.add(columnField);
-        this.lastSelectedColumn = columnField;
-      }
-    }
-    
-    this._updateColumnSelection();
-  }
-  
-  /**
-   * 更新行选择状态
-   */
-  _updateRowSelection() {
-    if (!this.table) return;
-    
-    // 更新按钮状态
-    const rows = this.table.getRows();
-    rows.forEach((row, index) => {
-      const rowIndex = row.getPosition();
-      const button = row.getElement().querySelector('.row-select-btn');
-      if (button) {
-        if (this.selectedRows.has(rowIndex)) {
-          button.classList.add('selected');
-        } else {
-          button.classList.remove('selected');
-        }
-      }
-    });
-    
-    // 更新 Tabulator 的行选择状态
-    const selectedRows = [];
-    rows.forEach((row) => {
-      const rowIndex = row.getPosition();
-      if (this.selectedRows.has(rowIndex)) {
-        selectedRows.push(row);
-      }
-    });
-    this.table.deselectRow();
-    if (selectedRows.length > 0) {
-      this.table.selectRow(selectedRows);
-    }
-  }
-  
-  /**
-   * 更新列选择状态
-   */
-  _updateColumnSelection() {
-    if (!this.table) return;
-    
-    // 更新列头样式
-    const columns = this.table.getColumns();
-    columns.forEach((column) => {
-      const field = column.getField();
-      if (field === '_select') return;
-      
-      const headerElement = column.getElement();
-      if (this.selectedColumns.has(field)) {
-        headerElement.classList.add('column-selected');
-      } else {
-        headerElement.classList.remove('column-selected');
-      }
-    });
-    
-    // 更新该列的所有单元格样式
-    const rows = this.table.getRows();
-    rows.forEach((row) => {
-      const cells = row.getCells();
-      cells.forEach((cell) => {
-        const field = cell.getField();
-        if (field === '_select') return;
-        
-        const cellElement = cell.getElement();
-        if (this.selectedColumns.has(field)) {
-          cellElement.classList.add('column-selected');
-        } else {
-          cellElement.classList.remove('column-selected');
-        }
-      });
-    });
-  }
-  
-  /**
-   * 更新表格选择状态（同步 Tabulator 的选择）
-   */
-  _updateTableSelection() {
-    if (!this.table) return;
-    
-    // 这个方法会在 _updateRowSelection 中调用
-    // 这里可以添加额外的同步逻辑
-  }
 
   /**
    * 单元格编辑回调
@@ -440,20 +161,8 @@ class DatabaseTableData {
       return;
     }
 
-    // 清除选择状态
-    this.selectedRows.clear();
-    this.selectedColumns.clear();
-    this.lastSelectedRowIndex = null;
-    this.lastSelectedColumn = null;
-
     this.table.replaceData(this.tableData);
     this.changedRows.clear();
-    
-    // 更新选择状态
-    setTimeout(() => {
-      this._updateRowSelection();
-      this._updateColumnSelection();
-    }, 100);
     
     console.log('表格已刷新');
   };
@@ -466,24 +175,33 @@ class DatabaseTableData {
       return;
     }
 
-    const selectedRows = this.table.getSelectedData();
-    if (selectedRows.length === 0) {
+    // 使用 Tabulator 的范围选择 API 获取选中的单元格
+    const selectedCells = this.table.getSelectedCells();
+    if (selectedCells.length === 0) {
       console.warn('请先选择要删除的行');
       return;
     }
+    
+    // 获取选中的行（去重）
+    const selectedRowsSet = new Set();
+    selectedCells.forEach(cell => {
+      selectedRowsSet.add(cell.getRow());
+    });
+    
+    const selectedRowsArray = Array.from(selectedRowsSet);
 
     const self = this;
     layui.use("layer", function () {
       const layer = layui.layer;
       layer.confirm(
-        "确定要删除选中的 " + selectedRows.length + " 行吗？",
+        "确定要删除选中的 " + selectedRowsArray.length + " 行吗？",
         {
           icon: 3,
           title: "确认删除",
         },
         function (index) {
           // 用户确认删除
-          self.table.getSelectedRows().forEach((row) => row.delete());
+          selectedRowsArray.forEach((row) => row.delete());
           layer.close(index);
           console.log('删除成功');
         }

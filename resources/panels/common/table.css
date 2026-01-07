@@ -99,79 +99,44 @@ body {
   background: var(--vscode-focus);
 }
 
-/* ========== 选择列样式 ========== */
+/* ========== 行头样式 ========== */
 
-/* 选择列 */
-.tabulator .tabulator-col.select-column {
+/* 行头列 */
+.tabulator .tabulator-col.range-header-col {
   background: var(--vscode-bg) !important;
-  min-width: 40px;
-  max-width: 40px;
-  width: 40px;
+  border-right: 1px solid var(--vscode-border) !important;
 }
 
-.tabulator .tabulator-col.select-column .tabulator-col-content {
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.tabulator .tabulator-col.range-header-col:hover {
+  background: var(--vscode-hover) !important;
 }
 
-/* 行选择按钮 */
-.row-select-btn {
-  width: 20px;
-  height: 20px;
-  border: 1px solid var(--vscode-border);
-  background: transparent;
-  cursor: pointer;
-  border-radius: 3px;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s ease;
-  position: relative;
+/* 行头单元格 */
+.tabulator .tabulator-cell.range-header-col {
+  background: var(--vscode-bg) !important;
+  color: var(--vscode-fg) !important;
+  border-right: 1px solid var(--vscode-border) !important;
+  font-weight: 500;
+  user-select: none;
 }
 
-.row-select-btn:hover {
-  border-color: var(--vscode-focus);
-  background: var(--vscode-hover);
+/* ========== 范围选择样式 ========== */
+
+/* 选中的单元格 */
+.tabulator .tabulator-cell.tabulator-range-selected {
+  background: var(--vscode-list-activeSelectionBackground, rgba(9, 71, 113, 0.3)) !important;
+  color: var(--vscode-list-activeSelectionForeground, var(--vscode-fg)) !important;
 }
 
-.row-select-btn.selected {
-  background: var(--vscode-select-bg);
-  border-color: var(--vscode-focus);
+/* 选中的行头 */
+.tabulator .tabulator-cell.range-header-col.tabulator-range-selected {
+  background: var(--vscode-list-activeSelectionBackground, rgba(9, 71, 113, 0.5)) !important;
 }
 
-.row-select-btn.selected::after {
-  content: '✓';
-  color: var(--vscode-select-fg);
-  font-size: 12px;
-  font-weight: bold;
-  line-height: 1;
-}
-
-/* 选中列的表头样式 */
-.tabulator .tabulator-header .tabulator-col.column-selected {
-  background: var(--vscode-select-bg) !important;
-  color: var(--vscode-select-fg) !important;
-}
-
-.tabulator .tabulator-header .tabulator-col.column-selected:hover {
-  background: var(--vscode-select-bg) !important;
-}
-
-/* 选中列的单元格样式 */
-.tabulator .tabulator-cell.column-selected {
-  background: rgba(9, 71, 113, 0.15) !important;
-}
-
-.tabulator .tabulator-row:hover .tabulator-cell.column-selected {
-  background: rgba(9, 71, 113, 0.25) !important;
-}
-
-.tabulator .tabulator-row.tabulator-selected .tabulator-cell.column-selected {
-  background: rgba(9, 71, 113, 0.3) !important;
+/* 选中的列头 */
+.tabulator .tabulator-header .tabulator-col.tabulator-range-selected {
+  background: var(--vscode-list-activeSelectionBackground, rgba(9, 71, 113, 0.5)) !important;
+  color: var(--vscode-list-activeSelectionForeground, var(--vscode-fg)) !important;
 }
 
 /* 表格主体 */
