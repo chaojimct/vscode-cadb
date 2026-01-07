@@ -119,8 +119,8 @@ class DynamicForm {
     this.initDateFields();
 
     // 重新渲染表单
-    // 渲染 select 和 checkbox（switch 也是 checkbox）
-    this.form.render("select");
+    // 只渲染 checkbox（switch 也是 checkbox）
+    // select 使用原生 HTML，不需要 Layui 渲染
     this.form.render("checkbox");
     
     // 初始化密码框的眼睛图标
