@@ -630,12 +630,18 @@ WHERE TABLE_SCHEMA = '${ds.parent?.label}';
         this.conn.query(
           `
 SELECT 
-	SCHEMA_NAME AS name,
-	DEFAULT_CHARACTER_SET_NAME AS charset_name
+	s.SCHEMA_NAME AS name,
+	COUNT(t.TABLE_NAME) AS table_count
 FROM 
-	information_schema.SCHEMATA
+	information_schema.SCHEMATA s
+LEFT JOIN 
+	information_schema.TABLES t ON s.SCHEMA_NAME = t.TABLE_SCHEMA
+WHERE 
+	s.SCHEMA_NAME NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')
+GROUP BY 
+	s.SCHEMA_NAME
 ORDER BY 
-	SCHEMA_NAME;
+	s.SCHEMA_NAME;
 				`,
           (err, results) => {
             if (err) {
@@ -643,17 +649,20 @@ ORDER BY
               return resolve([]);
             }
             ds.children = (results as any[]).map(
-              (row) =>
-                new Datasource(
+              (row) => {
+                const tableCount = row["table_count"] as number || 0;
+                const descriptionText = `${tableCount} 个表`;
+                return new Datasource(
                   {
                     name: row["name"] as string,
                     tooltip: "",
-                    extra: row["charset_name"] as string,
+                    extra: descriptionText,
                     type: "collection",
                   },
                   this,
                   this.ds
-                )
+                );
+              }
             );
             return resolve(ds.children);
           }
