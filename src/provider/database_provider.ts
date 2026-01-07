@@ -291,7 +291,7 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
    * 加载数据库（collection）的所有子节点
    * @param collection 数据库节点
    */
-  private async loadCollectionChildren(collection: Datasource): Promise<void> {
+  public async loadCollectionChildren(collection: Datasource): Promise<void> {
     // 加载数据库下的对象类型（表、用户）
     const objectTypes = await collection.expand(this.context);
     collection.children = objectTypes || [];

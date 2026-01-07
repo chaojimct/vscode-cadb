@@ -191,6 +191,7 @@ async function addEntry(item: any, provider: DataSourceProvider) {
       switch (message.command) {
         case "save":
           try {
+            const databaseName = message.payload.name;
             await dataloader.createDatabase(message.payload);
             panel.webview.postMessage({
               command: "status",
@@ -198,7 +199,31 @@ async function addEntry(item: any, provider: DataSourceProvider) {
               message: "✔️ 数据库创建成功",
             });
             setTimeout(() => panel.dispose(), 1000);
+            
+            // 刷新数据库列表
             provider.refresh(item);
+            
+            // 等待刷新完成后，找到新创建的数据库节点并加载其子节点
+            setTimeout(async () => {
+              try {
+                // 重新展开 datasourceType 节点以获取最新的数据库列表
+                const databases = await item.expand(provider.context);
+                item.children = databases || [];
+                
+                // 找到新创建的数据库节点
+                const newDatabase = item.children.find(
+                  (db: Datasource) => db.label?.toString() === databaseName
+                );
+                
+                if (newDatabase && newDatabase.type === 'collection') {
+                  // 加载新数据库的子节点（表），这会更新 description 为表数量
+                  await provider.loadCollectionChildren(newDatabase);
+                }
+              } catch (err) {
+                // 忽略错误，不影响主流程
+                console.error("加载新数据库子节点失败:", err);
+              }
+            }, 500);
           } catch (error) {
             panel.webview.postMessage({
               command: "status",
