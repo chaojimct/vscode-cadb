@@ -1,9 +1,12 @@
 import * as vscode from "vscode";
-import dayjs from "dayjs";
 import { DataSourceProvider } from "../database_provider";
 import { Datasource } from "../entity/datasource";
 
-export class CaEditor {
+/**
+ * 数据库管理器 - 管理当前选择的数据库连接和数据库
+ * 替代原来的 CaEditor，只保留数据库选择功能
+ */
+export class DatabaseManager {
   private currentDatabase: Datasource | null = null;
   private currentConnection: Datasource | null = null;
   public provider: DataSourceProvider;
@@ -64,7 +67,7 @@ export class CaEditor {
         `已选择数据库: ${this.currentConnection.label} / ${this.currentDatabase.label}`
       );
     } catch (error) {
-      console.error("[CaEditor] 选择数据库时出错:", error);
+      console.error("[DatabaseManager] 选择数据库时出错:", error);
       vscode.window.showErrorMessage(
         `选择数据库失败: ${
           error instanceof Error ? error.message : String(error)
@@ -208,32 +211,5 @@ export class CaEditor {
       `已切换到数据库: ${this.currentConnection.label} / ${this.currentDatabase.label}`
     );
   }
-
-  /**
-   * 打开新的 SQL 编辑器
-   */
-  public async open(dir: vscode.Uri) {
-    const filename = dayjs().format("YYYYMMDDHHmmss") + ".sql";
-    const fileUri = vscode.Uri.joinPath(dir, filename);
-    await vscode.workspace.fs.writeFile(
-      fileUri,
-      Buffer.from(`-- ${filename}\n`)
-    );
-    const doc = await vscode.workspace.openTextDocument(fileUri);
-    await vscode.window.showTextDocument(doc, {
-      preview: false,
-      viewColumn: vscode.ViewColumn.Active,
-    });
-  }
-
-  /**
-   * 清理资源
-   */
-  public dispose() {
-    // 保留用于后续扩展
-  }
-
-  public close() {
-    // 保留用于后续扩展
-  }
 }
+

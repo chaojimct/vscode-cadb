@@ -2,7 +2,7 @@ import path from "path";
 import { readFileSync } from "fs";
 import * as vscode from "vscode";
 import { Datasource, DatasourceInputData } from "./entity/datasource";
-import type { CaEditor } from "./component/editor";
+import type { DatabaseManager } from "./component/database_manager";
 
 /**
  * 树展开状态接口
@@ -17,7 +17,7 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
   public model: DatasourceInputData[];
   public context: vscode.ExtensionContext;
   public panels: Record<string, string>;
-  public editor?: CaEditor;
+  public databaseManager?: DatabaseManager;
   private treeState: TreeState;
 
   constructor(context: vscode.ExtensionContext) {
@@ -177,8 +177,8 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
     this.saveTreeState();
   };
 
-  public setEditor(editor: CaEditor): void {
-    this.editor = editor;
+  public setDatabaseManager(databaseManager: DatabaseManager): void {
+    this.databaseManager = databaseManager;
   }
 
   /**

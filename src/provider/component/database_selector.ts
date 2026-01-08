@@ -1,15 +1,15 @@
 import * as vscode from "vscode";
-import { CaEditor } from "./editor";
+import { DatabaseManager } from "./database_manager";
 
 /**
  * 数据库选择器 - 在状态栏显示和管理当前数据库选择
  */
 export class DatabaseSelector {
   private statusBarItem: vscode.StatusBarItem;
-  private editor: CaEditor;
+  private databaseManager: DatabaseManager;
 
-  constructor(editor: CaEditor) {
-    this.editor = editor;
+  constructor(databaseManager: DatabaseManager) {
+    this.databaseManager = databaseManager;
 
     // 创建状态栏项（位于右侧，优先级 100）
     this.statusBarItem = vscode.window.createStatusBarItem(
@@ -39,8 +39,8 @@ export class DatabaseSelector {
    * 更新状态栏显示
    */
   public updateStatusBar(): void {
-    const currentConnection = this.editor.getCurrentConnection();
-    const currentDatabase = this.editor.getCurrentDatabase();
+    const currentConnection = this.databaseManager.getCurrentConnection();
+    const currentDatabase = this.databaseManager.getCurrentDatabase();
 
     // 安全地获取 label 字符串
     const connectionLabel = currentConnection?.label?.toString() || '';

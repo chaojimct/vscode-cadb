@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { DataSourceProvider } from '../database_provider';
 import { Datasource } from '../entity/datasource';
-import type { CaEditor } from './editor';
+import type { DatabaseManager } from './database_manager';
 
 interface ConnectionCache {
   datasourceName: string;
@@ -14,7 +14,7 @@ export class SqlNotebookController {
   private readonly _controller: vscode.NotebookController;
   private readonly _provider: DataSourceProvider;
   private readonly _context: vscode.ExtensionContext;
-  private readonly _editor: CaEditor;
+  private readonly _databaseManager: DatabaseManager;
   private readonly _connectionCache = new Map<string, ConnectionCache>();
   private readonly _connectionTimeout = 5 * 60 * 1000; // 5 分钟超时
 
@@ -24,11 +24,11 @@ export class SqlNotebookController {
     label: string,
     provider: DataSourceProvider,
     context: vscode.ExtensionContext,
-    editor: CaEditor
+    databaseManager: DatabaseManager
   ) {
     this._provider = provider;
     this._context = context;
-    this._editor = editor;
+    this._databaseManager = databaseManager;
 
     this._controller = vscode.notebooks.createNotebookController(
       id,
@@ -44,7 +44,7 @@ export class SqlNotebookController {
     this._updateDescription();
     
     // 监听数据库选择变化
-    this._editor.setOnDatabaseChangedCallback(() => {
+    this._databaseManager.setOnDatabaseChangedCallback(() => {
       this._updateDescription();
     });
     
@@ -58,8 +58,8 @@ export class SqlNotebookController {
    * 更新控制器描述，显示当前选择的数据源和数据库
    */
   private _updateDescription(): void {
-    const currentConnection = this._editor.getCurrentConnection();
-    const currentDatabase = this._editor.getCurrentDatabase();
+    const currentConnection = this._databaseManager.getCurrentConnection();
+    const currentDatabase = this._databaseManager.getCurrentDatabase();
 
     if (currentConnection && currentDatabase) {
       this._controller.description = `${currentConnection.label} / ${currentDatabase.label}`;
@@ -199,9 +199,9 @@ export class SqlNotebookController {
         return;
       }
 
-      // 从 editor 获取当前选择的连接和数据库
-      const currentConnection = this._editor.getCurrentConnection();
-      const currentDatabase = this._editor.getCurrentDatabase();
+      // 从 databaseManager 获取当前选择的连接和数据库
+      const currentConnection = this._databaseManager.getCurrentConnection();
+      const currentDatabase = this._databaseManager.getCurrentDatabase();
 
       if (!currentConnection || !currentDatabase) {
         execution.replaceOutput([

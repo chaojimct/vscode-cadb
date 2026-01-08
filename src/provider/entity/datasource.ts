@@ -7,7 +7,7 @@ import {
   TableResult,
 } from "./dataloader";
 import { MySQLDataloader } from "./mysql_dataloader";
-import type { CaEditor } from "../component/editor";
+import type { DatabaseManager } from "../component/database_manager";
 import { RedisDataloader } from "./redis_dataloader";
 
 const iconDir: string[] = ["..", "..", "resources", "icons"];
@@ -85,7 +85,7 @@ export class Datasource extends vscode.TreeItem {
 
   public create = async (
     context: vscode.ExtensionContext,
-    editor?: CaEditor
+    databaseManager?: DatabaseManager
   ): Promise<void> => {
     switch (this.type) {
 			case "datasourceType":
@@ -99,23 +99,28 @@ export class Datasource extends vscode.TreeItem {
           context.globalStorageUri,
           this.parent.label.toString()
         );
-        if (editor) {
-          await editor.open(dsPath);
-        } else {
-          // 如果没有传入 editor，创建临时文件
-          const dayjs = require("dayjs");
-          const filename = dayjs().format("YYYYMMDDHHmmss") + ".sql";
-          const fileUri = vscode.Uri.joinPath(dsPath, filename);
-          await vscode.workspace.fs.writeFile(
-            fileUri,
-            Buffer.from(`-- ${filename}\n`)
-          );
-          const doc = await vscode.workspace.openTextDocument(fileUri);
-          await vscode.window.showTextDocument(doc, {
-            preview: false,
-            viewColumn: vscode.ViewColumn.Active,
-          });
-        }
+        
+        // 创建新的 .jsql 文件（SQL Notebook）
+        const dayjs = require("dayjs");
+        const filename = dayjs().format("YYYYMMDDHHmmss") + ".jsql";
+        const fileUri = vscode.Uri.joinPath(dsPath, filename);
+        
+        // 创建空的 notebook 内容
+        const emptyNotebook = {
+          datasource: null,
+          database: null,
+          cells: []
+        };
+        const content = JSON.stringify(emptyNotebook, null, 2);
+        
+        // 写入文件
+        await vscode.workspace.fs.writeFile(fileUri, Buffer.from(content, 'utf-8'));
+        
+        // 打开文件作为 Notebook
+        const notebookDocument = await vscode.workspace.openNotebookDocument(fileUri);
+        await vscode.window.showNotebookDocument(notebookDocument);
+        
+        // 刷新文件列表
         this.dataloader?.listFiles(this, dsPath);
         break;
     }

@@ -4,17 +4,15 @@ import * as vscode from "vscode";
 import { DataSourceProvider } from "./provider/database_provider";
 import { Datasource } from "./provider/entity/datasource";
 import {
-	registerCodeLensCommands,
   registerDatasourceCommands,
   registerDatasourceItemCommands,
-  registerEditorCommands,
+  registerDatabaseCommands,
   registerResultCommands,
 } from "./provider/component/commands";
 import { SqlNotebookSerializer } from "./provider/component/sql_notebook_serializer";
 import { SqlNotebookController } from "./provider/component/sql_notebook_controller";
 import { SqlNotebookRenderer } from "./provider/component/sql_notebook_renderer";
-import { SQLCodeLensProvider } from "./provider/sql_provider";
-import { CaEditor } from "./provider/component/editor";
+import { DatabaseManager } from "./provider/component/database_manager";
 import { ResultWebviewProvider } from "./provider/result_provider";
 import { CaCompletionItemProvider } from "./provider/completion_item_provider";
 
@@ -123,23 +121,14 @@ export function activate(context: vscode.ExtensionContext) {
       }
     }
   });
-  // SQL 编辑器（带数据库选择器）
-  const editor = new CaEditor(provider);
-  provider.setEditor(editor);
-  const databaseSelector = registerEditorCommands(editor);
-  context.subscriptions.push(editor);
+  // 数据库管理器（替代 CaEditor，只保留数据库选择功能）
+  const databaseManager = new DatabaseManager(provider);
+  provider.setDatabaseManager(databaseManager);
+  const databaseSelector = registerDatabaseCommands(databaseManager);
   context.subscriptions.push(databaseSelector); // 注册数据库选择器
 
   // 数据项命令
-  registerDatasourceItemCommands(provider, outputChannel, editor);
-
-  // CodeLens
-  const sqlCodeLens = new SQLCodeLensProvider(outputChannel);
-  vscode.languages.registerCodeLensProvider("sql", sqlCodeLens);
-	registerCodeLensCommands(sqlCodeLens);
-
-  // SQL 执行器需要 editor 引用
-  sqlCodeLens.setEditor(editor);
+  registerDatasourceItemCommands(provider, outputChannel, databaseManager);
 
   // 查询结果 Webview（底部面板）
   const resultProvider = new ResultWebviewProvider(context);
@@ -166,7 +155,7 @@ export function activate(context: vscode.ExtensionContext) {
     'SQL Notebook',
     provider,
     context,
-    editor  // 传入 editor 以获取当前选择的数据库
+    databaseManager  // 传入 databaseManager 以获取当前选择的数据库
   );
   context.subscriptions.push(notebookController);
 
@@ -206,13 +195,13 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  // SQL 自动补全（支持普通 SQL 文件和 Notebook）
+  // SQL 自动补全（仅支持 Notebook）
   const completionProvider = new CaCompletionItemProvider();
-  completionProvider.setEditor(editor);
   completionProvider.setProvider(provider);
+  completionProvider.setDatabaseManager(databaseManager);
   context.subscriptions.push(
     vscode.languages.registerCompletionItemProvider(
-      { language: "sql", notebookType: "cadb.sqlNotebook" },
+      { notebookType: "cadb.sqlNotebook" },
       completionProvider,
       ".", // 触发字符：点号用于 table.column
       " " // 触发字符：空格用于关键字后

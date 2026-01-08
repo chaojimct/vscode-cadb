@@ -3,9 +3,8 @@ import { DataSourceProvider } from "../database_provider";
 import { Datasource } from "../entity/datasource";
 import path from "path";
 import { FormResult } from "../entity/dataloader";
-import { SQLCodeLensProvider } from "../sql_provider";
 import { generateNonce } from "../utils";
-import { CaEditor } from "./editor";
+import { DatabaseManager } from "./database_manager";
 import { ResultWebviewProvider } from "../result_provider";
 import { DatabaseSelector } from "./database_selector";
 import { createWebview } from "../webview_helper";
@@ -243,7 +242,7 @@ async function addEntry(item: any, provider: DataSourceProvider) {
   }
 
   if (item) {
-    await (item as Datasource).create(provider.context, provider.editor);
+    await (item as Datasource).create(provider.context, provider.databaseManager);
     provider.refresh();
   } else {
     const panel = createWebview(provider, "settings", "数据库连接配置");
@@ -449,11 +448,11 @@ export function registerDatasourceCommands(
         return;
       }
       
-      // 通过 editor 设置当前数据库
-      if (provider.editor) {
-        provider.editor.setCurrentDatabase(item);
+      // 通过 databaseManager 设置当前数据库
+      if (provider.databaseManager) {
+        provider.databaseManager.setCurrentDatabase(item);
       } else {
-        vscode.window.showErrorMessage('编辑器未初始化');
+        vscode.window.showErrorMessage('数据库管理器未初始化');
       }
     } catch (error) {
       console.error('[UseDatabase] 错误:', error);
@@ -562,7 +561,7 @@ export function registerDatasourceCommands(
 export function registerDatasourceItemCommands(
   provider: DataSourceProvider,
   outputChannel: vscode.OutputChannel,
-  editor: CaEditor
+  databaseManager: DatabaseManager
 ) {
   vscode.commands.registerCommand("cadb.item.showData", async (args) => {
     const datasource = args as Datasource;
@@ -838,12 +837,12 @@ export function registerDatasourceItemCommands(
       }
 
       // 步骤 2: 选择数据源和数据库
-      const selectedConnection = await editor.selectConnection();
+      const selectedConnection = await databaseManager.selectConnection();
       if (!selectedConnection) {
         return; // 用户取消
       }
 
-      const selectedDatabase = await editor.selectDatabaseFromConnection(
+      const selectedDatabase = await databaseManager.selectDatabaseFromConnection(
         selectedConnection
       );
       if (!selectedDatabase) {
@@ -1125,31 +1124,19 @@ function formatTimestamp(date: Date): string {
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
-export function registerCodeLensCommands(provider: SQLCodeLensProvider) {
-  vscode.commands.registerCommand(
-    "cadb.sql.explain",
-    (sql: string, startLine: number, endLine: number) =>
-      provider.explainSql(sql, startLine, endLine)
-  );
-  vscode.commands.registerCommand(
-    "cadb.sql.run",
-    (sql: string, startLine: number, endLine: number) =>
-      provider.runSql(sql, startLine, endLine)
-  );
-}
 
-export function registerEditorCommands(editor: CaEditor) {
+export function registerDatabaseCommands(databaseManager: DatabaseManager) {
   // 创建数据库选择器
-  const databaseSelector = new DatabaseSelector(editor);
+  const databaseSelector = new DatabaseSelector(databaseManager);
 
   // 设置数据库变化回调
-  editor.setOnDatabaseChangedCallback(() => {
+  databaseManager.setOnDatabaseChangedCallback(() => {
     databaseSelector.updateStatusBar();
   });
 
   // 注册数据库选择命令
   vscode.commands.registerCommand("cadb.sql.selectDatabase", () =>
-    editor.selectDatabase()
+    databaseManager.selectDatabase()
   );
 
   // 返回 selector 以便在 extension.ts 中注册到 subscriptions

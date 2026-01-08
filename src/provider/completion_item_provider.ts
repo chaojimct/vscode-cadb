@@ -1,22 +1,23 @@
 import * as vscode from "vscode";
-import type { CaEditor } from "./component/editor";
-import type { Datasource } from "./entity/datasource";
+import type { DatabaseManager } from "./component/database_manager";
+import { Datasource } from "./entity/datasource";
 import type { DataSourceProvider } from "./database_provider";
 
 /**
  * SQL 自动补全提供者
  * 提供数据库、表、字段、索引、视图等名称的智能补全
+ * 仅支持 Notebook
  */
 export class CaCompletionItemProvider implements vscode.CompletionItemProvider {
-  private editor?: CaEditor;
+  private _databaseManager?: DatabaseManager;
   private provider?: DataSourceProvider;
   private cachedCompletions: Map<string, CachedCompletion> = new Map();
   private cacheTimeout = 60000; // 缓存 1 分钟
 
   constructor() {}
 
-  public setEditor(editor: CaEditor): void {
-    this.editor = editor;
+  public setDatabaseManager(databaseManager: DatabaseManager): void {
+    this._databaseManager = databaseManager;
   }
 
   public setProvider(provider: DataSourceProvider): void {
@@ -34,35 +35,40 @@ export class CaCompletionItemProvider implements vscode.CompletionItemProvider {
   ): Promise<
     vscode.CompletionItem[] | vscode.CompletionList<vscode.CompletionItem>
   > {
+    // 只支持 Notebook cell
+    if (document.uri.scheme !== 'vscode-notebook-cell') {
+      return [];
+    }
+
     // 对于 Notebook 单元格，尝试从 notebook metadata 获取连接信息
     let currentConnection: any = null;
     let currentDatabase: any = null;
 
-    // 检查是否是 notebook cell
-    if (document.uri.scheme === 'vscode-notebook-cell') {
-      // 尝试从 notebook 获取 metadata
-      const notebookUri = vscode.workspace.notebookDocuments.find(
-        nb => nb.getCells().some(cell => cell.document.uri.toString() === document.uri.toString())
-      );
+    // 尝试从 notebook 获取 metadata
+    const notebookUri = vscode.workspace.notebookDocuments.find(
+      nb => nb.getCells().some(cell => cell.document.uri.toString() === document.uri.toString())
+    );
+    
+    if (notebookUri) {
+      const metadata = notebookUri.metadata;
+      const datasourceName = metadata?.datasource as string | undefined;
+      const databaseName = metadata?.database as string | undefined;
       
-      if (notebookUri) {
-        const metadata = notebookUri.metadata;
-        const datasourceName = metadata?.datasource as string | undefined;
-        const databaseName = metadata?.database as string | undefined;
-        
-        // 如果有 metadata，创建临时的连接和数据库对象用于补全
-        if (datasourceName && databaseName) {
-          currentConnection = { label: datasourceName, name: datasourceName };
-          currentDatabase = { label: databaseName };
-        }
+      // 如果有 metadata，创建临时的连接和数据库对象用于补全
+      if (datasourceName && databaseName) {
+        currentConnection = { label: datasourceName, name: datasourceName };
+        currentDatabase = { label: databaseName };
       }
-    } else {
-      // 普通 SQL 文件，使用 editor
-      if (!this.editor) {
-        return [];
+    }
+
+    // 如果 Notebook metadata 中没有，尝试使用 databaseManager 中的当前选择
+    if (!currentConnection && this._databaseManager) {
+      const conn = this._databaseManager.getCurrentConnection();
+      const db = this._databaseManager.getCurrentDatabase();
+      if (conn && db) {
+        currentConnection = { label: conn.label?.toString() || '', name: conn.label?.toString() || '' };
+        currentDatabase = { label: db.label?.toString() || '' };
       }
-      currentConnection = this.editor.getCurrentConnection();
-      currentDatabase = this.editor.getCurrentDatabase();
     }
 
     if (!currentConnection) {
@@ -205,8 +211,20 @@ export class CaCompletionItemProvider implements vscode.CompletionItemProvider {
     }
 
     try {
+      if (!this.provider) {
+        return [];
+      }
       // 获取连接下的对象（包含 datasourceType, userType, fileType）
-      const objects = await connection.expand(this.editor!.provider.context);
+      // connection 可能是 Datasource 对象或普通对象
+      const connectionLabel = (connection as any).label?.toString() || (connection as any).name || '';
+      const connectionObj = this.provider.model.find(
+        ds => ds.name === connectionLabel
+      );
+      if (!connectionObj) {
+        return [];
+      }
+      const connectionDatasource = new Datasource(connectionObj);
+      const objects = await connectionDatasource.expand(this.provider.context);
 
       // 找到 datasourceType 节点
       const datasourceTypeNode = objects.find(
@@ -218,7 +236,7 @@ export class CaCompletionItemProvider implements vscode.CompletionItemProvider {
 
       // 展开获取所有数据库
       const databases = await datasourceTypeNode.expand(
-        this.editor!.provider.context
+        this.provider.context
       );
       const completions = databases.map((db) => {
         const item = new vscode.CompletionItem(
@@ -266,8 +284,42 @@ export class CaCompletionItemProvider implements vscode.CompletionItemProvider {
     }
 
     try {
+      if (!this.provider) {
+        return [];
+      }
+      // 需要找到实际的数据库对象
+      // 这里简化处理，假设 database 是一个包含 label 的对象
+      const databaseName = database.label?.toString() || '';
+      if (!databaseName) {
+        return [];
+      }
+
+      // 从 provider 中查找数据库
+      let databaseObj: Datasource | null = null;
+      for (const connData of this.provider.model) {
+        const conn = new Datasource(connData);
+        const objects = await conn.expand(this.provider.context);
+        const datasourceTypeNode = objects.find(
+          (obj) => obj.type === "datasourceType"
+        );
+        if (datasourceTypeNode) {
+          const databases = await datasourceTypeNode.expand(this.provider.context);
+          const found = databases.find(
+            (db) => db.label?.toString() === databaseName
+          );
+          if (found) {
+            databaseObj = found;
+            break;
+          }
+        }
+      }
+
+      if (!databaseObj) {
+        return [];
+      }
+
       // 获取数据库节点下的对象（collectionType, userType 等）
-      const objects = await database.expand(this.editor!.provider.context);
+      const objects = await databaseObj.expand(this.provider.context);
       const tableTypeNode = objects.find(
         (obj) => obj.type === "collectionType"
       );
@@ -277,7 +329,7 @@ export class CaCompletionItemProvider implements vscode.CompletionItemProvider {
       }
 
       // 获取所有表
-      const tables = await tableTypeNode.expand(this.editor!.provider.context);
+      const tables = await tableTypeNode.expand(this.provider.context);
       const completions = tables.map((table) => {
         const item = new vscode.CompletionItem(
           table.label?.toString() || "",
@@ -292,7 +344,7 @@ export class CaCompletionItemProvider implements vscode.CompletionItemProvider {
         docs.push(`**${table.label}**`);
         docs.push('');
         docs.push('📋 类型: 数据表');
-        docs.push(`🗄️ 数据库: ${database.label}`);
+        docs.push(`🗄️ 数据库: ${databaseName}`);
         if (tableInfo) {
           docs.push(`ℹ️ 信息: ${tableInfo}`);
         }
@@ -322,6 +374,9 @@ export class CaCompletionItemProvider implements vscode.CompletionItemProvider {
     }
 
     try {
+      if (!this.provider) {
+        return [];
+      }
       // 查找表节点
       const table = await this.findTable(database, tableName);
       if (!table) {
@@ -329,7 +384,7 @@ export class CaCompletionItemProvider implements vscode.CompletionItemProvider {
       }
 
       // 获取表的对象（字段、索引等）
-      const objects = await table.expand(this.editor!.provider.context);
+      const objects = await table.expand(this.provider.context);
       const fieldTypeNode = objects.find((obj) => obj.type === "fieldType");
 
       if (!fieldTypeNode) {
@@ -337,7 +392,7 @@ export class CaCompletionItemProvider implements vscode.CompletionItemProvider {
       }
 
       // 获取所有字段
-      const fields = await fieldTypeNode.expand(this.editor!.provider.context);
+      const fields = await fieldTypeNode.expand(this.provider.context);
       const completions = fields.map((field) => {
         const item = new vscode.CompletionItem(
           field.label?.toString() || "",
@@ -377,8 +432,40 @@ export class CaCompletionItemProvider implements vscode.CompletionItemProvider {
     database: Datasource
   ): Promise<vscode.CompletionItem[]> {
     try {
+      if (!this.provider) {
+        return [];
+      }
       // 获取所有表
-      const objects = await database.expand(this.editor!.provider.context);
+      const databaseName = database.label?.toString() || '';
+      if (!databaseName) {
+        return [];
+      }
+
+      // 从 provider 中查找数据库
+      let databaseObj: Datasource | null = null;
+      for (const connData of this.provider.model) {
+        const conn = new Datasource(connData);
+        const objects = await conn.expand(this.provider.context);
+        const datasourceTypeNode = objects.find(
+          (obj) => obj.type === "datasourceType"
+        );
+        if (datasourceTypeNode) {
+          const databases = await datasourceTypeNode.expand(this.provider.context);
+          const found = databases.find(
+            (db) => db.label?.toString() === databaseName
+          );
+          if (found) {
+            databaseObj = found;
+            break;
+          }
+        }
+      }
+
+      if (!databaseObj) {
+        return [];
+      }
+
+      const objects = await databaseObj.expand(this.provider.context);
       const tableTypeNode = objects.find(
         (obj) => obj.type === "collectionType"
       );
@@ -387,7 +474,7 @@ export class CaCompletionItemProvider implements vscode.CompletionItemProvider {
         return [];
       }
 
-      const tables = await tableTypeNode.expand(this.editor!.provider.context);
+      const tables = await tableTypeNode.expand(this.provider.context);
       const allCompletions: vscode.CompletionItem[] = [];
 
       // 获取每个表的字段（限制数量避免太慢）
@@ -414,7 +501,39 @@ export class CaCompletionItemProvider implements vscode.CompletionItemProvider {
     tableName: string
   ): Promise<Datasource | null> {
     try {
-      const objects = await database.expand(this.editor!.provider.context);
+      if (!this.provider) {
+        return null;
+      }
+      const databaseName = database.label?.toString() || '';
+      if (!databaseName) {
+        return null;
+      }
+
+      // 从 provider 中查找数据库
+      let databaseObj: Datasource | null = null;
+      for (const connData of this.provider.model) {
+        const conn = new Datasource(connData);
+        const objects = await conn.expand(this.provider.context);
+        const datasourceTypeNode = objects.find(
+          (obj) => obj.type === "datasourceType"
+        );
+        if (datasourceTypeNode) {
+          const databases = await datasourceTypeNode.expand(this.provider.context);
+          const found = databases.find(
+            (db) => db.label?.toString() === databaseName
+          );
+          if (found) {
+            databaseObj = found;
+            break;
+          }
+        }
+      }
+
+      if (!databaseObj) {
+        return null;
+      }
+
+      const objects = await databaseObj.expand(this.provider.context);
       const tableTypeNode = objects.find(
         (obj) => obj.type === "collectionType"
       );
@@ -423,7 +542,7 @@ export class CaCompletionItemProvider implements vscode.CompletionItemProvider {
         return null;
       }
 
-      const tables = await tableTypeNode.expand(this.editor!.provider.context);
+      const tables = await tableTypeNode.expand(this.provider.context);
       return (
         tables.find(
           (table) =>
