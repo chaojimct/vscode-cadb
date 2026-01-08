@@ -117,16 +117,15 @@
         "title": "删除"
       }
     ],
-    "customEditors": [
+    "notebooks": [
       {
-        "viewType": "cadb.sqlNotebook",
+        "type": "cadb.sqlNotebook",
         "displayName": "SQL Notebook",
         "selector": [
           {
             "filenamePattern": "*.jsql"
           }
-        ],
-        "priority": "default"
+        ]
       }
     ],
     "menus": {

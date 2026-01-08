@@ -11,7 +11,8 @@ import {
   registerResultCommands,
   registerBookCommands,
 } from "./provider/component/commands";
-import { SqlNotebookProvider } from "./provider/component/sql_notebook_provider";
+import { SqlNotebookSerializer } from "./provider/component/sql_notebook_serializer";
+import { SqlNotebookController } from "./provider/component/sql_notebook_controller";
 import { SQLCodeLensProvider } from "./provider/sql_provider";
 import { CaEditor } from "./provider/component/editor";
 import { ResultWebviewProvider } from "./provider/result_provider";
@@ -158,9 +159,21 @@ export function activate(context: vscode.ExtensionContext) {
   const bookCommand = registerBookCommands(provider, editor);
   context.subscriptions.push(bookCommand);
 
-  // SQL Notebook 自定义编辑器（用于打开 .jsql 文件）
-  const notebookProvider = SqlNotebookProvider.register(context, provider);
-  context.subscriptions.push(notebookProvider);
+  // SQL Notebook API（用于打开 .jsql 文件）
+  const notebookSerializer = new SqlNotebookSerializer();
+  context.subscriptions.push(
+    vscode.workspace.registerNotebookSerializer('cadb.sqlNotebook', notebookSerializer)
+  );
+
+  // SQL Notebook 控制器（执行 SQL 代码单元格）
+  const notebookController = new SqlNotebookController(
+    'cadb.sql-notebook-controller',
+    'cadb.sqlNotebook',
+    'SQL Notebook',
+    provider,
+    context
+  );
+  context.subscriptions.push(notebookController);
 
   // SQL 自动补全
   const completionProvider = new CaCompletionItemProvider();
