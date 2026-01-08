@@ -1,23 +1,46 @@
 // Notebook 渲染器脚本
 // 用于渲染 SQL 查询结果和错误信息
 
+// 检查并获取 API
 (function () {
+  'use strict';
+
+  // 等待 API 可用
+  if (typeof acquireNotebookRendererApi !== 'function') {
+    console.error('[SQL Notebook Renderer] acquireNotebookRendererApi is not available');
+    return;
+  }
+
   const notebookApi = acquireNotebookRendererApi('cadb.sql-notebook-renderer');
+
+  if (!notebookApi) {
+    console.error('[SQL Notebook Renderer] Failed to acquire notebook renderer API');
+    return;
+  }
+
+  console.log('[SQL Notebook Renderer] Renderer initialized successfully');
 
   notebookApi.onDidCreateOutputItem(({ item, element }) => {
     try {
+      console.log('[SQL Notebook Renderer] Rendering output item, mime:', item.mime);
+      
       // 解析数据
       let data;
       const decoder = new TextDecoder();
-      const text = decoder.decode(item.data());
+      const bytes = item.data();
+      const text = decoder.decode(bytes);
+      
+      console.log('[SQL Notebook Renderer] Raw data:', text);
       
       try {
         data = JSON.parse(text);
       } catch (e) {
-        console.error('Failed to parse output data:', e);
-        element.textContent = '无法解析输出数据';
+        console.error('[SQL Notebook Renderer] Failed to parse JSON:', e);
+        element.textContent = '无法解析输出数据: ' + e.message;
         return;
       }
+
+      console.log('[SQL Notebook Renderer] Parsed data:', data);
 
       // 创建容器
       const container = document.createElement('div');
@@ -122,9 +145,14 @@
       }
 
       element.appendChild(container);
+      console.log('[SQL Notebook Renderer] Rendering completed');
     } catch (error) {
-      console.error('Error rendering notebook output:', error);
+      console.error('[SQL Notebook Renderer] Error rendering notebook output:', error);
       element.textContent = `渲染错误: ${error.message}`;
+      element.style.color = 'var(--vscode-errorForeground)';
+      element.style.padding = '8px';
     }
   });
+
+  console.log('[SQL Notebook Renderer] Event listener registered');
 })();

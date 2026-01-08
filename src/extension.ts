@@ -255,9 +255,9 @@ export function activate(context: vscode.ExtensionContext) {
         }
 
         // 3. 选择数据库
-        const databaseItems = databases.map((db: any) => ({
-          label: db.database || db.name || String(db),
-          description: db.extra || db.description || '',
+        const databaseItems = databases.map((db: Datasource) => ({
+          label: db.data.name || db.label?.toString() || 'Unknown',
+          description: (db.data.extra || db.description)?.toString() || '',
         }));
 
         const selectedDatabase = await vscode.window.showQuickPick(databaseItems, {
@@ -273,7 +273,7 @@ export function activate(context: vscode.ExtensionContext) {
         const newMetadata = {
           ...targetNotebook.metadata,
           datasource: selectedDatasource.label,
-          database: selectedDatabase.label,  // QuickPick 返回的对象本身就是 string 或有 label 属性
+          database: selectedDatabase.label,  // selectedDatabase 是 QuickPickItem，有 label 属性
         };
         
         console.log('[Extension] 更新 Notebook metadata:', newMetadata);
