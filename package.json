@@ -215,12 +215,7 @@
           "command": "cadb.datasource.copyFullConnection"
         }
       ],
-      "datasource/context": [
-        {
-          "id": "cadb.datasource.copyConnectionSubmenu",
-          "label": "复制连接地址"
-        }
-      ]
+      "datasource/context": []
     },
     "submenus": [
       {
