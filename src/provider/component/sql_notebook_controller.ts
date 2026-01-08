@@ -17,7 +17,6 @@ export class SqlNotebookController {
   private readonly _databaseManager: DatabaseManager;
   private readonly _connectionCache = new Map<string, ConnectionCache>();
   private readonly _connectionTimeout = 5 * 60 * 1000; // 5 分钟超时
-  private _statusBarItem?: vscode.StatusBarItem;
 
   constructor(
     id: string,
@@ -44,76 +43,15 @@ export class SqlNotebookController {
     // 初始化描述
     this._updateDescription();
     
-    // 创建状态栏项用于显示数据库状态（仅在 Notebook 打开时显示）
-    this._statusBarItem = vscode.window.createStatusBarItem(
-      vscode.StatusBarAlignment.Right,
-      99
-    );
-    this._statusBarItem.command = 'cadb.notebook.showDatabaseStatus';
-    
     // 监听数据库选择变化
-    this._databaseManager.setOnDatabaseChangedCallback(() => {
+    this._databaseManager.onDidChangeDatabase(() => {
       this._updateDescription();
-      this._updateStatusBar();
     });
-    
-    // 监听 Notebook 编辑器变化，更新状态栏显示
-    vscode.window.onDidChangeActiveNotebookEditor(() => {
-      this._updateStatusBar();
-    });
-    
-    // 初始化状态栏
-    this._updateStatusBar();
     
     // 定期清理过期的连接
     setInterval(() => {
       this._cleanupConnections();
     }, 60000); // 每分钟检查一次
-  }
-
-  /**
-   * 更新状态栏显示
-   */
-  private _updateStatusBar(): void {
-    if (!this._statusBarItem) {
-      return;
-    }
-
-    const activeNotebookEditor = vscode.window.activeNotebookEditor;
-    const isSqlNotebook = activeNotebookEditor && 
-      activeNotebookEditor.notebook.notebookType === "cadb.sqlNotebook";
-
-    if (!isSqlNotebook) {
-      this._statusBarItem.hide();
-      return;
-    }
-
-    const currentConnection = this._databaseManager.getCurrentConnection();
-    const currentDatabase = this._databaseManager.getCurrentDatabase();
-
-    const connectionLabel = currentConnection?.label?.toString() || '';
-    const databaseLabel = currentDatabase?.label?.toString() || '';
-
-    if (currentConnection && currentDatabase) {
-      this._statusBarItem.text = `$(database) ${connectionLabel} / ${databaseLabel}`;
-      this._statusBarItem.tooltip = '点击查看数据库状态';
-      this._statusBarItem.backgroundColor = undefined;
-      this._statusBarItem.show();
-    } else if (currentConnection) {
-      this._statusBarItem.text = `$(database) ${connectionLabel} $(warning)`;
-      this._statusBarItem.tooltip = '已选择连接，但未选择数据库。点击选择数据库';
-      this._statusBarItem.backgroundColor = new vscode.ThemeColor(
-        "statusBarItem.warningBackground"
-      );
-      this._statusBarItem.show();
-    } else {
-      this._statusBarItem.text = `$(database) 未选择数据库`;
-      this._statusBarItem.tooltip = '点击选择数据库连接';
-      this._statusBarItem.backgroundColor = new vscode.ThemeColor(
-        "statusBarItem.errorBackground"
-      );
-      this._statusBarItem.show();
-    }
   }
 
   /**
@@ -125,14 +63,6 @@ export class SqlNotebookController {
 
     const connectionLabel = currentConnection?.label?.toString() || '';
     const databaseLabel = currentDatabase?.label?.toString() || '';
-
-    console.log('[SqlNotebookController] 更新描述:', {
-      connection: connectionLabel,
-      database: databaseLabel,
-      hasConnection: !!currentConnection,
-      hasDatabase: !!currentDatabase,
-      controllerId: this._controller.id
-    });
 
     // 在 VSCode Notebook API 中，description 和 detail 应该是可更新的
     // 但如果 UI 没有更新，可能需要重新创建控制器或使用其他方式
@@ -180,6 +110,106 @@ export class SqlNotebookController {
       }
       await this._doExecuteCell(cell);
     }
+  }
+
+  private async _doExecuteCell(cell: vscode.NotebookCell): Promise<void> {
+    const currentConnection = this._databaseManager.getCurrentConnection();
+    const currentDatabase = this._databaseManager.getCurrentDatabase();
+
+    if (!currentConnection || !currentDatabase) {
+      // 如果没有选择数据库，提示用户选择
+      const choice = await vscode.window.showWarningMessage(
+        '没有选择数据库连接，请先选择数据库连接',
+        { modal: true },
+        '选择数据库', '取消'
+      );
+
+      if (choice === '选择数据库') {
+        await this._databaseManager.selectDatabase();
+        
+        // 再次检查是否选择了数据库
+        const newConnection = this._databaseManager.getCurrentConnection();
+        const newDatabase = this._databaseManager.getCurrentDatabase();
+        
+        if (!newConnection || !newDatabase) {
+          vscode.window.showErrorMessage('未选择数据库连接，无法执行SQL');
+          return;
+        }
+      } else {
+        return; // 用户取消执行
+      }
+    }
+
+    const execution = this._controller.createNotebookCellExecution(cell);
+    const startTime = Date.now();
+    try {
+      execution.start(startTime);
+
+      const datasourceName = currentConnection!.label?.toString() || '';
+      const databaseName = currentDatabase!.label?.toString() || '';
+
+      const connection = await this._getConnection(datasourceName, databaseName);
+      const sql = cell.document.getText().trim();
+
+      if (!sql) {
+        return;
+      }
+
+      const result = await new Promise<any>((resolve, reject) => {
+        connection.query(sql, (err: any, results: any) => {
+          if (err) {
+            reject(err);
+          } else {
+            resolve(results);
+          }
+        });
+      });
+      const executionTime = Date.now() - startTime;
+
+      // 处理结果
+      if (Array.isArray(result)) {
+        // SELECT 查询结果
+        const outputItems: vscode.NotebookCellOutputItem[] = [
+          vscode.NotebookCellOutputItem.json(result, 'application/json')
+        ];
+        const output = new vscode.NotebookCellOutput(outputItems);
+        await execution.replaceOutput([output]);
+      } else {
+        // 其他操作结果
+        const affectedRows = (result as any)?.affectedRows || 0;
+        const message = `执行成功，影响 ${affectedRows} 行 (${executionTime}ms)`;
+        const outputItems: vscode.NotebookCellOutputItem[] = [
+          vscode.NotebookCellOutputItem.text(message)
+        ];
+        const output = new vscode.NotebookCellOutput(outputItems);
+        await execution.replaceOutput([output]);
+      }
+    } catch (error: any) {
+      const outputItems: vscode.NotebookCellOutputItem[] = [
+        vscode.NotebookCellOutputItem.error(error)
+      ];
+      const output = new vscode.NotebookCellOutput(outputItems);
+      await execution.replaceOutput([output]);
+    } finally {
+      execution.end(true, Date.now());
+    }
+  }
+
+  /**
+   * 销毁控制器
+   */
+  public dispose(): void {
+    this._controller.dispose();
+    this._connectionCache.forEach((cache) => {
+      if (cache.connection && typeof cache.connection.end === 'function') {
+        try {
+          cache.connection.end();
+        } catch (error) {
+          console.error('关闭连接失败:', error);
+        }
+      }
+    });
+    this._connectionCache.clear();
   }
 
   /**
@@ -249,225 +279,18 @@ export class SqlNotebookController {
    */
   private _cleanupConnections(): void {
     const now = Date.now();
-    const expiredKeys: string[] = [];
-
-    for (const [key, cached] of this._connectionCache.entries()) {
-      if (now - cached.lastUsed >= this._connectionTimeout) {
-        expiredKeys.push(key);
-        // 尝试关闭连接
-        try {
-          if (cached.connection && typeof cached.connection.end === 'function') {
-            cached.connection.end();
+    for (const [key, cache] of this._connectionCache.entries()) {
+      if (now - cache.lastUsed > this._connectionTimeout) {
+        // 关闭连接
+        if (cache.connection && typeof cache.connection.end === 'function') {
+          try {
+            cache.connection.end();
+          } catch (error) {
+            console.error(`关闭连接失败 ${key}:`, error);
           }
-        } catch (error) {
-          console.error(`[Notebook Controller] 关闭连接失败:`, error);
         }
+        this._connectionCache.delete(key);
       }
     }
-
-    // 从缓存中删除过期项
-    expiredKeys.forEach((key) => this._connectionCache.delete(key));
-
-    if (expiredKeys.length > 0) {
-      console.log(`[Notebook Controller] 清理了 ${expiredKeys.length} 个过期连接`);
-    }
-  }
-
-  private async _doExecuteCell(cell: vscode.NotebookCell): Promise<void> {
-    const execution = this._controller.createNotebookCellExecution(cell);
-    execution.start(Date.now());
-
-    try {
-      const sql = cell.document.getText().trim();
-      // 空 cell 直接成功返回
-      if (!sql) {
-        execution.end(true, Date.now());
-        return;
-      }
-
-      // 从 databaseManager 获取当前选择的连接和数据库
-      const currentConnection = this._databaseManager.getCurrentConnection();
-      const currentDatabase = this._databaseManager.getCurrentDatabase();
-
-      if (!currentConnection || !currentDatabase) {
-        execution.replaceOutput([
-          new vscode.NotebookCellOutput([
-            vscode.NotebookCellOutputItem.json(
-              {
-                type: 'query-error',
-                error: '请先在状态栏选择数据库连接',
-              },
-              'application/x.sql-error'
-            ),
-            // 添加 text/plain 格式作为后备
-            vscode.NotebookCellOutputItem.text(
-              `错误: 请先在状态栏选择数据库连接`,
-              'text/plain'
-            ),
-          ]),
-        ]);
-        execution.end(false, Date.now());
-        return;
-      }
-
-      const datasourceName = currentConnection.label?.toString() || '';
-      const databaseName = currentDatabase.label?.toString() || '';
-
-      console.log('[Notebook Controller] 执行 SQL:', { datasourceName, databaseName, sql });
-
-      // 获取或创建连接（使用缓存）
-      const connection = await this._getConnection(datasourceName, databaseName);
-
-      // 执行 SQL
-      const startTime = Date.now();
-      const result = await new Promise<any>((resolve, reject) => {
-        connection.query(sql, (err: any, results: any, fields: any) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve({ results, fields });
-          }
-        });
-      });
-
-      const executionTime = (Date.now() - startTime) / 1000;
-
-      // 处理结果
-      const { results, fields } = result;
-
-      // 判断是查询结果还是非查询语句
-      if (Array.isArray(results)) {
-        // SELECT 查询语句
-        const columns = (fields || []).map((field: any) => ({
-          name: field.name,
-          type: field.type,
-        }));
-
-        const data = results.map((row: any) => {
-          const rowData: any = {};
-          for (const field of fields || []) {
-            rowData[field.name] = row[field.name];
-          }
-          return rowData;
-        });
-
-        // 同时提供 JSON 和文本格式，确保兼容性
-        execution.replaceOutput([
-          new vscode.NotebookCellOutput([
-            vscode.NotebookCellOutputItem.json(
-              {
-                type: 'query-result',
-                columns,
-                data,
-                rowCount: results.length,
-                executionTime,
-              },
-              'application/x.sql-result'
-            ),
-            // 添加 text/plain 格式作为后备
-            vscode.NotebookCellOutputItem.text(
-              JSON.stringify({
-                type: 'query-result',
-                columns,
-                data,
-                rowCount: results.length,
-                executionTime,
-              }, null, 2),
-              'text/plain'
-            ),
-          ]),
-        ]);
-      } else if (results && typeof results === 'object') {
-        // 非查询语句（INSERT, UPDATE, DELETE 等）
-        const affectedRows = (results as any)?.affectedRows || 0;
-        const insertId = (results as any)?.insertId;
-        
-        execution.replaceOutput([
-          new vscode.NotebookCellOutput([
-            vscode.NotebookCellOutputItem.json(
-              {
-                type: 'query-result',
-                columns: [],
-                data: [],
-                rowCount: affectedRows,
-                executionTime,
-                message: affectedRows > 0 
-                  ? `执行成功，影响 ${affectedRows} 行${insertId ? `，插入 ID: ${insertId}` : ''}`
-                  : '执行成功',
-              },
-              'application/x.sql-result'
-            ),
-            // 添加 text/plain 格式作为后备
-            vscode.NotebookCellOutputItem.text(
-              affectedRows > 0 
-                ? `执行成功，影响 ${affectedRows} 行${insertId ? `，插入 ID: ${insertId}` : ''} (${executionTime.toFixed(3)}s)`
-                : `执行成功 (${executionTime.toFixed(3)}s)`,
-              'text/plain'
-            ),
-          ]),
-        ]);
-      } else {
-        // 其他类型的结果
-        execution.replaceOutput([
-          new vscode.NotebookCellOutput([
-            vscode.NotebookCellOutputItem.json(
-              {
-                type: 'query-result',
-                columns: [],
-                data: [],
-                rowCount: 0,
-                executionTime,
-                message: '执行成功',
-              },
-              'application/x.sql-result'
-            ),
-            // 添加 text/plain 格式作为后备
-            vscode.NotebookCellOutputItem.text(
-              `执行成功 (${executionTime.toFixed(3)}s)`,
-              'text/plain'
-            ),
-          ]),
-        ]);
-      }
-
-      execution.end(true, Date.now());
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error('[Notebook Controller] 执行出错:', errorMessage);
-
-      execution.replaceOutput([
-        new vscode.NotebookCellOutput([
-          vscode.NotebookCellOutputItem.json(
-            {
-              type: 'query-error',
-              error: errorMessage,
-            },
-            'application/x.sql-error'
-          ),
-          // 添加 text/plain 格式作为后备
-          vscode.NotebookCellOutputItem.text(
-            `错误: ${errorMessage}`,
-            'text/plain'
-          ),
-        ]),
-      ]);
-      execution.end(false, Date.now());
-    }
-  }
-
-  dispose(): void {
-    // 清理所有缓存的连接
-    for (const [_key, cached] of this._connectionCache.entries()) {
-      try {
-        if (cached.connection && typeof cached.connection.end === 'function') {
-          cached.connection.end();
-        }
-      } catch (error) {
-        console.error(`[Notebook Controller] 关闭连接失败:`, error);
-      }
-    }
-    this._connectionCache.clear();
-    this._statusBarItem?.dispose();
-    this._controller.dispose();
   }
 }

@@ -17,6 +17,7 @@ import { ResultWebviewProvider } from "./provider/result_provider";
 import { CaCompletionItemProvider } from "./provider/completion_item_provider";
 import { SqlCodeLensProvider } from "./provider/component/sql_codelens_provider";
 import { SqlExecutor } from "./provider/component/sql_executor";
+import { DatabaseStatusBar } from "./provider/component/database_status_bar";
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -126,8 +127,20 @@ export function activate(context: vscode.ExtensionContext) {
   // 数据库管理器（替代 CaEditor，只保留数据库选择功能）
   const databaseManager = new DatabaseManager(provider);
   provider.setDatabaseManager(databaseManager);
+  
+  // 创建数据库状态栏管理器
+  const databaseStatusBar = new DatabaseStatusBar(databaseManager);
+  context.subscriptions.push(databaseStatusBar);
+
   const databaseSelector = registerDatabaseCommands(databaseManager);
   context.subscriptions.push(databaseSelector); // 注册数据库选择器
+
+  // 注册选择数据库命令
+  context.subscriptions.push(
+    vscode.commands.registerCommand('cadb.selectDatabase', async () => {
+      await databaseManager.selectDatabase();
+    })
+  );
 
   // 数据项命令
   registerDatasourceItemCommands(provider, outputChannel, databaseManager);
@@ -251,6 +264,34 @@ export function activate(context: vscode.ExtensionContext) {
         const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(uri));
         const sql = document.getText(range).trim();
         if (sql) {
+          // 检查是否选择了数据库
+          const currentConnection = databaseManager.getCurrentConnection();
+          const currentDatabase = databaseManager.getCurrentDatabase();
+
+          if (!currentConnection || !currentDatabase) {
+            // 如果没有选择数据库，提示用户选择
+            const choice = await vscode.window.showWarningMessage(
+              '没有选择数据库连接，请先选择数据库连接',
+              { modal: true },
+              '选择数据库', '取消'
+            );
+
+            if (choice === '选择数据库') {
+              await databaseManager.selectDatabase();
+              
+              // 再次检查是否选择了数据库
+              const newConnection = databaseManager.getCurrentConnection();
+              const newDatabase = databaseManager.getCurrentDatabase();
+              
+              if (!newConnection || !newDatabase) {
+                vscode.window.showErrorMessage('未选择数据库连接，无法执行SQL');
+                return;
+              }
+            } else {
+              return; // 用户取消执行
+            }
+          }
+
           await sqlExecutor.executeSql(sql, document);
           // 刷新 CodeLens
           sqlCodeLensProvider.refresh();
@@ -267,6 +308,34 @@ export function activate(context: vscode.ExtensionContext) {
         const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(uri));
         const sql = document.getText(range).trim();
         if (sql) {
+          // 检查是否选择了数据库
+          const currentConnection = databaseManager.getCurrentConnection();
+          const currentDatabase = databaseManager.getCurrentDatabase();
+
+          if (!currentConnection || !currentDatabase) {
+            // 如果没有选择数据库，提示用户选择
+            const choice = await vscode.window.showWarningMessage(
+              '没有选择数据库连接，请先选择数据库连接',
+              { modal: true },
+              '选择数据库', '取消'
+            );
+
+            if (choice === '选择数据库') {
+              await databaseManager.selectDatabase();
+              
+              // 再次检查是否选择了数据库
+              const newConnection = databaseManager.getCurrentConnection();
+              const newDatabase = databaseManager.getCurrentDatabase();
+              
+              if (!newConnection || !newDatabase) {
+                vscode.window.showErrorMessage('未选择数据库连接，无法执行SQL');
+                return;
+              }
+            } else {
+              return; // 用户取消执行
+            }
+          }
+
           await sqlExecutor.explainSql(sql, document);
           // 刷新 CodeLens
           sqlCodeLensProvider.refresh();

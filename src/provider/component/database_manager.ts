@@ -10,26 +10,20 @@ export class DatabaseManager {
   private currentDatabase: Datasource | null = null;
   private currentConnection: Datasource | null = null;
   public provider: DataSourceProvider;
-  private onDatabaseChangedCallback?: () => void;
+  
+  private _onDidChangeDatabase = new vscode.EventEmitter<void>();
+  public readonly onDidChangeDatabase = this._onDidChangeDatabase.event;
 
   constructor(provider: DataSourceProvider) {
     this.provider = provider;
   }
 
   /**
-   * 设置数据库变化回调
-   */
-  public setOnDatabaseChangedCallback(callback: () => void): void {
-    this.onDatabaseChangedCallback = callback;
-  }
-
-  /**
    * 通知数据库选择已变化
    */
   private notifyDatabaseChanged(): void {
-    if (this.onDatabaseChangedCallback) {
-      this.onDatabaseChangedCallback();
-    }
+    console.log('[DatabaseManager] notifyDatabaseChanged triggered');
+    this._onDidChangeDatabase.fire();
   }
 
   /**
@@ -46,6 +40,7 @@ export class DatabaseManager {
 
       // 保存连接并立即更新状态栏
       this.currentConnection = selectedConnection;
+      this.currentDatabase = null; // 切换连接时重置数据库
       this.notifyDatabaseChanged();
 
       // 步骤 2: 选择数据库
@@ -188,11 +183,16 @@ export class DatabaseManager {
    */
   public setCurrentDatabase(database: Datasource): void {
     // 查找数据库的连接节点
-    // 结构: datasource -> datasourceType -> collection
+    // 结构可能为: datasource -> datasourceType -> collection
     let connectionNode: Datasource | undefined = undefined;
     
-    if (database.type === 'collection' && database.parent?.type === 'datasource') {
-      connectionNode = database.parent;
+    let current = database.parent;
+    while (current) {
+      if (current.type === 'datasource') {
+        connectionNode = current;
+        break;
+      }
+      current = current.parent;
     }
     
     if (!connectionNode) {
