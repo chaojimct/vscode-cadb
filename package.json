@@ -125,7 +125,14 @@
           {
             "filenamePattern": "*.jsql"
           }
-        ]
+        ],
+        "priority": "default"
+      }
+    ],
+    "fileAssociations": [
+      {
+        "pattern": "*.jsql",
+        "scheme": "file"
       }
     ],
     "notebookRenderer": [
