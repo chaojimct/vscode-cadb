@@ -43,19 +43,35 @@ export class SqlNotebookController {
     this._controller.supportsExecutionOrder = true;
     this._controller.executeHandler = this._execute.bind(this);
     
+    // 初始化时更新所有已打开的 notebook 的描述
+    vscode.workspace.notebookDocuments.forEach((notebook) => {
+      if (notebook.notebookType === 'cadb.sqlNotebook') {
+        this._updateControllerDescription(notebook);
+      }
+    });
+    
     // 监听 notebook 打开事件，更新控制器描述
-    vscode.workspace.onDidOpenNotebookDocument((notebook) => {
+    const openDisposable = vscode.workspace.onDidOpenNotebookDocument((notebook) => {
       if (notebook.notebookType === 'cadb.sqlNotebook') {
         this._updateControllerDescription(notebook);
       }
     });
 
     // 监听 notebook 变化事件，更新控制器描述
-    vscode.workspace.onDidChangeNotebookDocument((e) => {
+    const changeDisposable = vscode.workspace.onDidChangeNotebookDocument((e) => {
       if (e.notebook.notebookType === 'cadb.sqlNotebook') {
-        this._updateControllerDescription(e.notebook);
+        // 检查是否是 metadata 变化
+        if (e.metadata) {
+          // 延迟一下，确保 metadata 已经更新
+          setTimeout(() => {
+            this._updateControllerDescription(e.notebook);
+          }, 100);
+        }
       }
     });
+    
+    // 存储 disposables 以便在 dispose 时清理
+    this._context.subscriptions.push(openDisposable, changeDisposable);
     
     // 定期清理过期的连接
     setInterval(() => this._cleanupConnections(), 60000); // 每分钟清理一次

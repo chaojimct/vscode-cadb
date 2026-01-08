@@ -11,7 +11,21 @@
       return;
     }
 
-    const data = JSON.parse(new TextDecoder().decode(outputItem.data));
+    let data;
+    try {
+      // 处理 Uint8Array 或字符串
+      if (outputItem.data instanceof Uint8Array) {
+        data = JSON.parse(new TextDecoder().decode(outputItem.data));
+      } else if (typeof outputItem.data === 'string') {
+        data = JSON.parse(outputItem.data);
+      } else {
+        data = outputItem.data;
+      }
+    } catch (e) {
+      console.error('Failed to parse output data:', e);
+      return;
+    }
+
     const container = document.createElement('div');
     container.className = 'sql-notebook-output';
 
@@ -42,7 +56,7 @@
         headerRow.style.backgroundColor = 'var(--vscode-editor-background)';
         headerRow.style.borderBottom = '2px solid var(--vscode-panel-border)';
         
-        data.columns.forEach((col: any) => {
+        data.columns.forEach((col) => {
           const th = document.createElement('th');
           th.textContent = col.name;
           th.style.padding = '6px 12px';
@@ -55,7 +69,7 @@
 
         // 表体
         const tbody = document.createElement('tbody');
-        data.data.forEach((row: any, index: number) => {
+        data.data.forEach((row, index) => {
           const tr = document.createElement('tr');
           tr.style.borderBottom = '1px solid var(--vscode-panel-border)';
           if (index % 2 === 0) {
@@ -64,7 +78,7 @@
             tr.style.backgroundColor = 'var(--vscode-list-inactiveSelectionBackground)';
           }
 
-          data.columns.forEach((col: any) => {
+          data.columns.forEach((col) => {
             const td = document.createElement('td');
             td.textContent = row[col.name] !== null && row[col.name] !== undefined 
               ? String(row[col.name]) 

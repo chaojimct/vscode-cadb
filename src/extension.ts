@@ -214,8 +214,16 @@ export function activate(context: vscode.ExtensionContext) {
         if (activeEditor && activeEditor.notebook.notebookType === 'cadb.sqlNotebook') {
           targetNotebook = activeEditor.notebook;
         } else {
-          vscode.window.showWarningMessage('请先打开一个 SQL Notebook 文件');
-          return;
+          // 尝试从所有打开的 notebook 中找到 SQL Notebook
+          const openNotebooks = vscode.workspace.notebookDocuments.filter(
+            nb => nb.notebookType === 'cadb.sqlNotebook'
+          );
+          if (openNotebooks.length > 0) {
+            targetNotebook = openNotebooks[0];
+          } else {
+            vscode.window.showWarningMessage('请先打开一个 SQL Notebook 文件');
+            return;
+          }
         }
       }
 
@@ -288,8 +296,10 @@ export function activate(context: vscode.ExtensionContext) {
         
         const success = await vscode.workspace.applyEdit(edit);
         if (success) {
-          // 更新控制器描述以显示当前选择的数据源
-          notebookController.updateDescription(targetNotebook);
+          // 等待一下确保 metadata 已更新，然后更新控制器描述
+          setTimeout(() => {
+            notebookController.updateDescription(targetNotebook);
+          }, 200);
           
           vscode.window.showInformationMessage(
             `已设置数据源: ${selectedDatasource.label}, 数据库: ${selectedDatabase.database}`
