@@ -125,6 +125,16 @@
         "command": "cadb.notebook.showDatabaseStatus",
         "title": "显示数据库状态",
         "icon": "$(info)"
+      },
+      {
+        "command": "cadb.sql.run",
+        "title": "执行 SQL",
+        "icon": "$(play)"
+      },
+      {
+        "command": "cadb.sql.explain",
+        "title": "解释 SQL",
+        "icon": "$(search)"
       }
     ],
     "notebooks": [
@@ -143,6 +153,22 @@
       {
         "pattern": "*.jsql",
         "scheme": "file"
+      },
+      {
+        "pattern": "*.sql",
+        "scheme": "file"
+      }
+    ],
+    "customEditors": [
+      {
+        "viewType": "cadb.sqlEditor",
+        "displayName": "SQL Editor",
+        "selector": [
+          {
+            "filenamePattern": "*.sql"
+          }
+        ],
+        "priority": "default"
       }
     ],
     "notebookRenderer": [

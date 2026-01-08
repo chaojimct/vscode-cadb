@@ -15,6 +15,9 @@ import { SqlNotebookRenderer } from "./provider/component/sql_notebook_renderer"
 import { DatabaseManager } from "./provider/component/database_manager";
 import { ResultWebviewProvider } from "./provider/result_provider";
 import { CaCompletionItemProvider } from "./provider/completion_item_provider";
+import { SqlEditorProvider } from "./provider/component/sql_editor_provider";
+import { SqlCodeLensProvider } from "./provider/component/sql_codelens_provider";
+import { SqlExecutor } from "./provider/component/sql_executor";
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -225,6 +228,64 @@ export function activate(context: vscode.ExtensionContext) {
       completionProvider,
       ".", // 触发字符：点号用于 table.column
       " " // 触发字符：空格用于关键字后
+    )
+  );
+
+  // SQL 自定义编辑器（用于 .sql 文件）
+  const sqlEditorProvider = new SqlEditorProvider();
+  context.subscriptions.push(
+    vscode.window.registerCustomEditorProvider(
+      "cadb.sqlEditor",
+      sqlEditorProvider,
+      {
+        webviewOptions: {
+          retainContextWhenHidden: true,
+        },
+        supportsMultipleEditorsPerDocument: false,
+      }
+    )
+  );
+
+  // SQL CodeLens 提供者（在 SQL 语句上方显示 Run 和 Explain）
+  const sqlCodeLensProvider = new SqlCodeLensProvider(databaseManager);
+  context.subscriptions.push(
+    vscode.languages.registerCodeLensProvider(
+      { language: "sql", scheme: "file" },
+      sqlCodeLensProvider
+    )
+  );
+
+  // SQL 执行器
+  const sqlExecutor = new SqlExecutor(provider, databaseManager, resultProvider);
+  context.subscriptions.push(sqlExecutor);
+
+  // 注册 SQL 执行命令
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "cadb.sql.run",
+      async (document: vscode.TextDocument, range: vscode.Range) => {
+        const sql = document.getText(range).trim();
+        if (sql) {
+          await sqlExecutor.executeSql(sql, document);
+          // 刷新 CodeLens
+          sqlCodeLensProvider.refresh();
+        }
+      }
+    )
+  );
+
+  // 注册 SQL Explain 命令
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "cadb.sql.explain",
+      async (document: vscode.TextDocument, range: vscode.Range) => {
+        const sql = document.getText(range).trim();
+        if (sql) {
+          await sqlExecutor.explainSql(sql, document);
+          // 刷新 CodeLens
+          sqlCodeLensProvider.refresh();
+        }
+      }
     )
   );
 }
