@@ -12,6 +12,7 @@ import {
 } from "./provider/component/commands";
 import { SqlNotebookSerializer } from "./provider/component/sql_notebook_serializer";
 import { SqlNotebookController } from "./provider/component/sql_notebook_controller";
+import { SqlNotebookRenderer } from "./provider/component/sql_notebook_renderer";
 import { SQLCodeLensProvider } from "./provider/sql_provider";
 import { CaEditor } from "./provider/component/editor";
 import { ResultWebviewProvider } from "./provider/result_provider";
@@ -168,6 +169,10 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(notebookController);
 
+  // SQL Notebook 渲染器（渲染查询结果和错误）
+  const notebookRenderer = new SqlNotebookRenderer(context);
+  context.subscriptions.push(notebookRenderer);
+
   // 注册 Notebook 相关命令
   context.subscriptions.push(
     vscode.commands.registerCommand('cadb.notebook.new', async () => {
@@ -283,6 +288,9 @@ export function activate(context: vscode.ExtensionContext) {
         
         const success = await vscode.workspace.applyEdit(edit);
         if (success) {
+          // 更新控制器描述以显示当前选择的数据源
+          notebookController.updateDescription(targetNotebook);
+          
           vscode.window.showInformationMessage(
             `已设置数据源: ${selectedDatasource.label}, 数据库: ${selectedDatabase.database}`
           );

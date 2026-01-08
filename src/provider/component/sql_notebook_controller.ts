@@ -43,8 +43,46 @@ export class SqlNotebookController {
     this._controller.supportsExecutionOrder = true;
     this._controller.executeHandler = this._execute.bind(this);
     
+    // 监听 notebook 打开事件，更新控制器描述
+    vscode.workspace.onDidOpenNotebookDocument((notebook) => {
+      if (notebook.notebookType === 'cadb.sqlNotebook') {
+        this._updateControllerDescription(notebook);
+      }
+    });
+
+    // 监听 notebook 变化事件，更新控制器描述
+    vscode.workspace.onDidChangeNotebookDocument((e) => {
+      if (e.notebook.notebookType === 'cadb.sqlNotebook') {
+        this._updateControllerDescription(e.notebook);
+      }
+    });
+    
     // 定期清理过期的连接
     setInterval(() => this._cleanupConnections(), 60000); // 每分钟清理一次
+  }
+
+  /**
+   * 更新控制器描述，显示当前选择的数据源和数据库
+   */
+  private _updateControllerDescription(notebook: vscode.NotebookDocument): void {
+    const metadata = notebook.metadata;
+    const datasourceName = metadata?.datasource as string | undefined;
+    const databaseName = metadata?.database as string | undefined;
+
+    if (datasourceName && databaseName) {
+      this._controller.description = `${datasourceName} / ${databaseName}`;
+      this._controller.detail = `数据源: ${datasourceName} | 数据库: ${databaseName}`;
+    } else {
+      this._controller.description = 'SQL Notebook';
+      this._controller.detail = '点击选择数据源和数据库';
+    }
+  }
+
+  /**
+   * 公开方法：更新控制器描述（供外部调用）
+   */
+  public updateDescription(notebook: vscode.NotebookDocument): void {
+    this._updateControllerDescription(notebook);
   }
 
   private async _execute(

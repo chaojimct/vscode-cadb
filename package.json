@@ -132,6 +132,17 @@
         ]
       }
     ],
+    "notebookRenderer": [
+      {
+        "id": "cadb.sql-notebook-renderer",
+        "displayName": "SQL Notebook Renderer",
+        "mimeTypes": [
+          "application/x.sql-result",
+          "application/x.sql-error"
+        ],
+        "entrypoint": "./resources/notebook/renderer.js"
+      }
+    ],
     "menus": {
       "view/title": [
         {
