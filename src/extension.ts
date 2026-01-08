@@ -163,6 +163,26 @@ export function activate(context: vscode.ExtensionContext) {
   const notebookRenderer = new SqlNotebookRenderer(context);
   context.subscriptions.push(notebookRenderer);
 
+  // 注册 Notebook 数据库状态显示命令（用于工具栏显示）
+  context.subscriptions.push(
+    vscode.commands.registerCommand('cadb.notebook.showDatabaseStatus', () => {
+      const connection = databaseManager.getCurrentConnection();
+      const database = databaseManager.getCurrentDatabase();
+      
+      if (connection && database) {
+        vscode.window.showInformationMessage(
+          `当前数据库: ${connection.label} / ${database.label}`
+        );
+      } else if (connection) {
+        vscode.window.showWarningMessage(
+          `已选择连接: ${connection.label}，但未选择数据库`
+        );
+      } else {
+        vscode.window.showWarningMessage('未选择数据库连接');
+      }
+    })
+  );
+
   // 注册 Notebook 相关命令
   context.subscriptions.push(
     vscode.commands.registerCommand('cadb.notebook.new', async () => {

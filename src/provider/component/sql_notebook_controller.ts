@@ -17,6 +17,7 @@ export class SqlNotebookController {
   private readonly _databaseManager: DatabaseManager;
   private readonly _connectionCache = new Map<string, ConnectionCache>();
   private readonly _connectionTimeout = 5 * 60 * 1000; // 5 分钟超时
+  private _statusBarItem?: vscode.StatusBarItem;
 
   constructor(
     id: string,
@@ -43,15 +44,76 @@ export class SqlNotebookController {
     // 初始化描述
     this._updateDescription();
     
+    // 创建状态栏项用于显示数据库状态（仅在 Notebook 打开时显示）
+    this._statusBarItem = vscode.window.createStatusBarItem(
+      vscode.StatusBarAlignment.Right,
+      99
+    );
+    this._statusBarItem.command = 'cadb.notebook.showDatabaseStatus';
+    
     // 监听数据库选择变化
     this._databaseManager.setOnDatabaseChangedCallback(() => {
       this._updateDescription();
+      this._updateStatusBar();
     });
+    
+    // 监听 Notebook 编辑器变化，更新状态栏显示
+    vscode.window.onDidChangeActiveNotebookEditor(() => {
+      this._updateStatusBar();
+    });
+    
+    // 初始化状态栏
+    this._updateStatusBar();
     
     // 定期清理过期的连接
     setInterval(() => {
       this._cleanupConnections();
     }, 60000); // 每分钟检查一次
+  }
+
+  /**
+   * 更新状态栏显示
+   */
+  private _updateStatusBar(): void {
+    if (!this._statusBarItem) {
+      return;
+    }
+
+    const activeNotebookEditor = vscode.window.activeNotebookEditor;
+    const isSqlNotebook = activeNotebookEditor && 
+      activeNotebookEditor.notebook.notebookType === "cadb.sqlNotebook";
+
+    if (!isSqlNotebook) {
+      this._statusBarItem.hide();
+      return;
+    }
+
+    const currentConnection = this._databaseManager.getCurrentConnection();
+    const currentDatabase = this._databaseManager.getCurrentDatabase();
+
+    const connectionLabel = currentConnection?.label?.toString() || '';
+    const databaseLabel = currentDatabase?.label?.toString() || '';
+
+    if (currentConnection && currentDatabase) {
+      this._statusBarItem.text = `$(database) ${connectionLabel} / ${databaseLabel}`;
+      this._statusBarItem.tooltip = '点击查看数据库状态';
+      this._statusBarItem.backgroundColor = undefined;
+      this._statusBarItem.show();
+    } else if (currentConnection) {
+      this._statusBarItem.text = `$(database) ${connectionLabel} $(warning)`;
+      this._statusBarItem.tooltip = '已选择连接，但未选择数据库。点击选择数据库';
+      this._statusBarItem.backgroundColor = new vscode.ThemeColor(
+        "statusBarItem.warningBackground"
+      );
+      this._statusBarItem.show();
+    } else {
+      this._statusBarItem.text = `$(database) 未选择数据库`;
+      this._statusBarItem.tooltip = '点击选择数据库连接';
+      this._statusBarItem.backgroundColor = new vscode.ThemeColor(
+        "statusBarItem.errorBackground"
+      );
+      this._statusBarItem.show();
+    }
   }
 
   /**
@@ -61,15 +123,39 @@ export class SqlNotebookController {
     const currentConnection = this._databaseManager.getCurrentConnection();
     const currentDatabase = this._databaseManager.getCurrentDatabase();
 
-    if (currentConnection && currentDatabase) {
-      this._controller.description = `${currentConnection.label} / ${currentDatabase.label}`;
-      this._controller.detail = `点击工具栏按钮选择数据库连接`;
-    } else if (currentConnection) {
-      this._controller.description = `${currentConnection.label}`;
-      this._controller.detail = '未选择数据库，点击工具栏按钮选择';
-    } else {
-      this._controller.description = '未选择数据库';
-      this._controller.detail = '点击工具栏按钮选择数据库连接';
+    const connectionLabel = currentConnection?.label?.toString() || '';
+    const databaseLabel = currentDatabase?.label?.toString() || '';
+
+    console.log('[SqlNotebookController] 更新描述:', {
+      connection: connectionLabel,
+      database: databaseLabel,
+      hasConnection: !!currentConnection,
+      hasDatabase: !!currentDatabase,
+      controllerId: this._controller.id
+    });
+
+    // 在 VSCode Notebook API 中，description 和 detail 应该是可更新的
+    // 但如果 UI 没有更新，可能需要重新创建控制器或使用其他方式
+    // 尝试直接更新属性
+    try {
+      if (currentConnection && currentDatabase) {
+        this._controller.description = `${connectionLabel} / ${databaseLabel}`;
+        this._controller.detail = `点击工具栏按钮选择数据库连接`;
+      } else if (currentConnection) {
+        this._controller.description = connectionLabel;
+        this._controller.detail = '未选择数据库，点击工具栏按钮选择';
+      } else {
+        this._controller.description = '未选择数据库';
+        this._controller.detail = '点击工具栏按钮选择数据库连接';
+      }
+
+      console.log('[SqlNotebookController] 更新后的值:', {
+        description: this._controller.description,
+        detail: this._controller.detail,
+        label: this._controller.label
+      });
+    } catch (error) {
+      console.error('[SqlNotebookController] 更新描述失败:', error);
     }
   }
 
@@ -381,6 +467,7 @@ export class SqlNotebookController {
       }
     }
     this._connectionCache.clear();
+    this._statusBarItem?.dispose();
     this._controller.dispose();
   }
 }

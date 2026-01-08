@@ -233,6 +233,11 @@
           "command": "cadb.sql.selectDatabase",
           "when": "notebookType == cadb.sqlNotebook",
           "group": "navigation"
+        },
+        {
+          "command": "cadb.notebook.showDatabaseStatus",
+          "when": "notebookType == cadb.sqlNotebook",
+          "group": "status"
         }
       ]
     },
