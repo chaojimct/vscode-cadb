@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import type { CaEditor } from "./component/editor";
 import type { Datasource } from "./entity/datasource";
+import type { DataSourceProvider } from "./database_provider";
 
 /**
  * SQL 自动补全提供者
@@ -8,6 +9,7 @@ import type { Datasource } from "./entity/datasource";
  */
 export class CaCompletionItemProvider implements vscode.CompletionItemProvider {
   private editor?: CaEditor;
+  private provider?: DataSourceProvider;
   private cachedCompletions: Map<string, CachedCompletion> = new Map();
   private cacheTimeout = 60000; // 缓存 1 分钟
 
@@ -15,6 +17,10 @@ export class CaCompletionItemProvider implements vscode.CompletionItemProvider {
 
   public setEditor(editor: CaEditor): void {
     this.editor = editor;
+  }
+
+  public setProvider(provider: DataSourceProvider): void {
+    this.provider = provider;
   }
 
   /**
@@ -28,12 +34,36 @@ export class CaCompletionItemProvider implements vscode.CompletionItemProvider {
   ): Promise<
     vscode.CompletionItem[] | vscode.CompletionList<vscode.CompletionItem>
   > {
-    if (!this.editor) {
-      return [];
-    }
+    // 对于 Notebook 单元格，尝试从 notebook metadata 获取连接信息
+    let currentConnection: any = null;
+    let currentDatabase: any = null;
 
-    const currentConnection = this.editor.getCurrentConnection();
-    const currentDatabase = this.editor.getCurrentDatabase();
+    // 检查是否是 notebook cell
+    if (document.uri.scheme === 'vscode-notebook-cell') {
+      // 尝试从 notebook 获取 metadata
+      const notebookUri = vscode.workspace.notebookDocuments.find(
+        nb => nb.getCells().some(cell => cell.document.uri.toString() === document.uri.toString())
+      );
+      
+      if (notebookUri) {
+        const metadata = notebookUri.metadata;
+        const datasourceName = metadata?.datasource as string | undefined;
+        const databaseName = metadata?.database as string | undefined;
+        
+        // 如果有 metadata，创建临时的连接和数据库对象用于补全
+        if (datasourceName && databaseName) {
+          currentConnection = { label: datasourceName, name: datasourceName };
+          currentDatabase = { label: databaseName };
+        }
+      }
+    } else {
+      // 普通 SQL 文件，使用 editor
+      if (!this.editor) {
+        return [];
+      }
+      currentConnection = this.editor.getCurrentConnection();
+      currentDatabase = this.editor.getCurrentDatabase();
+    }
 
     if (!currentConnection) {
       return [];

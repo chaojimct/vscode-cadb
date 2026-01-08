@@ -107,6 +107,18 @@
       {
         "command": "cadb.file.delete",
         "title": "删除"
+      },
+      {
+        "command": "cadb.notebook.new",
+        "title": "新建 Notebook",
+        "icon": {
+          "light": "resources/Note_light.svg",
+          "dark": "resources/Note_dark.svg"
+        }
+      },
+      {
+        "command": "cadb.notebook.selectConnection",
+        "title": "选择数据源和数据库"
       }
     ],
     "notebooks": [
@@ -129,6 +141,11 @@
         },
         {
           "command": "cadb.datasource.add",
+          "when": "view == datasource",
+          "group": "navigation"
+        },
+        {
+          "command": "cadb.notebook.new",
           "when": "view == datasource",
           "group": "navigation"
         }
@@ -189,6 +206,13 @@
         },
         {
           "command": "cadb.datasource.copyFullConnection"
+        }
+      ],
+      "notebook/toolbar": [
+        {
+          "command": "cadb.notebook.selectConnection",
+          "when": "notebookType == cadb.sqlNotebook",
+          "group": "navigation"
         }
       ]
     },
