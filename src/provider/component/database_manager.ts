@@ -78,7 +78,7 @@ export class DatabaseManager {
    * 选择连接
    */
   public async selectConnection(): Promise<Datasource | undefined> {
-    const connections = this.provider.model.map((conn) => new Datasource(conn));
+    const connections = this.provider.getConnections().map((conn) => new Datasource(conn));
 
     if (connections.length === 0) {
       vscode.window.showWarningMessage("请先添加数据库连接");

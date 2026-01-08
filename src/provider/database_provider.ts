@@ -4,24 +4,29 @@ import * as vscode from "vscode";
 import { Datasource, DatasourceInputData } from "./entity/datasource";
 import type { DatabaseManager } from "./component/database_manager";
 
+interface CachedNode {
+  data: DatasourceInputData;
+  children?: CachedNode[];
+  collapsibleState?: vscode.TreeItemCollapsibleState;
+}
+
 /**
  * 树展开状态接口
  */
 interface TreeState {
   expandedNodes: string[]; // 存储已展开节点的路径
   selectedDatabases?: Record<string, string[]>; // 存储每个连接选择显示的数据库
-  cachedTreeData?: Record<string, any>; // 存储缓存的树数据
+  cachedTreeData?: Record<string, CachedNode[]>; // 存储缓存的树数据
 }
 
 export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
-  public model: DatasourceInputData[];
   public context: vscode.ExtensionContext;
   public panels: Record<string, string>;
   public databaseManager?: DatabaseManager;
   private treeState: TreeState;
+  private rootNodes: Datasource[] = [];
 
   constructor(context: vscode.ExtensionContext) {
-    this.model = [];
     this.context = context;
     this.panels = {
       settings: readFileSync(
@@ -55,6 +60,124 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
 
     // 加载树状态
     this.treeState = this.loadTreeState();
+    
+    // 初始化数据
+    this.initialize();
+  }
+
+  public getConnections(): DatasourceInputData[] {
+    return this.context.globalState.get("cadb.connections", []);
+  }
+
+  private async initialize() {
+    const connections = this.getConnections();
+    const cachedData = this.treeState.cachedTreeData;
+    
+    // 简单验证缓存是否有效（检查连接名称）
+    const modelNames = connections.map(m => m.name).sort();
+    const cacheNames = cachedData ? Object.keys(cachedData).sort() : [];
+    const cacheValid = cachedData && JSON.stringify(modelNames) === JSON.stringify(cacheNames);
+
+    if (cacheValid && cachedData) {
+      this.rootNodes = connections.map(m => {
+        const node = new Datasource(m);
+        const cachedChildren = cachedData[m.name];
+        if (cachedChildren) {
+          node.children = this.deserializeChildren(cachedChildren, node);
+          // 如果有子节点，设置为折叠状态
+          if (node.children.length > 0) {
+            node.collapsibleState = vscode.TreeItemCollapsibleState.Collapsed;
+          }
+        }
+        return node;
+      });
+      this._onDidChangeTreeData.fire();
+    } else {
+      this.rootNodes = connections.map(m => new Datasource(m));
+      this._onDidChangeTreeData.fire();
+      // 后台加载并缓存
+      this.refreshAndCache();
+    }
+  }
+
+  private deserializeChildren(cachedChildren: CachedNode[], parent: Datasource): Datasource[] {
+    return cachedChildren.map(childCache => {
+      // 创建节点，传入父节点的 dataloader 和父节点引用
+      const childNode = new Datasource(childCache.data, parent.dataloader, parent);
+      
+      if (childCache.collapsibleState !== undefined) {
+        childNode.collapsibleState = childCache.collapsibleState;
+      }
+      
+      if (childCache.children) {
+        childNode.children = this.deserializeChildren(childCache.children, childNode);
+      }
+      
+      return childNode;
+    });
+  }
+
+  private serializeChildren(nodes: Datasource[]): CachedNode[] {
+    return nodes.map(node => ({
+      data: node.data,
+      collapsibleState: node.collapsibleState,
+      children: node.children && node.children.length > 0 ? this.serializeChildren(node.children) : undefined
+    }));
+  }
+
+  private async expandRecursive(node: Datasource): Promise<void> {
+    try {
+      const children = await node.expand(this.context);
+      node.children = children || [];
+      
+      // 如果是 datasourceType (Databases)，可能需要过滤
+      if (node.type === 'datasourceType' && node.parent) {
+         const connectionName = node.parent.label?.toString();
+         if (connectionName && this.treeState.selectedDatabases?.[connectionName]) {
+            const selectedDbs = this.treeState.selectedDatabases[connectionName];
+            if (selectedDbs.length > 0) {
+              node.children = node.children.filter(child => 
+                selectedDbs.includes(child.label?.toString() || '')
+              );
+            }
+         }
+      }
+
+      for (const child of node.children) {
+        // 递归展开
+        // 防止无限递归：只展开特定的容器类型
+        if (['datasourceType', 'collectionType', 'folder', 'collection'].includes(child.type)) {
+           await this.expandRecursive(child);
+        } else if (child.type === 'document') { // 表 -> 字段
+           await this.loadDocumentChildren(child);
+           // 表的子节点（字段）不需要再展开了
+        }
+      }
+    } catch (e) {
+      console.error(`展开节点 ${node.label} 失败:`, e);
+    }
+  }
+
+  public async refreshAndCache() {
+    const connections = this.getConnections();
+    this.rootNodes = connections.map(m => new Datasource(m));
+    this._onDidChangeTreeData.fire();
+    
+    await vscode.window.withProgress({
+      location: vscode.ProgressLocation.Window,
+      title: "正在同步数据库结构...",
+      cancellable: false
+    }, async (progress) => {
+      const cache: Record<string, CachedNode[]> = {};
+      for (const node of this.rootNodes) {
+        progress.report({ message: `正在加载 ${node.label}` });
+        await this.expandRecursive(node);
+        cache[node.label as string] = this.serializeChildren(node.children);
+      }
+      this.treeState.cachedTreeData = cache;
+      this.saveTreeState();
+      this._onDidChangeTreeData.fire();
+    });
   }
 
   private _onDidChangeTreeData: vscode.EventEmitter<
@@ -107,11 +230,6 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
               );
             }
           }
-          
-          // 从缓存恢复数据库和表的描述
-          if (connectionName && this.treeState.cachedTreeData?.[connectionName]) {
-            await this.restoreDescriptionsFromCache(element, this.treeState.cachedTreeData[connectionName]);
-          }
         }
         
         // 如果是表节点（document），加载字段并更新描述
@@ -137,7 +255,7 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
       });
     }
     // Root items
-    return this.model.map((e) => new Datasource(e));
+    return this.rootNodes;
   }
   
   getParent?(element: Datasource): vscode.ProviderResult<Datasource> {
@@ -157,11 +275,7 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
       item.children = [];
       this._onDidChangeTreeData.fire(item);
     } else {
-    this.model = this.context.globalState.get<DatasourceInputData[]>(
-      "cadb.connections",
-      []
-    );
-    this._onDidChangeTreeData.fire();
+      this.refreshAndCache();
     }
     // 刷新后保存树状态
     this.saveTreeState();
@@ -278,52 +392,24 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
       return;
     }
 
-    // 加载第一层子节点（数据库、用户等）
+    // 使用 expandRecursive 递归加载
+    // 注意：expandRecursive 不支持 progress 回调，这里只能简单的报告开始
     progress?.report({ message: `正在加载 ${datasource.label} 的子节点...` });
-    let children = await datasource.expand(this.context);
-    datasource.children = children || [];
+    
+    await this.expandRecursive(datasource);
+    
+    // 触发更新
     this._onDidChangeTreeData.fire(datasource);
 
-    // 遍历每个子节点
-    for (const child of datasource.children) {
-      if (child.type === 'datasourceType') {
-        // 加载数据库列表
-        progress?.report({ message: `正在加载数据库列表...` });
-        const databases = await child.expand(this.context);
-        child.children = databases || [];
-        this._onDidChangeTreeData.fire(child);
-
-        // 检查是否有选择的数据库
-        const connectionName = datasource.label?.toString() || '';
-        const selectedDbs = this.getSelectedDatabases(connectionName);
-        let databasesToLoad = child.children;
-        
-        // 如果用户选择了数据库，只加载选择的数据库
-        if (selectedDbs.length > 0) {
-          databasesToLoad = child.children.filter(db => 
-            selectedDbs.includes(db.label?.toString() || '')
-          );
-        }
-
-        // 遍历每个数据库
-        for (const db of databasesToLoad) {
-          if (db.type === 'collection') {
-            // 加载数据库下的表
-            progress?.report({ message: `正在加载数据库 ${db.label} 的表...` });
-            await this.loadCollectionChildren(db);
-          }
-        }
-      } else if (child.type === 'userType') {
-        // 加载用户列表
-        progress?.report({ message: `正在加载用户列表...` });
-        const users = await child.expand(this.context);
-        child.children = users || [];
-        this._onDidChangeTreeData.fire(child);
-      }
+    // 保存缓存
+    const connectionName = datasource.label?.toString() || '';
+    if (connectionName) {
+       if (!this.treeState.cachedTreeData) {
+         this.treeState.cachedTreeData = {};
+       }
+       this.treeState.cachedTreeData[connectionName] = this.serializeChildren(datasource.children);
+       this.saveTreeState();
     }
-
-    // 保存加载的数据
-    this.saveCachedTreeData(datasource);
   }
 
   /**
@@ -423,171 +509,6 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
       const indexes = await indexTypeNode.expand(this.context);
       indexTypeNode.children = indexes || [];
       this._onDidChangeTreeData.fire(indexTypeNode);
-    }
-  }
-
-  /**
-   * 保存缓存的树数据
-   * @param datasource 数据源节点
-   */
-  private saveCachedTreeData(datasource: Datasource): void {
-    if (!this.treeState.cachedTreeData) {
-      this.treeState.cachedTreeData = {};
-    }
-
-    const connectionName = datasource.label?.toString() || '';
-    if (!connectionName) {
-      return;
-    }
-
-    // 序列化树结构
-    const treeData = this.serializeTreeData(datasource);
-    this.treeState.cachedTreeData[connectionName] = treeData;
-    this.saveTreeState();
-  }
-
-  /**
-   * 序列化树数据
-   * @param node 节点
-   */
-  private serializeTreeData(node: Datasource): any {
-    const data: any = {
-      type: node.type,
-      name: node.label?.toString() || '',
-      description: node.description,
-      children: []
-    };
-
-    if (node.children && node.children.length > 0) {
-      for (const child of node.children) {
-        data.children.push(this.serializeTreeData(child));
-      }
-    }
-
-    return data;
-  }
-
-  /**
-   * 从缓存加载树数据
-   * @param datasource 数据源节点
-   */
-  public async loadCachedTreeData(datasource: Datasource): Promise<boolean> {
-    const connectionName = datasource.label?.toString() || '';
-    if (!connectionName || !this.treeState.cachedTreeData?.[connectionName]) {
-      return false;
-    }
-
-    const cachedData = this.treeState.cachedTreeData[connectionName];
-    await this.deserializeTreeData(datasource, cachedData);
-    this._onDidChangeTreeData.fire(datasource);
-    return true;
-  }
-
-  /**
-   * 反序列化树数据
-   * @param node 节点
-   * @param data 数据
-   */
-  private async deserializeTreeData(node: Datasource, data: any): Promise<void> {
-    // 更新描述
-    if (data.description) {
-      node.description = data.description;
-      if (node.data) {
-        node.data.extra = data.description;
-      }
-    }
-
-    // 递归处理子节点
-    if (data.children && Array.isArray(data.children)) {
-      // 先展开节点以获取子节点
-      const children = await node.expand(this.context);
-      node.children = children || [];
-      
-      // 更新子节点的描述
-      for (const childData of data.children) {
-        const child = node.children.find(c => 
-          c.type === childData.type && c.label?.toString() === childData.name
-        );
-        if (child) {
-          if (childData.description) {
-            child.description = childData.description;
-            if (child.data) {
-              child.data.extra = childData.description;
-            }
-          }
-          // 递归处理子节点的子节点
-          if (childData.children && childData.children.length > 0) {
-            await this.deserializeTreeData(child, childData);
-          }
-        }
-      }
-      
-      this._onDidChangeTreeData.fire(node);
-    }
-  }
-
-  /**
-   * 从缓存恢复节点描述
-   * @param node 当前节点
-   * @param cachedData 缓存数据
-   */
-  private async restoreDescriptionsFromCache(node: Datasource, cachedData: any): Promise<void> {
-    if (!cachedData || !cachedData.children) {
-      return;
-    }
-
-    // 查找对应的缓存数据
-    const findCachedNode = (children: any[], targetType: string, targetName: string): any => {
-      for (const child of children) {
-        if (child.type === targetType && child.name === targetName) {
-          return child;
-        }
-        if (child.children) {
-          const found = findCachedNode(child.children, targetType, targetName);
-          if (found) {
-						return found;
-					}
-        }
-      }
-      return null;
-    };
-
-    // 恢复数据库节点的描述
-    if (node.type === 'datasourceType' && node.children) {
-      for (const dbNode of node.children) {
-        if (dbNode.type === 'collection') {
-          const cachedDb = findCachedNode(cachedData.children, 'collection', dbNode.label?.toString() || '');
-          if (cachedDb && cachedDb.description) {
-            dbNode.description = cachedDb.description;
-            if (dbNode.data) {
-              dbNode.data.extra = cachedDb.description;
-            }
-            this._onDidChangeTreeData.fire(dbNode);
-            
-            // 恢复表节点的描述
-            if (dbNode.children) {
-              const tableTypeNode = dbNode.children.find(c => c.type === 'collectionType');
-              if (tableTypeNode && tableTypeNode.children && cachedDb.children) {
-                const cachedTableType = findCachedNode(cachedDb.children, 'collectionType', '表');
-                if (cachedTableType && cachedTableType.children) {
-                  for (const tableNode of tableTypeNode.children) {
-                    if (tableNode.type === 'document') {
-                      const cachedTable = findCachedNode(cachedTableType.children, 'document', tableNode.label?.toString() || '');
-                      if (cachedTable && cachedTable.description) {
-                        tableNode.description = cachedTable.description;
-                        if (tableNode.data) {
-                          tableNode.data.extra = cachedTable.description;
-                        }
-                        this._onDidChangeTreeData.fire(tableNode);
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
     }
   }
 

@@ -217,7 +217,7 @@ export class CaCompletionItemProvider implements vscode.CompletionItemProvider {
       // 获取连接下的对象（包含 datasourceType, userType, fileType）
       // connection 可能是 Datasource 对象或普通对象
       const connectionLabel = (connection as any).label?.toString() || (connection as any).name || '';
-      const connectionObj = this.provider.model.find(
+      const connectionObj = this.provider.getConnections().find(
         ds => ds.name === connectionLabel
       );
       if (!connectionObj) {
@@ -296,7 +296,7 @@ export class CaCompletionItemProvider implements vscode.CompletionItemProvider {
 
       // 从 provider 中查找数据库
       let databaseObj: Datasource | null = null;
-      for (const connData of this.provider.model) {
+      for (const connData of this.provider.getConnections()) {
         const conn = new Datasource(connData);
         const objects = await conn.expand(this.provider.context);
         const datasourceTypeNode = objects.find(
@@ -443,7 +443,7 @@ export class CaCompletionItemProvider implements vscode.CompletionItemProvider {
 
       // 从 provider 中查找数据库
       let databaseObj: Datasource | null = null;
-      for (const connData of this.provider.model) {
+      for (const connData of this.provider.getConnections()) {
         const conn = new Datasource(connData);
         const objects = await conn.expand(this.provider.context);
         const datasourceTypeNode = objects.find(
@@ -511,7 +511,7 @@ export class CaCompletionItemProvider implements vscode.CompletionItemProvider {
 
       // 从 provider 中查找数据库
       let databaseObj: Datasource | null = null;
-      for (const connData of this.provider.model) {
+      for (const connData of this.provider.getConnections()) {
         const conn = new Datasource(connData);
         const objects = await conn.expand(this.provider.context);
         const datasourceTypeNode = objects.find(

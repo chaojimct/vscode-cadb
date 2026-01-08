@@ -75,7 +75,7 @@ async function editEntry(provider: DataSourceProvider, item: Datasource) {
         if (item.type === "datasource") {
           try {
             const db = await Datasource.createInstance(
-              provider.model,
+              provider.getConnections(),
               provider.context,
               message.payload
             );
@@ -114,8 +114,8 @@ async function updateDatasourceConfig(
   item: Datasource,
   payload: any
 ): Promise<void> {
-  // 查找并更新 model 中的配置
-  const index = provider.model.findIndex(
+  const connections = provider.getConnections();
+  const index = connections.findIndex(
     (conn) => conn.name === item.label?.toString()
   );
   
@@ -124,7 +124,7 @@ async function updateDatasourceConfig(
   }
   
   // 更新配置数据
-  provider.model[index] = {
+  connections[index] = {
     type: "datasource",
     name: payload.name,
     tooltip: `${payload.dbType}://${payload.host}:${payload.port}`,
@@ -137,7 +137,7 @@ async function updateDatasourceConfig(
   };
   
   // 保存到全局状态
-  await provider.context.globalState.update("cadb.connections", provider.model);
+  await provider.context.globalState.update("cadb.connections", connections);
   
   // 刷新视图
   provider.refresh();
@@ -258,7 +258,7 @@ async function addEntry(item: any, provider: DataSourceProvider) {
         case "save":
           {
             await Datasource.createInstance(
-              provider.model,
+              provider.getConnections(),
               provider.context,
               message.payload,
               true
@@ -274,7 +274,7 @@ async function addEntry(item: any, provider: DataSourceProvider) {
         case "test":
           {
             const db = await Datasource.createInstance(
-              provider.model,
+              provider.getConnections(),
               provider.context,
               message.payload
             );
@@ -414,16 +414,6 @@ export function registerDatasourceCommands(
             
             // 刷新 TreeView
             provider.refresh();
-            
-            // 等待刷新完成后，从缓存恢复描述
-            setTimeout(async () => {
-              if (connectionNode && provider.context) {
-                const cached = await provider.loadCachedTreeData(connectionNode);
-                if (cached) {
-                  provider.refresh();
-                }
-              }
-            }, 100);
             
             vscode.window.showInformationMessage(
               `已选择 ${selectedDbs.length} 个数据库${selectedDbs.length === 0 ? '（将显示全部）' : ''}`
@@ -593,7 +583,7 @@ export function registerDatasourceItemCommands(
             }
 
             // 获取数据源配置
-            const connectionData = provider.model.find(
+            const connectionData = provider.getConnections().find(
               (ds) => ds.name === connectionName
             );
             if (!connectionData) {
@@ -607,7 +597,7 @@ export function registerDatasourceItemCommands(
 
             // 创建数据源实例
             const dsInstance = await Datasource.createInstance(
-              provider.model,
+              provider.getConnections(),
               provider.context,
               connectionData,
               false
@@ -896,7 +886,7 @@ async function executeSqlFileWithTransaction(
     },
     async () => {
       // 创建数据源实例
-      const connectionData = provider.model.find(
+      const connectionData = provider.getConnections().find(
         (ds) => ds.name === connection.label?.toString()
       );
       if (!connectionData) {
@@ -904,7 +894,7 @@ async function executeSqlFileWithTransaction(
       }
 
       const datasource = await Datasource.createInstance(
-        provider.model,
+        provider.getConnections(),
         provider.context,
         connectionData,
         false

@@ -236,7 +236,7 @@ export class SqlNotebookController {
     }
 
     // 创建新连接
-    const datasourceData = this._provider.model.find(
+    const datasourceData = this._provider.getConnections().find(
       (ds) => ds.name === datasourceName
     );
 
