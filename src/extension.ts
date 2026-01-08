@@ -165,7 +165,8 @@ export function activate(context: vscode.ExtensionContext) {
     'cadb.sqlNotebook',
     'SQL Notebook',
     provider,
-    context
+    context,
+    editor  // 传入 editor 以获取当前选择的数据库
   );
   context.subscriptions.push(notebookController);
 
@@ -200,119 +201,6 @@ export function activate(context: vscode.ExtensionContext) {
         const document = await vscode.workspace.openTextDocument(uri);
         await vscode.window.showNotebookDocument(
           await vscode.workspace.openNotebookDocument(uri)
-        );
-      }
-    })
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand('cadb.notebook.selectConnection', async () => {
-      // 获取活动的 Notebook
-      const activeNotebookEditor = vscode.window.activeNotebookEditor;
-      if (!activeNotebookEditor) {
-        vscode.window.showErrorMessage('请先打开一个 SQL Notebook');
-        return;
-      }
-
-      const targetNotebook = activeNotebookEditor.notebook;
-      if (targetNotebook.notebookType !== 'cadb.sqlNotebook') {
-        vscode.window.showErrorMessage('当前文档不是 SQL Notebook');
-        return;
-      }
-
-      try {
-        // 1. 选择数据源
-        const datasources = provider.model.map((ds) => ({
-          label: ds.name || 'Unnamed',
-          description: `${ds.host}:${ds.port || 3306}`,
-          datasource: ds,
-        }));
-
-        if (datasources.length === 0) {
-          vscode.window.showWarningMessage('没有可用的数据源，请先添加数据源');
-          return;
-        }
-
-        const selectedDatasource = await vscode.window.showQuickPick(datasources, {
-          placeHolder: '选择数据源',
-        });
-
-        if (!selectedDatasource) {
-          return;
-        }
-
-        // 2. 获取数据库列表  
-        const dsInstance = new Datasource(selectedDatasource.datasource);
-        if (!dsInstance.dataloader) {
-          vscode.window.showErrorMessage('无法获取数据源加载器');
-          return;
-        }
-        const databases = await dsInstance.dataloader.listDatabases(dsInstance);
-
-        if (databases.length === 0) {
-          vscode.window.showWarningMessage('该数据源没有可用的数据库');
-          return;
-        }
-
-        // 3. 选择数据库
-        const databaseItems = databases.map((db: Datasource) => ({
-          label: db.data.name || db.label?.toString() || 'Unknown',
-          description: (db.data.extra || db.description)?.toString() || '',
-        }));
-
-        const selectedDatabase = await vscode.window.showQuickPick(databaseItems, {
-          placeHolder: '选择数据库',
-        });
-
-        if (!selectedDatabase) {
-          return;
-        }
-
-        // 4. 更新 Notebook 的 metadata
-        const edit = new vscode.WorkspaceEdit();
-        const newMetadata = {
-          ...targetNotebook.metadata,
-          datasource: selectedDatasource.label,
-          database: selectedDatabase.label,  // selectedDatabase 是 QuickPickItem，有 label 属性
-        };
-        
-        console.log('[Extension] 更新 Notebook metadata:', newMetadata);
-        
-        const notebookEdit = vscode.NotebookEdit.updateNotebookMetadata(newMetadata);
-        edit.set(targetNotebook.uri, [notebookEdit]);
-
-        const success = await vscode.workspace.applyEdit(edit);
-        
-        if (success) {
-          console.log('[Extension] Metadata 更新成功');
-          
-          // 等待一下让 VSCode 完成更新
-          await new Promise(resolve => setTimeout(resolve, 200));
-          
-          // 获取更新后的 notebook
-          const updatedNotebook = vscode.workspace.notebookDocuments.find(
-            nb => nb.uri.toString() === targetNotebook.uri.toString()
-          );
-          
-          if (updatedNotebook) {
-            console.log('[Extension] 找到更新后的 notebook，metadata:', updatedNotebook.metadata);
-            notebookController.updateDescription(updatedNotebook);
-          } else {
-            console.log('[Extension] 未找到更新后的 notebook，使用原始 notebook');
-            notebookController.updateDescription(targetNotebook);
-          }
-          
-          vscode.window.showInformationMessage(
-            `✓ 已设置: ${selectedDatasource.label} - ${selectedDatabase.label}`  // 使用 label 属性
-          );
-        } else {
-          console.log('[Extension] Metadata 更新失败');
-          vscode.window.showErrorMessage('更新数据源失败');
-        }
-      } catch (error) {
-        console.error('[Extension] 选择数据源时出错:', error);
-        vscode.window.showErrorMessage(
-          `选择数据库失败: ${error instanceof Error ? error.message : String(error)}`
         );
       }
     })

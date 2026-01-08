@@ -115,10 +115,6 @@
           "light": "resources/Note_light.svg",
           "dark": "resources/Note_dark.svg"
         }
-      },
-      {
-        "command": "cadb.notebook.selectConnection",
-        "title": "选择数据源和数据库"
       }
     ],
     "notebooks": [
@@ -219,11 +215,10 @@
           "command": "cadb.datasource.copyFullConnection"
         }
       ],
-      "notebook/toolbar": [
+      "datasource/context": [
         {
-          "command": "cadb.notebook.selectConnection",
-          "when": "notebookType == cadb.sqlNotebook",
-          "group": "navigation"
+          "id": "cadb.datasource.copyConnectionSubmenu",
+          "label": "复制连接地址"
         }
       ]
     },

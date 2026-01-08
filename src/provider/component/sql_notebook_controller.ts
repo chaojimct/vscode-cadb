@@ -1,17 +1,11 @@
 import * as vscode from 'vscode';
 import { DataSourceProvider } from '../database_provider';
 import { Datasource } from '../entity/datasource';
+import type { CaEditor } from './editor';
 
-/**
- * SQL Notebook 控制器
- * 负责执行 SQL 代码单元格
- */
-/**
- * 连接缓存，用于复用数据库连接
- */
 interface ConnectionCache {
-  datasource: string;
-  database: string;
+  datasourceName: string;
+  databaseName: string;
   connection: any;
   lastUsed: number;
 }
@@ -20,6 +14,7 @@ export class SqlNotebookController {
   private readonly _controller: vscode.NotebookController;
   private readonly _provider: DataSourceProvider;
   private readonly _context: vscode.ExtensionContext;
+  private readonly _editor: CaEditor;
   private readonly _connectionCache = new Map<string, ConnectionCache>();
   private readonly _connectionTimeout = 5 * 60 * 1000; // 5 分钟超时
 
@@ -28,10 +23,12 @@ export class SqlNotebookController {
     notebookType: string,
     label: string,
     provider: DataSourceProvider,
-    context: vscode.ExtensionContext
+    context: vscode.ExtensionContext,
+    editor: CaEditor
   ) {
     this._provider = provider;
     this._context = context;
+    this._editor = editor;
 
     this._controller = vscode.notebooks.createNotebookController(
       id,
@@ -42,8 +39,14 @@ export class SqlNotebookController {
     this._controller.supportedLanguages = ['sql'];
     this._controller.supportsExecutionOrder = true;
     this._controller.executeHandler = this._execute.bind(this);
-    this._controller.description = '未选择数据源';
-    this._controller.detail = '点击工具栏的"选择数据源和数据库"按钮';
+    
+    // 初始化描述
+    this._updateDescription();
+    
+    // 监听数据库选择变化
+    this._editor.setOnDatabaseChangedCallback(() => {
+      this._updateDescription();
+    });
     
     // 定期清理过期的连接
     setInterval(() => {
@@ -52,26 +55,29 @@ export class SqlNotebookController {
   }
 
   /**
-   * 公开方法：更新控制器描述（供外部调用）
-   * 根据 notebook 的 metadata 更新控制器显示的数据源和数据库信息
+   * 更新控制器描述，显示当前选择的数据源和数据库
    */
-  public updateDescription(notebook: vscode.NotebookDocument): void {
-    const metadata = notebook.metadata || {};
-    const datasourceName = metadata.datasource as string | undefined;
-    const databaseName = metadata.database as string | undefined;
+  private _updateDescription(): void {
+    const currentConnection = this._editor.getCurrentConnection();
+    const currentDatabase = this._editor.getCurrentDatabase();
 
-    console.log('[Notebook Controller] 更新描述:', { datasourceName, databaseName, metadata });
-
-    if (datasourceName && databaseName) {
-      this._controller.description = `${datasourceName} / ${databaseName}`;
-      this._controller.detail = `当前连接: ${datasourceName} - ${databaseName}`;
-    } else if (datasourceName) {
-      this._controller.description = datasourceName;
-      this._controller.detail = '未选择数据库';
+    if (currentConnection && currentDatabase) {
+      this._controller.description = `${currentConnection.label} / ${currentDatabase.label}`;
+      this._controller.detail = `使用状态栏选择的数据库连接`;
+    } else if (currentConnection) {
+      this._controller.description = `${currentConnection.label}`;
+      this._controller.detail = '未选择数据库，请在状态栏选择';
     } else {
-      this._controller.description = '未选择数据源';
-      this._controller.detail = '点击工具栏的"选择数据源和数据库"按钮';
+      this._controller.description = '未选择数据库';
+      this._controller.detail = '请在状态栏选择数据库连接';
     }
+  }
+
+  /**
+   * 公开方法：手动更新控制器描述（供外部调用，但实际上已通过回调自动更新）
+   */
+  public updateDescription(_notebook?: vscode.NotebookDocument): void {
+    this._updateDescription();
   }
 
   private async _execute(
@@ -97,26 +103,18 @@ export class SqlNotebookController {
     datasourceName: string,
     databaseName: string
   ): Promise<any> {
-    const cacheKey = `${datasourceName}:${databaseName}`;
+    const cacheKey = `${datasourceName}/${databaseName}`;
+    
+    // 检查缓存
     const cached = this._connectionCache.get(cacheKey);
-
-    // 检查缓存是否有效
-    if (cached && Date.now() - cached.lastUsed < this._connectionTimeout) {
-      cached.lastUsed = Date.now();
-      // 检查连接是否仍然有效
-      try {
-        await new Promise<void>((resolve, reject) => {
-          cached.connection.ping((err: any) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve();
-            }
-          });
-        });
+    if (cached) {
+      const now = Date.now();
+      if (now - cached.lastUsed < this._connectionTimeout) {
+        // 缓存有效，更新最后使用时间
+        cached.lastUsed = now;
         return cached.connection;
-      } catch (error) {
-        // 连接已失效，移除缓存
+      } else {
+        // 缓存过期，清除
         this._connectionCache.delete(cacheKey);
       }
     }
@@ -125,28 +123,20 @@ export class SqlNotebookController {
     const datasourceData = this._provider.model.find(
       (ds) => ds.name === datasourceName
     );
+
     if (!datasourceData) {
-      throw new Error('数据源不存在');
+      throw new Error(`找不到数据源: ${datasourceName}`);
     }
 
-    const datasource = await Datasource.createInstance(
-      this._provider.model,
-      this._context,
-      datasourceData,
-      false
-    );
+    const dsInstance = new Datasource(datasourceData);
+    await dsInstance.connect();
 
-    if (!datasource.dataloader) {
-      throw new Error('无法创建数据库连接');
-    }
-
-    await datasource.dataloader.connect();
-    const connection = datasource.dataloader.getConnection();
-    if (!connection) {
-      throw new Error('无法获取数据库连接');
+    if (!dsInstance.dataloader) {
+      throw new Error(`数据源 ${datasourceName} 没有数据加载器`);
     }
 
     // 切换到指定数据库
+    const connection = dsInstance.dataloader.getConnection();
     await new Promise<void>((resolve, reject) => {
       connection.changeUser({ database: databaseName }, (err: any) => {
         if (err) {
@@ -159,8 +149,8 @@ export class SqlNotebookController {
 
     // 缓存连接
     this._connectionCache.set(cacheKey, {
-      datasource: datasourceName,
-      database: databaseName,
+      datasourceName,
+      databaseName,
       connection,
       lastUsed: Date.now(),
     });
@@ -173,15 +163,27 @@ export class SqlNotebookController {
    */
   private _cleanupConnections(): void {
     const now = Date.now();
-    for (const [key, cache] of this._connectionCache.entries()) {
-      if (now - cache.lastUsed > this._connectionTimeout) {
+    const expiredKeys: string[] = [];
+
+    for (const [key, cached] of this._connectionCache.entries()) {
+      if (now - cached.lastUsed >= this._connectionTimeout) {
+        expiredKeys.push(key);
+        // 尝试关闭连接
         try {
-          cache.connection.destroy?.();
+          if (cached.connection && typeof cached.connection.end === 'function') {
+            cached.connection.end();
+          }
         } catch (error) {
-          // 忽略销毁错误
+          console.error(`[Notebook Controller] 关闭连接失败:`, error);
         }
-        this._connectionCache.delete(key);
       }
+    }
+
+    // 从缓存中删除过期项
+    expiredKeys.forEach((key) => this._connectionCache.delete(key));
+
+    if (expiredKeys.length > 0) {
+      console.log(`[Notebook Controller] 清理了 ${expiredKeys.length} 个过期连接`);
     }
   }
 
@@ -197,26 +199,35 @@ export class SqlNotebookController {
         return;
       }
 
-      // 获取 notebook 的元数据（数据源和数据库）
-      const notebookMetadata = cell.notebook.metadata;
-      const datasourceName = notebookMetadata?.datasource as string | undefined;
-      const databaseName = notebookMetadata?.database as string | undefined;
+      // 从 editor 获取当前选择的连接和数据库
+      const currentConnection = this._editor.getCurrentConnection();
+      const currentDatabase = this._editor.getCurrentDatabase();
 
-      if (!datasourceName || !databaseName) {
+      if (!currentConnection || !currentDatabase) {
         execution.replaceOutput([
           new vscode.NotebookCellOutput([
             vscode.NotebookCellOutputItem.json(
               {
                 type: 'query-error',
-                error: '请先选择数据源和数据库',
+                error: '请先在状态栏选择数据库连接',
               },
               'application/x.sql-error'
+            ),
+            // 添加 text/plain 格式作为后备
+            vscode.NotebookCellOutputItem.text(
+              `错误: 请先在状态栏选择数据库连接`,
+              'text/plain'
             ),
           ]),
         ]);
         execution.end(false, Date.now());
         return;
       }
+
+      const datasourceName = currentConnection.label?.toString() || '';
+      const databaseName = currentDatabase.label?.toString() || '';
+
+      console.log('[Notebook Controller] 执行 SQL:', { datasourceName, databaseName, sql });
 
       // 获取或创建连接（使用缓存）
       const connection = await this._getConnection(datasourceName, databaseName);
@@ -310,7 +321,7 @@ export class SqlNotebookController {
           ]),
         ]);
       } else {
-        // 空结果或其他情况
+        // 其他类型的结果
         execution.replaceOutput([
           new vscode.NotebookCellOutput([
             vscode.NotebookCellOutputItem.json(
@@ -335,41 +346,41 @@ export class SqlNotebookController {
 
       execution.end(true, Date.now());
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('[Notebook Controller] 执行出错:', errorMessage);
 
-        execution.replaceOutput([
-          new vscode.NotebookCellOutput([
-            vscode.NotebookCellOutputItem.json(
-              {
-                type: 'query-error',
-                error: errorMessage,
-              },
-              'application/x.sql-error'
-            ),
-            // 添加 text/plain 格式作为后备
-            vscode.NotebookCellOutputItem.text(
-              `错误: ${errorMessage}`,
-              'text/plain'
-            ),
-          ]),
-        ]);
-
+      execution.replaceOutput([
+        new vscode.NotebookCellOutput([
+          vscode.NotebookCellOutputItem.json(
+            {
+              type: 'query-error',
+              error: errorMessage,
+            },
+            'application/x.sql-error'
+          ),
+          // 添加 text/plain 格式作为后备
+          vscode.NotebookCellOutputItem.text(
+            `错误: ${errorMessage}`,
+            'text/plain'
+          ),
+        ]),
+      ]);
       execution.end(false, Date.now());
     }
   }
 
   dispose(): void {
-    // 清理所有连接
-    for (const cache of this._connectionCache.values()) {
+    // 清理所有缓存的连接
+    for (const [_key, cached] of this._connectionCache.entries()) {
       try {
-        cache.connection.destroy?.();
+        if (cached.connection && typeof cached.connection.end === 'function') {
+          cached.connection.end();
+        }
       } catch (error) {
-        // 忽略销毁错误
+        console.error(`[Notebook Controller] 关闭连接失败:`, error);
       }
     }
     this._connectionCache.clear();
     this._controller.dispose();
   }
 }
-
