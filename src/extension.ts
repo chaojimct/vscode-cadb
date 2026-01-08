@@ -240,7 +240,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   // SQL 执行器
-  const sqlExecutor = new SqlExecutor(provider, databaseManager, resultProvider);
+  const sqlExecutor = new SqlExecutor(provider, databaseManager, resultProvider, outputChannel);
   context.subscriptions.push(sqlExecutor);
 
   // 注册 SQL 执行命令

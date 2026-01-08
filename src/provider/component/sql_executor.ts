@@ -19,22 +19,38 @@ export class SqlExecutor {
   private readonly _provider: DataSourceProvider;
   private readonly _databaseManager: DatabaseManager;
   private readonly _resultProvider: ResultWebviewProvider;
+  private readonly _outputChannel: vscode.OutputChannel;
   private readonly _connectionCache = new Map<string, ConnectionCache>();
   private readonly _connectionTimeout = 5 * 60 * 1000; // 5 分钟超时
 
   constructor(
     provider: DataSourceProvider,
     databaseManager: DatabaseManager,
-    resultProvider: ResultWebviewProvider
+    resultProvider: ResultWebviewProvider,
+    outputChannel: vscode.OutputChannel
   ) {
     this._provider = provider;
     this._databaseManager = databaseManager;
     this._resultProvider = resultProvider;
+    this._outputChannel = outputChannel;
 
     // 定期清理过期的连接
     setInterval(() => {
       this._cleanupConnections();
     }, 60000); // 每分钟检查一次
+  }
+
+  /**
+   * 格式化时间戳
+   */
+  private _formatTimestamp(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
   }
 
   /**
@@ -118,6 +134,12 @@ export class SqlExecutor {
 
         // 处理结果
         const { results, fields } = result;
+
+        // 记录 SQL 执行日志到输出通道
+        const timestamp = this._formatTimestamp(new Date(startTime));
+        const rowCount = Array.isArray(results) ? results.length : (results as any)?.affectedRows || 0;
+        const logMessage = `[${timestamp} ${databaseName}, ${executionTime.toFixed(3)}s] (${rowCount} rows) ${sql.replace(/\s+/g, ' ').trim()}`;
+        this._outputChannel.appendLine(logMessage);
 
         // 判断是查询结果还是非查询语句
         if (Array.isArray(results)) {
@@ -221,6 +243,13 @@ export class SqlExecutor {
 
       // 显示 EXPLAIN 结果
       const { results, fields } = result;
+      
+      // 记录 EXPLAIN 执行日志到输出通道
+      const timestamp = this._formatTimestamp(new Date(startTime));
+      const rowCount = Array.isArray(results) ? results.length : 0;
+      const logMessage = `[${timestamp} ${databaseName}, ${executionTime.toFixed(3)}s] (${rowCount} rows) ${explainSql.replace(/\s+/g, ' ').trim()}`;
+      this._outputChannel.appendLine(logMessage);
+      
       if (Array.isArray(results)) {
         const columns = (fields || []).map((field: any) => ({
           field: field.name,
