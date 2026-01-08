@@ -120,6 +120,11 @@
         "command": "cadb.sql.selectDatabase",
         "title": "选择数据库",
         "icon": "$(database)"
+      },
+      {
+        "command": "cadb.notebook.showDatabaseStatus",
+        "title": "显示数据库状态",
+        "icon": "$(info)"
       }
     ],
     "notebooks": [
