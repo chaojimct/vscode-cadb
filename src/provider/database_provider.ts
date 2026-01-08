@@ -157,11 +157,11 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
       item.children = [];
       this._onDidChangeTreeData.fire(item);
     } else {
-      this.model = this.context.globalState.get<DatasourceInputData[]>(
-        "cadb.connections",
-        []
-      );
-      this._onDidChangeTreeData.fire();
+    this.model = this.context.globalState.get<DatasourceInputData[]>(
+      "cadb.connections",
+      []
+    );
+    this._onDidChangeTreeData.fire();
     }
     // 刷新后保存树状态
     this.saveTreeState();

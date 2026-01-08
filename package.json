@@ -159,18 +159,6 @@
         "scheme": "file"
       }
     ],
-    "customEditors": [
-      {
-        "viewType": "cadb.sqlEditor",
-        "displayName": "SQL Editor",
-        "selector": [
-          {
-            "filenamePattern": "*.sql"
-          }
-        ],
-        "priority": "default"
-      }
-    ],
     "notebookRenderer": [
       {
         "id": "cadb.sql-notebook-renderer",

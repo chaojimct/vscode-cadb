@@ -44,7 +44,7 @@ export interface DatasourceInputData {
 }
 
 export class Datasource extends vscode.TreeItem {
-  public data: DatasourceInputData;
+	public data: DatasourceInputData;
   public children: Datasource[] = [];
   public parent?: Datasource;
   public type: string;
@@ -72,9 +72,9 @@ export class Datasource extends vscode.TreeItem {
       return Promise.resolve(undefined);
     }
     switch (this.type) {
-      case "user":
+			case "user":
         return this.dataloader.descUser(this);
-      case "datasource":
+			case "datasource":
         return this.dataloader.descDatasource(this);
       case "document":
         return this.dataloader.descTable(this);
@@ -101,9 +101,9 @@ export class Datasource extends vscode.TreeItem {
         );
         
         // 创建新的 .jsql 文件（SQL Notebook）
-        const dayjs = require("dayjs");
+          const dayjs = require("dayjs");
         const filename = dayjs().format("YYYYMMDDHHmmss") + ".jsql";
-        const fileUri = vscode.Uri.joinPath(dsPath, filename);
+          const fileUri = vscode.Uri.joinPath(dsPath, filename);
         
         // 创建空的 notebook 内容
         const emptyNotebook = {
@@ -177,7 +177,7 @@ export class Datasource extends vscode.TreeItem {
     parent?: Datasource
   ) {
     super(input.name);
-    this.data = input;
+		this.data = input;
     this.dataloader = dataloader;
     this.parent = parent;
     this.type = this.contextValue = input.type;

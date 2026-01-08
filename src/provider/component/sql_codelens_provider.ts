@@ -47,13 +47,13 @@ export class SqlCodeLensProvider implements vscode.CodeLensProvider {
           const runCommand: vscode.CodeLens = new vscode.CodeLens(sqlRange, {
             title: '$(play) Run',
             command: 'cadb.sql.run',
-            arguments: [document, sqlRange],
+            arguments: [document.uri.toString(), sqlRange],
           });
 
           const explainCommand: vscode.CodeLens = new vscode.CodeLens(sqlRange, {
             title: '$(search) Explain',
             command: 'cadb.sql.explain',
-            arguments: [document, sqlRange],
+            arguments: [document.uri.toString(), sqlRange],
           });
 
           codeLenses.push(runCommand, explainCommand);
@@ -69,7 +69,7 @@ export class SqlCodeLensProvider implements vscode.CodeLensProvider {
           const runCommand: vscode.CodeLens = new vscode.CodeLens(sqlRange, {
             title: '$(play) Run',
             command: 'cadb.sql.run',
-            arguments: [document, sqlRange],
+            arguments: [document.uri.toString(), sqlRange],
           });
 
           codeLenses.push(runCommand);

@@ -25,7 +25,7 @@ export class DatabaseSelector {
    */
   public updateStatusBar(): void {
     // 不再更新状态栏，功能已移至 Notebook 工具栏
-    this.statusBarItem.hide();
+      this.statusBarItem.hide();
   }
 
   /**

@@ -15,7 +15,6 @@ import { SqlNotebookRenderer } from "./provider/component/sql_notebook_renderer"
 import { DatabaseManager } from "./provider/component/database_manager";
 import { ResultWebviewProvider } from "./provider/result_provider";
 import { CaCompletionItemProvider } from "./provider/completion_item_provider";
-import { SqlEditorProvider } from "./provider/component/sql_editor_provider";
 import { SqlCodeLensProvider } from "./provider/component/sql_codelens_provider";
 import { SqlExecutor } from "./provider/component/sql_executor";
 
@@ -231,21 +230,6 @@ export function activate(context: vscode.ExtensionContext) {
     )
   );
 
-  // SQL 自定义编辑器（用于 .sql 文件）
-  const sqlEditorProvider = new SqlEditorProvider();
-  context.subscriptions.push(
-    vscode.window.registerCustomEditorProvider(
-      "cadb.sqlEditor",
-      sqlEditorProvider,
-      {
-        webviewOptions: {
-          retainContextWhenHidden: true,
-        },
-        supportsMultipleEditorsPerDocument: false,
-      }
-    )
-  );
-
   // SQL CodeLens 提供者（在 SQL 语句上方显示 Run 和 Explain）
   const sqlCodeLensProvider = new SqlCodeLensProvider(databaseManager);
   context.subscriptions.push(
@@ -263,7 +247,8 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand(
       "cadb.sql.run",
-      async (document: vscode.TextDocument, range: vscode.Range) => {
+      async (uri: string, range: vscode.Range) => {
+        const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(uri));
         const sql = document.getText(range).trim();
         if (sql) {
           await sqlExecutor.executeSql(sql, document);
@@ -278,7 +263,8 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand(
       "cadb.sql.explain",
-      async (document: vscode.TextDocument, range: vscode.Range) => {
+      async (uri: string, range: vscode.Range) => {
+        const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(uri));
         const sql = document.getText(range).trim();
         if (sql) {
           await sqlExecutor.explainSql(sql, document);

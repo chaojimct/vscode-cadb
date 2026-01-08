@@ -468,7 +468,7 @@ export function registerDatasourceCommands(
       if (item.type !== 'datasource' || !item.data) {
         vscode.window.showWarningMessage('请在数据源节点上执行此操作');
         return;
-      }
+}
 
       const host = item.data.host || 'localhost';
       const port = item.data.port || 3306;
@@ -693,11 +693,11 @@ export function registerDatasourceItemCommands(
         });
       } else {
         // 使用普通文本编辑器打开
-        const doc = await vscode.workspace.openTextDocument(dsPath);
-        await vscode.window.showTextDocument(doc, {
-          preview: false,
-          viewColumn: vscode.ViewColumn.Active,
-        });
+      const doc = await vscode.workspace.openTextDocument(dsPath);
+      await vscode.window.showTextDocument(doc, {
+        preview: false,
+        viewColumn: vscode.ViewColumn.Active,
+      });
       }
     } catch (error) {
       vscode.window.showErrorMessage(`打开文件失败: ${error}`);

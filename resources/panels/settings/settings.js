@@ -207,7 +207,7 @@ function initDatabaseForm(data = {}, options = {}) {
   });
 
   dynamicForm.load(data);
-}
+  }
 
 // ==================== 事件处理 ====================
 
