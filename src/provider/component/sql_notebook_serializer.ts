@@ -2,22 +2,24 @@ import { TextDecoder, TextEncoder } from 'util';
 import * as vscode from 'vscode';
 
 /**
- * Notebook 数据接口
+ * .jsql 文件格式接口（与文件系统存储格式对应）
  */
-interface NotebookData {
-  datasource: string | null;
-  database: string | null;
-  cells: Array<{
-    id: string;
-    sql: string;
-    result?: {
-      columns: Array<{ name: string; type: number }>;
-      data: any[];
-      rowCount: number;
-      executionTime: number;
-    };
-    error?: string;
-  }>;
+interface RawNotebook {
+  datasource?: string | null;
+  database?: string | null;
+  cells: RawNotebookCell[];
+}
+
+interface RawNotebookCell {
+  id?: string;
+  sql: string;
+  result?: {
+    columns: Array<{ name: string; type: number }>;
+    data: any[];
+    rowCount: number;
+    executionTime: number;
+  };
+  error?: string;
 }
 
 /**
@@ -31,93 +33,31 @@ export class SqlNotebookSerializer implements vscode.NotebookSerializer {
   ): Promise<vscode.NotebookData> {
     const contents = new TextDecoder().decode(content);
     
-    let notebookData: NotebookData = {
-      datasource: null,
-      database: null,
-      cells: [],
-    };
-
-    // 尝试解析 JSON
-    if (contents.trim()) {
-      try {
-        notebookData = JSON.parse(contents);
-      } catch (error) {
-        // 如果解析失败，创建一个空的 notebook
-        console.error('解析 notebook 文件失败:', error);
+    let raw: RawNotebook;
+    try {
+      raw = JSON.parse(contents) as RawNotebook;
+      // 验证数据结构
+      if (!raw.cells || !Array.isArray(raw.cells)) {
+        raw = { cells: [] };
       }
+    } catch (error) {
+      // 如果解析失败，创建一个空的 notebook
+      console.error('解析 notebook 文件失败:', error);
+      raw = { cells: [] };
     }
 
-    // 将数据转换为 NotebookData
-    const cells: vscode.NotebookCellData[] = [];
-
-    // 如果有数据源和数据库信息，创建一个 Markdown cell 来显示
-    if (notebookData.datasource || notebookData.database) {
-      const metadata = [];
-      if (notebookData.datasource) {
-        metadata.push(`**数据源:** ${notebookData.datasource}`);
-      }
-      if (notebookData.database) {
-        metadata.push(`**数据库:** ${notebookData.database}`);
-      }
-      cells.push(
+    // 将原始数据转换为 NotebookCellData
+    const cells = raw.cells.map(
+      item =>
         new vscode.NotebookCellData(
-          vscode.NotebookCellKind.Markup,
-          metadata.join('\n\n'),
-          'markdown'
+          vscode.NotebookCellKind.Code,
+          item.sql || '',
+          'sql'
         )
-      );
-    }
-
-    // 转换 SQL cells
-    for (const cell of notebookData.cells) {
-      const cellData = new vscode.NotebookCellData(
-        vscode.NotebookCellKind.Code,
-        cell.sql || '',
-        'sql'
-      );
-
-      // 保存 cell 的元数据（ID、结果、错误等）
-      cellData.metadata = {
-        id: cell.id,
-        result: cell.result,
-        error: cell.error,
-      };
-
-      // 如果有输出，添加输出项
-      if (cell.result) {
-        cellData.outputs = [
-          new vscode.NotebookCellOutput([
-            vscode.NotebookCellOutputItem.json(
-              {
-                type: 'query-result',
-                columns: cell.result.columns,
-                data: cell.result.data,
-                rowCount: cell.result.rowCount,
-                executionTime: cell.result.executionTime,
-              },
-              'application/x.sql-result'
-            ),
-          ]),
-        ];
-      } else if (cell.error) {
-        cellData.outputs = [
-          new vscode.NotebookCellOutput([
-            vscode.NotebookCellOutputItem.json(
-              {
-                type: 'query-error',
-                error: cell.error,
-              },
-              'application/x.sql-error'
-            ),
-          ]),
-        ];
-      }
-
-      cells.push(cellData);
-    }
+    );
 
     // 如果没有 cells，添加一个空的 SQL cell
-    if (cells.length === 0 || (cells.length === 1 && cells[0].kind === vscode.NotebookCellKind.Markup)) {
+    if (cells.length === 0) {
       cells.push(
         new vscode.NotebookCellData(
           vscode.NotebookCellKind.Code,
@@ -127,32 +67,72 @@ export class SqlNotebookSerializer implements vscode.NotebookSerializer {
       );
     }
 
-    const notebookDataObj = new vscode.NotebookData(cells);
-    notebookDataObj.metadata = {
-      datasource: notebookData.datasource,
-      database: notebookData.database,
-    };
-    return notebookDataObj;
+    // 恢复输出（如果有保存的结果或错误）
+    for (let i = 0; i < raw.cells.length && i < cells.length; i++) {
+      const rawCell = raw.cells[i];
+      const cellData = cells[i];
+
+      // 保存 cell 的元数据（ID）
+      if (rawCell.id) {
+        cellData.metadata = { id: rawCell.id };
+      }
+
+      // 恢复输出
+      if (rawCell.result) {
+        cellData.outputs = [
+          new vscode.NotebookCellOutput([
+            vscode.NotebookCellOutputItem.json(
+              {
+                type: 'query-result',
+                columns: rawCell.result.columns,
+                data: rawCell.result.data,
+                rowCount: rawCell.result.rowCount,
+                executionTime: rawCell.result.executionTime,
+              },
+              'application/x.sql-result'
+            ),
+          ]),
+        ];
+      } else if (rawCell.error) {
+        cellData.outputs = [
+          new vscode.NotebookCellOutput([
+            vscode.NotebookCellOutputItem.json(
+              {
+                type: 'query-error',
+                error: rawCell.error,
+              },
+              'application/x.sql-error'
+            ),
+          ]),
+        ];
+      }
+    }
+
+    const notebookData = new vscode.NotebookData(cells);
+    // 保存 notebook 级别的元数据（数据源和数据库）
+    if (raw.datasource || raw.database) {
+      notebookData.metadata = {
+        datasource: raw.datasource || null,
+        database: raw.database || null,
+      };
+    }
+
+    return notebookData;
   }
 
   async serializeNotebook(
     data: vscode.NotebookData,
     _token: vscode.CancellationToken
   ): Promise<Uint8Array> {
-    const notebookData: NotebookData = {
-      datasource: data.metadata?.datasource || null,
-      database: data.metadata?.database || null,
-      cells: [],
-    };
+    const contents: RawNotebookCell[] = [];
 
-    // 转换 cells
+    // 只处理代码单元格
     for (const cell of data.cells) {
-      // 跳过 Markdown cells（元数据 cell）
-      if (cell.kind === vscode.NotebookCellKind.Markup) {
+      if (cell.kind !== vscode.NotebookCellKind.Code) {
         continue;
       }
 
-      const cellData: any = {
+      const rawCell: RawNotebookCell = {
         id: cell.metadata?.id || `cell-${Date.now()}-${Math.random()}`,
         sql: cell.value || '',
       };
@@ -162,16 +142,16 @@ export class SqlNotebookSerializer implements vscode.NotebookSerializer {
         for (const output of cell.outputs) {
           for (const item of output.items) {
             try {
-              const data = JSON.parse(new TextDecoder().decode(item.data));
-              if (data.type === 'query-result') {
-                cellData.result = {
-                  columns: data.columns,
-                  data: data.data,
-                  rowCount: data.rowCount,
-                  executionTime: data.executionTime,
+              const outputData = JSON.parse(new TextDecoder().decode(item.data));
+              if (outputData.type === 'query-result') {
+                rawCell.result = {
+                  columns: outputData.columns,
+                  data: outputData.data,
+                  rowCount: outputData.rowCount,
+                  executionTime: outputData.executionTime,
                 };
-              } else if (data.type === 'query-error') {
-                cellData.error = data.error;
+              } else if (outputData.type === 'query-error') {
+                rawCell.error = outputData.error;
               }
             } catch (error) {
               // 忽略解析错误
@@ -180,18 +160,16 @@ export class SqlNotebookSerializer implements vscode.NotebookSerializer {
         }
       }
 
-      // 如果 metadata 中有结果或错误，也保存
-      if (cell.metadata?.result) {
-        cellData.result = cell.metadata.result;
-      }
-      if (cell.metadata?.error) {
-        cellData.error = cell.metadata.error;
-      }
-
-      notebookData.cells.push(cellData);
+      contents.push(rawCell);
     }
 
-    return new TextEncoder().encode(JSON.stringify(notebookData, null, 2));
+    const raw: RawNotebook = {
+      datasource: data.metadata?.datasource || null,
+      database: data.metadata?.database || null,
+      cells: contents,
+    };
+
+    return new TextEncoder().encode(JSON.stringify(raw, null, 2));
   }
 }
 

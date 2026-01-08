@@ -9,7 +9,6 @@ import {
   registerDatasourceItemCommands,
   registerEditorCommands,
   registerResultCommands,
-  registerBookCommands,
 } from "./provider/component/commands";
 import { SqlNotebookSerializer } from "./provider/component/sql_notebook_serializer";
 import { SqlNotebookController } from "./provider/component/sql_notebook_controller";
@@ -155,9 +154,6 @@ export function activate(context: vscode.ExtensionContext) {
   );
   registerResultCommands(resultProvider);
 
-  // SQL Notebook (Book) 面板
-  const bookCommand = registerBookCommands(provider, editor);
-  context.subscriptions.push(bookCommand);
 
   // SQL Notebook API（用于打开 .jsql 文件）
   const notebookSerializer = new SqlNotebookSerializer();

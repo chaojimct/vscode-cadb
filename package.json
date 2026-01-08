@@ -73,14 +73,6 @@
         }
       },
       {
-        "command": "cadb.book.open",
-        "title": "SQL Notebook",
-        "icon": {
-          "light": "resources/Note_light.svg",
-          "dark": "resources/Note_dark.svg"
-        }
-      },
-      {
         "command": "cadb.datasource.selectDatabases",
         "title": "选择数据库"
       },
@@ -137,11 +129,6 @@
         },
         {
           "command": "cadb.datasource.add",
-          "when": "view == datasource",
-          "group": "navigation"
-        },
-        {
-          "command": "cadb.book.open",
           "when": "view == datasource",
           "group": "navigation"
         }
