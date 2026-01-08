@@ -44,8 +44,10 @@ export class DatabaseManager {
         return;
       }
 
-      // 保存连接
+      // 保存连接并立即更新状态栏
       this.currentConnection = selectedConnection;
+      this.notifyDatabaseChanged();
+
       // 步骤 2: 选择数据库
       const selectedDatabase = await this.selectDatabaseFromConnection(
         selectedConnection
@@ -57,9 +59,8 @@ export class DatabaseManager {
         return;
       }
 
-      // 保存数据库
+      // 保存数据库并更新状态栏
       this.currentDatabase = selectedDatabase;
-      // 通知更新
       this.notifyDatabaseChanged();
 
       // 显示成功消息
