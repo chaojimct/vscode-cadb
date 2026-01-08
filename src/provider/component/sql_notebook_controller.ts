@@ -63,13 +63,13 @@ export class SqlNotebookController {
 
     if (currentConnection && currentDatabase) {
       this._controller.description = `${currentConnection.label} / ${currentDatabase.label}`;
-      this._controller.detail = `使用状态栏选择的数据库连接`;
+      this._controller.detail = `点击工具栏按钮选择数据库连接`;
     } else if (currentConnection) {
       this._controller.description = `${currentConnection.label}`;
-      this._controller.detail = '未选择数据库，请在状态栏选择';
+      this._controller.detail = '未选择数据库，点击工具栏按钮选择';
     } else {
       this._controller.description = '未选择数据库';
-      this._controller.detail = '请在状态栏选择数据库连接';
+      this._controller.detail = '点击工具栏按钮选择数据库连接';
     }
   }
 

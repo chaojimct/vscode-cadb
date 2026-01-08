@@ -675,19 +675,30 @@ export function registerDatasourceItemCommands(
     }
 
     // 构建文件路径
+    const fileName = fileItem.label?.toString() || "";
     const dsPath = vscode.Uri.joinPath(
       provider.context.globalStorageUri,
       fileItem.parent.label.toString(),
-      fileItem.label?.toString() || ""
+      fileName
     );
 
     try {
-      // 打开文件
-      const doc = await vscode.workspace.openTextDocument(dsPath);
-      await vscode.window.showTextDocument(doc, {
-        preview: false,
-        viewColumn: vscode.ViewColumn.Active,
-      });
+      // 判断文件扩展名是否为 .jsql
+      if (fileName.toLowerCase().endsWith('.jsql')) {
+        // 使用 SQL Notebook 方式打开
+        const notebookDocument = await vscode.workspace.openNotebookDocument(dsPath);
+        await vscode.window.showNotebookDocument(notebookDocument, {
+          preview: false,
+          viewColumn: vscode.ViewColumn.Active,
+        });
+      } else {
+        // 使用普通文本编辑器打开
+        const doc = await vscode.workspace.openTextDocument(dsPath);
+        await vscode.window.showTextDocument(doc, {
+          preview: false,
+          viewColumn: vscode.ViewColumn.Active,
+        });
+      }
     } catch (error) {
       vscode.window.showErrorMessage(`打开文件失败: ${error}`);
     }
@@ -1126,15 +1137,10 @@ function formatTimestamp(date: Date): string {
 
 
 export function registerDatabaseCommands(databaseManager: DatabaseManager) {
-  // 创建数据库选择器
+  // 创建数据库选择器（不再显示状态栏）
   const databaseSelector = new DatabaseSelector(databaseManager);
 
-  // 设置数据库变化回调
-  databaseManager.setOnDatabaseChangedCallback(() => {
-    databaseSelector.updateStatusBar();
-  });
-
-  // 注册数据库选择命令
+  // 注册数据库选择命令（用于 Notebook 工具栏）
   vscode.commands.registerCommand("cadb.sql.selectDatabase", () =>
     databaseManager.selectDatabase()
   );

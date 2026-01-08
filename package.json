@@ -115,6 +115,11 @@
           "light": "resources/Note_light.svg",
           "dark": "resources/Note_dark.svg"
         }
+      },
+      {
+        "command": "cadb.sql.selectDatabase",
+        "title": "选择数据库",
+        "icon": "$(database)"
       }
     ],
     "notebooks": [
@@ -222,7 +227,14 @@
           "command": "cadb.datasource.copyFullConnection"
         }
       ],
-      "datasource/context": []
+      "datasource/context": [],
+      "notebook/toolbar": [
+        {
+          "command": "cadb.sql.selectDatabase",
+          "when": "notebookType == cadb.sqlNotebook",
+          "group": "navigation"
+        }
+      ]
     },
     "submenus": [
       {
