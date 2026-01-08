@@ -42,63 +42,36 @@ export class SqlNotebookController {
     this._controller.supportedLanguages = ['sql'];
     this._controller.supportsExecutionOrder = true;
     this._controller.executeHandler = this._execute.bind(this);
-    
-    // 初始化时更新所有已打开的 notebook 的描述
-    vscode.workspace.notebookDocuments.forEach((notebook) => {
-      if (notebook.notebookType === 'cadb.sqlNotebook') {
-        this._updateControllerDescription(notebook);
-      }
-    });
-    
-    // 监听 notebook 打开事件，更新控制器描述
-    const openDisposable = vscode.workspace.onDidOpenNotebookDocument((notebook) => {
-      if (notebook.notebookType === 'cadb.sqlNotebook') {
-        this._updateControllerDescription(notebook);
-      }
-    });
-
-    // 监听 notebook 变化事件，更新控制器描述
-    const changeDisposable = vscode.workspace.onDidChangeNotebookDocument((e) => {
-      if (e.notebook.notebookType === 'cadb.sqlNotebook') {
-        // 检查是否是 metadata 变化
-        if (e.metadata) {
-          // 延迟一下，确保 metadata 已经更新
-          setTimeout(() => {
-            this._updateControllerDescription(e.notebook);
-          }, 100);
-        }
-      }
-    });
-    
-    // 存储 disposables 以便在 dispose 时清理
-    this._context.subscriptions.push(openDisposable, changeDisposable);
+    this._controller.description = '未选择数据源';
+    this._controller.detail = '点击工具栏的"选择数据源和数据库"按钮';
     
     // 定期清理过期的连接
-    setInterval(() => this._cleanupConnections(), 60000); // 每分钟清理一次
-  }
-
-  /**
-   * 更新控制器描述，显示当前选择的数据源和数据库
-   */
-  private _updateControllerDescription(notebook: vscode.NotebookDocument): void {
-    const metadata = notebook.metadata;
-    const datasourceName = metadata?.datasource as string | undefined;
-    const databaseName = metadata?.database as string | undefined;
-
-    if (datasourceName && databaseName) {
-      this._controller.description = `${datasourceName} / ${databaseName}`;
-      this._controller.detail = `数据源: ${datasourceName} | 数据库: ${databaseName}`;
-    } else {
-      this._controller.description = 'SQL Notebook';
-      this._controller.detail = '点击选择数据源和数据库';
-    }
+    setInterval(() => {
+      this._cleanupConnections();
+    }, 60000); // 每分钟检查一次
   }
 
   /**
    * 公开方法：更新控制器描述（供外部调用）
+   * 根据 notebook 的 metadata 更新控制器显示的数据源和数据库信息
    */
   public updateDescription(notebook: vscode.NotebookDocument): void {
-    this._updateControllerDescription(notebook);
+    const metadata = notebook.metadata || {};
+    const datasourceName = metadata.datasource as string | undefined;
+    const databaseName = metadata.database as string | undefined;
+
+    console.log('[Notebook Controller] 更新描述:', { datasourceName, databaseName, metadata });
+
+    if (datasourceName && databaseName) {
+      this._controller.description = `${datasourceName} / ${databaseName}`;
+      this._controller.detail = `当前连接: ${datasourceName} - ${databaseName}`;
+    } else if (datasourceName) {
+      this._controller.description = datasourceName;
+      this._controller.detail = '未选择数据库';
+    } else {
+      this._controller.description = '未选择数据源';
+      this._controller.detail = '点击工具栏的"选择数据源和数据库"按钮';
+    }
   }
 
   private async _execute(
