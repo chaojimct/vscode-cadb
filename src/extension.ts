@@ -296,10 +296,20 @@ export function activate(context: vscode.ExtensionContext) {
         
         const success = await vscode.workspace.applyEdit(edit);
         if (success) {
-          // 等待一下确保 metadata 已更新，然后更新控制器描述
-          setTimeout(() => {
-            notebookController.updateDescription(targetNotebook);
-          }, 200);
+          // 重新读取 notebook 以获取更新后的 metadata
+          const updatedNotebook = vscode.workspace.notebookDocuments.find(
+            nb => nb.uri.toString() === targetNotebook.uri.toString()
+          );
+          
+          if (updatedNotebook) {
+            // 立即更新控制器描述
+            notebookController.updateDescription(updatedNotebook);
+            
+            // 也延迟更新一次，确保 UI 刷新
+            setTimeout(() => {
+              notebookController.updateDescription(updatedNotebook);
+            }, 100);
+          }
           
           vscode.window.showInformationMessage(
             `已设置数据源: ${selectedDatasource.label}, 数据库: ${selectedDatabase.database}`

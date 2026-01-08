@@ -281,6 +281,7 @@ export class SqlNotebookController {
           return rowData;
         });
 
+        // 同时提供 JSON 和文本格式，确保兼容性
         execution.replaceOutput([
           new vscode.NotebookCellOutput([
             vscode.NotebookCellOutputItem.json(
@@ -292,6 +293,17 @@ export class SqlNotebookController {
                 executionTime,
               },
               'application/x.sql-result'
+            ),
+            // 添加 text/plain 格式作为后备
+            vscode.NotebookCellOutputItem.text(
+              JSON.stringify({
+                type: 'query-result',
+                columns,
+                data,
+                rowCount: results.length,
+                executionTime,
+              }, null, 2),
+              'text/plain'
             ),
           ]),
         ]);
@@ -315,6 +327,13 @@ export class SqlNotebookController {
               },
               'application/x.sql-result'
             ),
+            // 添加 text/plain 格式作为后备
+            vscode.NotebookCellOutputItem.text(
+              affectedRows > 0 
+                ? `执行成功，影响 ${affectedRows} 行${insertId ? `，插入 ID: ${insertId}` : ''} (${executionTime.toFixed(3)}s)`
+                : `执行成功 (${executionTime.toFixed(3)}s)`,
+              'text/plain'
+            ),
           ]),
         ]);
       } else {
@@ -332,6 +351,11 @@ export class SqlNotebookController {
               },
               'application/x.sql-result'
             ),
+            // 添加 text/plain 格式作为后备
+            vscode.NotebookCellOutputItem.text(
+              `执行成功 (${executionTime.toFixed(3)}s)`,
+              'text/plain'
+            ),
           ]),
         ]);
       }
@@ -341,17 +365,22 @@ export class SqlNotebookController {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
 
-      execution.replaceOutput([
-        new vscode.NotebookCellOutput([
-          vscode.NotebookCellOutputItem.json(
-            {
-              type: 'query-error',
-              error: errorMessage,
-            },
-            'application/x.sql-error'
-          ),
-        ]),
-      ]);
+        execution.replaceOutput([
+          new vscode.NotebookCellOutput([
+            vscode.NotebookCellOutputItem.json(
+              {
+                type: 'query-error',
+                error: errorMessage,
+              },
+              'application/x.sql-error'
+            ),
+            // 添加 text/plain 格式作为后备
+            vscode.NotebookCellOutputItem.text(
+              `错误: ${errorMessage}`,
+              'text/plain'
+            ),
+          ]),
+        ]);
 
       execution.end(false, Date.now());
     }
