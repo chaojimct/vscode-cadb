@@ -42,20 +42,26 @@ export class DatabaseSelector {
     const currentConnection = this.editor.getCurrentConnection();
     const currentDatabase = this.editor.getCurrentDatabase();
 
+    // 安全地获取 label 字符串
+    const connectionLabel = currentConnection?.label?.toString() || '';
+    const databaseLabel = currentDatabase?.label?.toString() || '';
+
     console.log('[DatabaseSelector] 更新状态栏:', {
-      connection: currentConnection?.label?.toString(),
-      database: currentDatabase?.label?.toString()
+      connection: connectionLabel,
+      database: databaseLabel,
+      hasConnection: !!currentConnection,
+      hasDatabase: !!currentDatabase
     });
 
     // 根据当前选择状态设置图标和文本
     if (currentConnection && currentDatabase) {
       // 已选择连接和数据库
-      this.statusBarItem.text = `$(database) ${currentConnection.label} / ${currentDatabase.label}`;
+      this.statusBarItem.text = `$(database) ${connectionLabel} / ${databaseLabel}`;
       this.statusBarItem.backgroundColor = undefined; // 正常状态
       this.statusBarItem.tooltip = "点击选择数据库连接和数据库";
     } else if (currentConnection) {
       // 只选择了连接，未选择数据库
-      this.statusBarItem.text = `$(database) ${currentConnection.label} $(warning)`;
+      this.statusBarItem.text = `$(database) ${connectionLabel} $(warning)`;
       this.statusBarItem.backgroundColor = new vscode.ThemeColor(
         "statusBarItem.warningBackground"
       );
@@ -70,14 +76,17 @@ export class DatabaseSelector {
     }
 
     // 在 SQL 文件或 SQL Notebook 中显示状态栏项
+    // 如果已选择数据库，即使不在 SQL 文件中也显示（方便用户看到当前选择）
     const activeEditor = vscode.window.activeTextEditor;
     const activeNotebookEditor = vscode.window.activeNotebookEditor;
     
     const isSqlFile = activeEditor && activeEditor.document.languageId === "sql";
     const isSqlNotebook = activeNotebookEditor && 
       activeNotebookEditor.notebook.notebookType === "cadb.sqlNotebook";
+    const hasDatabaseSelected = currentConnection && currentDatabase;
     
-    if (isSqlFile || isSqlNotebook) {
+    // 如果已选择数据库，或者当前在 SQL 文件/Notebook 中，则显示状态栏
+    if (isSqlFile || isSqlNotebook || hasDatabaseSelected) {
       this.statusBarItem.show();
     } else {
       this.statusBarItem.hide();
