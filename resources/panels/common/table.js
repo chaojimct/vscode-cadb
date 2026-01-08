@@ -13,6 +13,7 @@ class DatabaseTableData {
     this.tableData = [];
     this.columns = [];
     this.changedRows = new Set();
+    this.originalData = new Map(); // 保存原始数据，key 为行索引
     this.queryTime = 0; // 查询时间（秒）
   }
 
@@ -24,6 +25,11 @@ class DatabaseTableData {
     this.tableData = data;
     this.queryTime = queryTime || 0;
     this.changedRows.clear();
+    this.originalData.clear();
+    // 保存原始数据的深拷贝
+    data.forEach((row, index) => {
+      this.originalData.set(index, JSON.parse(JSON.stringify(row)));
+    });
     this._initDataTable();
   }
 
@@ -126,13 +132,35 @@ class DatabaseTableData {
    */
   _cellEdited(cell) {
     const item = cell._cell;
-    // 检查值是否改变
-    if (item.value.trim() !== item.initialValue) {
+    const row = item.row;
+    const rowData = row.getData();
+    const rowIndex = row.getPosition();
+    
+    // 检查值是否改变（比较当前值和初始值）
+    const currentValue = item.value !== null && item.value !== undefined ? String(item.value).trim() : '';
+    const initialValue = item.initialValue !== null && item.initialValue !== undefined ? String(item.initialValue).trim() : '';
+    
+    if (currentValue !== initialValue) {
       $(cell._cell.element).addClass("tabulator-cell-edited");
-      this.changedRows.add(item.row);
+      this.changedRows.add(row);
     } else {
-      $(cell._cell.element).removeClass("tabulator-cell-edited");
-      this.changedRows.delete(item.row);
+      // 检查整行是否还有其他修改
+      const originalRow = this.originalData.get(rowIndex);
+      if (originalRow) {
+        let hasChanges = false;
+        for (const key in rowData) {
+          const currentVal = rowData[key] !== null && rowData[key] !== undefined ? String(rowData[key]).trim() : '';
+          const originalVal = originalRow[key] !== null && originalRow[key] !== undefined ? String(originalRow[key]).trim() : '';
+          if (currentVal !== originalVal) {
+            hasChanges = true;
+            break;
+          }
+        }
+        if (!hasChanges) {
+          $(cell._cell.element).removeClass("tabulator-cell-edited");
+          this.changedRows.delete(row);
+        }
+      }
     }
   }
 
@@ -163,6 +191,11 @@ class DatabaseTableData {
 
     this.table.replaceData(this.tableData);
     this.changedRows.clear();
+    this.originalData.clear();
+    // 重新保存原始数据
+    this.tableData.forEach((row, index) => {
+      this.originalData.set(index, JSON.parse(JSON.stringify(row)));
+    });
     
     console.log('表格已刷新');
   };
@@ -238,13 +271,49 @@ class DatabaseTableData {
 
   /**
    * 获取修改的行数据
+   * 返回包含原始数据和修改后数据的对象数组
    */
   getChangedRows() {
-    const rows = [];
+    const changedRows = [];
+    const primaryKeyField = this._getPrimaryKeyField();
+    
     this.changedRows.forEach((row) => {
-      rows.push(row.getData());
+      const currentData = row.getData();
+      const rowIndex = row.getPosition();
+      const originalData = this.originalData.get(rowIndex);
+      
+      if (originalData) {
+        // 只收集实际改变的字段
+        const changes = {};
+        for (const key in currentData) {
+          const currentVal = currentData[key] !== null && currentData[key] !== undefined ? String(currentData[key]).trim() : '';
+          const originalVal = originalData[key] !== null && originalData[key] !== undefined ? String(originalData[key]).trim() : '';
+          if (currentVal !== originalVal) {
+            changes[key] = currentData[key];
+          }
+        }
+        
+        // 如果有改变，添加到结果中
+        if (Object.keys(changes).length > 0) {
+          changedRows.push({
+            id: originalData[primaryKeyField], // 使用主键作为 ID
+            original: originalData,
+            updated: changes, // 只包含改变的字段
+            full: currentData // 完整的新数据
+          });
+        }
+      }
     });
-    return rows;
+    
+    return changedRows;
+  }
+  
+  /**
+   * 获取主键字段名
+   */
+  _getPrimaryKeyField() {
+    const pkColumn = this.columns.find(col => col.key === 'PRI');
+    return pkColumn ? pkColumn.field : 'id'; // 默认使用 'id'
   }
 
   /**

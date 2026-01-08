@@ -11,6 +11,8 @@ import {
   Dataloader,
   FormResult,
   PromiseResult,
+  SaveDataParams,
+  SaveResult,
   TableResult,
 } from "./dataloader";
 import { Datasource, DatasourceInputData } from "./datasource";
@@ -187,5 +189,14 @@ export class RedisDataloader implements Dataloader {
   }
   descStructure(): string[] {
     throw new Error("Method not implemented.");
+  }
+
+  /**
+   * 保存表格数据（Redis 不支持表结构更新）
+   */
+  async saveData(params: SaveDataParams): Promise<SaveResult> {
+    // Redis 是键值存储，不支持类似 SQL 的 UPDATE 操作
+    // 如果需要更新 Redis 数据，应该使用其他方法（如直接操作 key-value）
+    throw new Error("Redis 不支持表结构数据保存操作");
   }
 }

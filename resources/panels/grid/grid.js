@@ -85,6 +85,13 @@ $(function () {
     const changedRows = dbTable.getChangedRows();
     if (changedRows.length === 0) {
       console.log('没有需要保存的修改');
+      if (vscode) {
+        vscode.postMessage({
+          command: "status",
+          success: false,
+          message: "没有需要保存的修改",
+        });
+      }
       return;
     }
 
@@ -114,7 +121,26 @@ $(function () {
         updateSQLInputFields(fields);
       }
     } else if (command === "status") {
-      console.log('操作状态:', data.success ? '成功' : '失败', '-', data.message || "操作完成");
+      const message = data.message || (data.success ? "操作完成" : "操作失败");
+      if (data.success) {
+        console.log('✓', message);
+        // 可以在这里添加成功提示，比如显示一个临时提示框
+        if (window.showSuccessMessage) {
+          window.showSuccessMessage(message);
+        }
+      } else {
+        console.error('✗', message);
+        // 可以在这里添加错误提示
+        if (window.showErrorMessage) {
+          window.showErrorMessage(message);
+        } else {
+          alert(message);
+        }
+      }
+      // 如果保存成功，清除修改标记
+      if (data.success && command === "status") {
+        dbTable.refreshTable();
+      }
     }
   });
 

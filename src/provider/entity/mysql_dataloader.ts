@@ -6,6 +6,8 @@ import {
   Dataloader,
   FormResult,
   PromiseResult,
+  SaveDataParams,
+  SaveResult,
   TableResult,
 } from "./dataloader";
 import { Datasource, DatasourceInputData } from "./datasource";
@@ -740,5 +742,87 @@ ORDER BY
       rowData: dataTable,
       queryTime: queryTime,
     } as TableResult);
+  }
+
+  /**
+   * 保存表格数据（根据主键更新）
+   */
+  async saveData(params: SaveDataParams): Promise<SaveResult> {
+    const { tableName, databaseName, primaryKeyField, rows } = params;
+    
+    // 确保连接可用
+    await this.ensureConnection();
+    
+    // 切换到指定数据库
+    await new Promise<void>((resolve, reject) => {
+      this.conn.changeUser({ database: databaseName }, (err: any) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+
+    let successCount = 0;
+    let errorCount = 0;
+    const errors: string[] = [];
+
+    for (const row of rows) {
+      try {
+        const id = row.id;
+        const updated = row.updated;
+
+        if (!id) {
+          errors.push(`行缺少主键值`);
+          errorCount++;
+          continue;
+        }
+
+        if (!updated || Object.keys(updated).length === 0) {
+          continue; // 跳过没有实际更新的行
+        }
+
+        // 构建 UPDATE 语句
+        const setClause = Object.keys(updated)
+          .map((key) => {
+            const value = updated[key];
+            if (value === null || value === undefined) {
+              return `\`${key}\` = NULL`;
+            } else {
+              // 转义单引号
+              const escapedValue = String(value).replace(/'/g, "''");
+              return `\`${key}\` = '${escapedValue}'`;
+            }
+          })
+          .join(", ");
+
+        const updateSql = `UPDATE \`${databaseName}\`.\`${tableName}\` SET ${setClause} WHERE \`${primaryKeyField}\` = '${String(id).replace(/'/g, "''")}'`;
+
+        // 执行更新
+        await new Promise<void>((resolve, reject) => {
+          this.conn.query(updateSql, (err: any) => {
+            if (err) {
+              reject(err);
+            } else {
+              resolve();
+            }
+          });
+        });
+
+        successCount++;
+      } catch (error) {
+        errorCount++;
+        errors.push(
+          error instanceof Error ? error.message : String(error)
+        );
+      }
+    }
+
+    return {
+      successCount,
+      errorCount,
+      errors,
+    };
   }
 }

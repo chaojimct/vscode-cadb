@@ -23,6 +23,35 @@ export interface FormResult {
   rowData: Record<string, any>[];
 }
 
+/**
+ * 保存行数据的参数
+ */
+export interface SaveRowData {
+  id: any; // 主键值
+  original: Record<string, any>; // 原始数据
+  updated: Record<string, any>; // 更新的字段（仅包含改变的字段）
+  full: Record<string, any>; // 完整的新数据
+}
+
+/**
+ * 保存数据的参数
+ */
+export interface SaveDataParams {
+  tableName: string; // 表名
+  databaseName: string; // 数据库名
+  primaryKeyField: string; // 主键字段名
+  rows: SaveRowData[]; // 要保存的行数据
+}
+
+/**
+ * 保存结果
+ */
+export interface SaveResult {
+  successCount: number; // 成功数量
+  errorCount: number; // 失败数量
+  errors: string[]; // 错误信息列表
+}
+
 export interface Dataloader {
   test(): Promise<PromiseResult>;
   connect(): Promise<void>;
@@ -56,4 +85,11 @@ export interface Dataloader {
   descIndex(ds: Datasource): Promise<FormResult | undefined>;
 
   descStructure(): string[];
+
+  /**
+   * 保存表格数据（根据主键更新）
+   * @param params 保存参数
+   * @returns 保存结果
+   */
+  saveData(params: SaveDataParams): Promise<SaveResult>;
 }

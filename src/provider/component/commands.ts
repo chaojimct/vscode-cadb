@@ -567,6 +567,10 @@ export function registerDatasourceItemCommands(
   vscode.commands.registerCommand("cadb.item.showData", async (args) => {
     const datasource = args as Datasource;
     const data = await datasource.listData();
+    const tableName = datasource.label?.toString() || "";
+    const databaseName = datasource.parent?.parent?.label?.toString() || "";
+    const connectionName = datasource.parent?.parent?.parent?.label?.toString() || "";
+    
     const panel = createWebview(
       provider,
       "datasourceTable",
@@ -579,6 +583,85 @@ export function registerDatasourceItemCommands(
     panel.webview.onDidReceiveMessage(async (message) => {
       switch (message.command) {
         case "save":
+          try {
+            if (!message.data || !Array.isArray(message.data) || message.data.length === 0) {
+              panel.webview.postMessage({
+                command: "status",
+                success: false,
+                message: "没有需要保存的数据",
+              });
+              return;
+            }
+
+            // 获取数据源配置
+            const connectionData = provider.model.find(
+              (ds) => ds.name === connectionName
+            );
+            if (!connectionData) {
+              panel.webview.postMessage({
+                command: "status",
+                success: false,
+                message: "数据源不存在",
+              });
+              return;
+            }
+
+            // 创建数据源实例
+            const dsInstance = await Datasource.createInstance(
+              provider.model,
+              provider.context,
+              connectionData,
+              false
+            );
+
+            if (!dsInstance.dataloader) {
+              panel.webview.postMessage({
+                command: "status",
+                success: false,
+                message: "无法创建数据库连接",
+              });
+              return;
+            }
+
+            // 获取主键字段名
+            const primaryKeyField = data?.columnDefs?.find((col: any) => col.key === 'PRI')?.field || 'id';
+            
+            // 使用 dataloader 的 saveData 方法
+            const saveResult = await dsInstance.dataloader.saveData({
+              tableName: tableName,
+              databaseName: databaseName,
+              primaryKeyField: primaryKeyField,
+              rows: message.data,
+            });
+
+            // 发送结果
+            if (saveResult.errorCount === 0) {
+              panel.webview.postMessage({
+                command: "status",
+                success: true,
+                message: `成功更新 ${saveResult.successCount} 行`,
+              });
+              // 刷新表格数据
+              const refreshedData = await datasource.listData();
+              panel.webview.postMessage({
+                command: "load",
+                data: refreshedData,
+              });
+            } else {
+              panel.webview.postMessage({
+                command: "status",
+                success: false,
+                message: `更新完成：成功 ${saveResult.successCount} 行，失败 ${saveResult.errorCount} 行。${saveResult.errors.length > 0 ? saveResult.errors[0] : ""}`,
+              });
+            }
+          } catch (error) {
+            console.error("保存失败:", error);
+            panel.webview.postMessage({
+              command: "status",
+              success: false,
+              message: `保存失败: ${error instanceof Error ? error.message : String(error)}`,
+            });
+          }
           break;
       }
     });

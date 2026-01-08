@@ -123,6 +123,11 @@ class DynamicForm {
     // select 使用原生 HTML，不需要 Layui 渲染
     this.form.render("checkbox");
     
+    // 渲染折叠面板
+    if (this.element) {
+      this.element.render("collapse");
+    }
+    
     // 初始化密码框的眼睛图标
     this.initPasswordFields();
 
@@ -176,10 +181,16 @@ class DynamicForm {
       });
     }
 
-    // 基础字段
+    // 基础字段（折叠面板，默认展开）
     if (baseFields.length > 0) {
-      html += '<div class="section-title">基础设置</div>';
+      html += '<div class="layui-collapse" lay-accordion="">';
+      html += '<div class="layui-colla-item layui-show">';
+      html += '<h2 class="layui-colla-title">基础设置</h2>';
+      html += '<div class="layui-colla-content layui-show">';
       html += this.generateFieldsHtml(baseFields);
+      html += "</div>";
+      html += "</div>";
+      html += "</div>";
     }
 
     // 高级字段（折叠面板）- 只有当存在高级字段时才显示
