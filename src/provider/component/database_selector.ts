@@ -28,6 +28,11 @@ export class DatabaseSelector {
     vscode.window.onDidChangeActiveTextEditor(() => {
       this.updateStatusBar();
     });
+    
+    // 监听活动 Notebook 变化
+    vscode.window.onDidChangeActiveNotebookEditor(() => {
+      this.updateStatusBar();
+    });
   }
 
   /**
@@ -36,6 +41,11 @@ export class DatabaseSelector {
   public updateStatusBar(): void {
     const currentConnection = this.editor.getCurrentConnection();
     const currentDatabase = this.editor.getCurrentDatabase();
+
+    console.log('[DatabaseSelector] 更新状态栏:', {
+      connection: currentConnection?.label?.toString(),
+      database: currentDatabase?.label?.toString()
+    });
 
     // 根据当前选择状态设置图标和文本
     if (currentConnection && currentDatabase) {
@@ -59,9 +69,15 @@ export class DatabaseSelector {
       this.statusBarItem.tooltip = "未连接数据库。点击选择连接和数据库";
     }
 
-    // 只在 SQL 文件中显示状态栏项
+    // 在 SQL 文件或 SQL Notebook 中显示状态栏项
     const activeEditor = vscode.window.activeTextEditor;
-    if (activeEditor && activeEditor.document.languageId === "sql") {
+    const activeNotebookEditor = vscode.window.activeNotebookEditor;
+    
+    const isSqlFile = activeEditor && activeEditor.document.languageId === "sql";
+    const isSqlNotebook = activeNotebookEditor && 
+      activeNotebookEditor.notebook.notebookType === "cadb.sqlNotebook";
+    
+    if (isSqlFile || isSqlNotebook) {
       this.statusBarItem.show();
     } else {
       this.statusBarItem.hide();
