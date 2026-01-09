@@ -201,8 +201,6 @@ class DatabaseTableData {
     this.tableData.forEach((row, index) => {
       this.originalData.set(index, JSON.parse(JSON.stringify(row)));
     });
-    
-    console.log('表格已刷新');
   };
 
   /**
@@ -241,7 +239,6 @@ class DatabaseTableData {
           // 用户确认删除
           selectedRowsArray.forEach((row) => row.delete());
           layer.close(index);
-          console.log("删除成功");
         }
       );
     });
@@ -341,7 +338,6 @@ class DatabaseTableData {
     if (whereClause && whereClause.trim()) {
       try {
         filteredData = this.filterByWhereClause(filteredData, whereClause);
-        console.log(`✓ 已应用 WHERE 过滤，找到 ${filteredData.length} 条记录`);
       } catch (error) {
         console.error(`✗ WHERE 子句错误: ${error.message}`);
         return;
@@ -354,7 +350,6 @@ class DatabaseTableData {
         filteredData = this.sortByOrderByClause(filteredData, orderByClause);
 
         if (!whereClause) {
-          console.log("✓ 已应用 ORDER BY 排序");
         }
       } catch (error) {
         console.error(`✗ ORDER BY 子句错误: ${error.message}`);
@@ -378,38 +373,21 @@ class DatabaseTableData {
    * @returns {Array} 过滤后的数据
    */
   filterByWhereClause(data, whereClause) {
-    console.log("=== WHERE 过滤开始 ===");
-    console.log("原始 WHERE 子句:", whereClause);
-    console.log("数据行数:", data.length);
-    console.log(
-      "可用字段:",
-      this.columns.map((c) => c.field)
-    );
-
     try {
       // 解析 WHERE 条件（不使用 eval 或 new Function）
       const condition = this.parseWhereCondition(whereClause);
 
       const filteredData = data.filter((row) => {
         try {
-          const result = this.evaluateCondition(condition, row);
-          if (result) {
-            console.log("✓ 匹配的行:", row);
-          }
-          return result;
+          return this.evaluateCondition(condition, row);
         } catch (error) {
           console.error("✗ 评估行时出错:", error.message);
           return false;
         }
       });
-
-      console.log("过滤后行数:", filteredData.length);
-      console.log("=== WHERE 过滤结束 ===");
-
       return filteredData;
     } catch (error) {
       console.error("✗ WHERE 解析错误:", error.message);
-      console.log("=== WHERE 过滤结束 ===");
       throw error;
     }
   }

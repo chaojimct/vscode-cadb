@@ -22,7 +22,6 @@ export class DatabaseManager {
    * 通知数据库选择已变化
    */
   private notifyDatabaseChanged(): void {
-    console.log('[DatabaseManager] notifyDatabaseChanged triggered');
     this._onDidChangeDatabase.fire();
   }
 

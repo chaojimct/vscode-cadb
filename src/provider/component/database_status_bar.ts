@@ -54,8 +54,6 @@ export class DatabaseStatusBar {
     const targetEditor = editor || vscode.window.activeTextEditor;
     // 显示在SQL Notebook或SQL文本文件中
     const isSqlFile = targetEditor?.document.languageId === 'sql';
-    
-    console.log('[DatabaseStatusBar] _updateStatusBarVisibility', { isSqlNotebook, isSqlFile, editorLanguage: targetEditor?.document.languageId });
 
     if (isSqlNotebook || isSqlFile) {
       this._statusBarItem.show();

@@ -110,7 +110,6 @@ $(function () {
   $("#btn-save").on("click", () => {
     const changedRows = dbTable.getChangedRows();
     if (changedRows.length === 0) {
-      console.log('没有需要保存的修改');
       if (vscode) {
         vscode.postMessage({
           command: "status",
@@ -149,7 +148,6 @@ $(function () {
     } else if (command === "status") {
       const message = data.message || (data.success ? "操作完成" : "操作失败");
       if (data.success) {
-        console.log('✓', message);
         // 可以在这里添加成功提示，比如显示一个临时提示框
         if (window.showSuccessMessage) {
           window.showSuccessMessage(message);

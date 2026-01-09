@@ -194,10 +194,6 @@ function initDatabaseForm(data = {}, options = {}) {
     mapping.collation.options = options.collation;
   }
 
-  console.log("初始化数据库表单，字段配置:", mapping);
-  console.log("数据:", data);
-  console.log("选项:", options);
-
   dynamicForm = new DynamicForm({
     container: "#formContainer",
     fieldMapping: mapping,

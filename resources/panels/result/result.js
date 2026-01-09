@@ -42,7 +42,6 @@ layui.use(["tabs", "layer"], function () {
           showContextMenu(layId, e.clientX, e.clientY);
         });
       });
-      console.log('已为现有标签绑定右键菜单');
     }, 100);
   }
 
@@ -311,16 +310,11 @@ layui.use(["tabs", "layer"], function () {
       done: function (data) {
         // 标签添加完成后的回调
         const $headerItem = data.headerItem;
-
-        console.log('标签添加完成:', tabId);
-        console.log('标签元素:', $headerItem[0]);
-
         // 如果不可关闭，设置 lay-closable="false" 属性（参考官方示例）
         if (!closable) {
           $headerItem.attr('lay-closable', 'false');
           // 移除关闭按钮
           $headerItem.find(".layui-tabs-close, .layui-tab-close").remove();
-          console.log('已设置标签为不可关闭');
         } else {
           // 可关闭标签：手动添加关闭按钮并绑定事件
           addCloseButton($headerItem, tabId);
@@ -352,7 +346,6 @@ layui.use(["tabs", "layer"], function () {
   function addCloseButton($headerItem, tabId) {
     // 检查是否已存在关闭按钮
     if ($headerItem.find(".layui-tabs-close").length > 0) {
-      console.log('关闭按钮已存在:', tabId);
       return;
     }
 
@@ -362,13 +355,10 @@ layui.use(["tabs", "layer"], function () {
     // 绑定点击事件
     $close.on('click', function(e) {
       e.stopPropagation(); // 阻止事件冒泡
-      console.log('点击关闭按钮:', tabId);
       tabs.close(TABS_ID, tabId);
     });
-
     // 添加到标签头部
     $headerItem.append($close);
-    console.log('已添加关闭按钮并绑定事件:', tabId);
   }
 
   /**

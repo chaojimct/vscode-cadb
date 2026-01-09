@@ -675,6 +675,7 @@ export function registerDatasourceItemCommands(
     try {
       // 判断文件扩展名是否为 .jsql
       if (fileName.toLowerCase().endsWith('.jsql')) {
+				console.log(fileItem);
         // 使用 SQL Notebook 方式打开
         const notebookDocument = await vscode.workspace.openNotebookDocument(dsPath);
         await vscode.window.showNotebookDocument(notebookDocument, {

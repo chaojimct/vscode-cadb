@@ -257,7 +257,6 @@ layui.use(["element", "form", "layer"], function () {
         if (idx !== -1) {
           mockData.fields.splice(idx, 1);
           renderFieldList();
-          console.log('字段已删除');
 
           // 通知 VSCode
         vscode.postMessage({
@@ -291,7 +290,6 @@ layui.use(["element", "form", "layer"], function () {
         if (idx !== -1) {
           mockData.indexes.splice(idx, 1);
           renderIndexList();
-          console.log('索引已删除');
 
           // 通知 VSCode
           vscode.postMessage({
@@ -435,9 +433,6 @@ layui.use(["element", "form", "layer"], function () {
         
         mockData.fields = fields;
         mockData.indexes = indexes;
-        
-        console.log("加载的字段数据:", fields);
-        console.log("加载的索引数据:", indexes);
       } else if (data && data.fields) {
         // 兼容旧格式
         mockData.fields = data.fields;
@@ -452,8 +447,6 @@ layui.use(["element", "form", "layer"], function () {
     } else if (command === "status") {
       const statusMsg = data.message || "操作完成";
       const statusType = data.success ? '成功' : '失败';
-      console.log(`操作状态: ${statusType} - ${statusMsg}`);
-      
       if (dynamicForm) {
         dynamicForm.showStatus(statusMsg, data.success ? "success" : "error");
       }

@@ -5,16 +5,11 @@ export function activate(context) {
   return {
     renderOutputItem(outputItem, element) {
       try {
-        console.log('[SQL Notebook Renderer] Rendering output, mime:', outputItem.mime);
-        
         // 解析数据
         let data;
         const decoder = new TextDecoder();
         const bytes = outputItem.data();
         const text = decoder.decode(bytes);
-        
-        console.log('[SQL Notebook Renderer] Raw data length:', text.length);
-        
         try {
           data = JSON.parse(text);
         } catch (e) {
@@ -22,9 +17,6 @@ export function activate(context) {
           element.textContent = '无法解析输出数据: ' + e.message;
           return;
         }
-
-        console.log('[SQL Notebook Renderer] Parsed data type:', data.type);
-
         // 创建容器
         const container = document.createElement('div');
         container.className = 'sql-notebook-output';
@@ -167,8 +159,6 @@ export function activate(context) {
         // 清空元素并添加新内容
         element.innerHTML = '';
         element.appendChild(container);
-        
-        console.log('[SQL Notebook Renderer] Rendering completed successfully');
       } catch (error) {
         console.error('[SQL Notebook Renderer] Error rendering output:', error);
         element.innerHTML = `<div style="color: var(--vscode-errorForeground); padding: 8px;">渲染错误: ${error.message}</div>`;

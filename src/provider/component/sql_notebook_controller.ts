@@ -78,12 +78,6 @@ export class SqlNotebookController {
         this._controller.description = '未选择数据库';
         this._controller.detail = '点击工具栏按钮选择数据库连接';
       }
-
-      console.log('[SqlNotebookController] 更新后的值:', {
-        description: this._controller.description,
-        detail: this._controller.detail,
-        label: this._controller.label
-      });
     } catch (error) {
       console.error('[SqlNotebookController] 更新描述失败:', error);
     }
