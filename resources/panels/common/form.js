@@ -45,7 +45,7 @@ class DynamicForm {
    */
   async load(data) {
     await this.ready;
-
+		console.log(data);
     this.currentData = data || {};
     const dataFields = Object.keys(this.currentData);
 

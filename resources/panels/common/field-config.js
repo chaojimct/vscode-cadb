@@ -206,6 +206,24 @@
     authentication_string: {
       type: "hidden",
     },
+		password_last_changed: {
+			type: "hidden",
+		},
+		password_lifetime: {
+			type: "hidden",
+		},
+		Password_reuse_history: {
+			type: "hidden",
+		},
+		Password_reuse_time: {
+			type: "hidden",
+		},
+		Password_require_current: {
+			type: "hidden",
+		},
+		User_attributes: {
+			type: "hidden",
+		},
     // 基础字段
     User: {
       type: "text",

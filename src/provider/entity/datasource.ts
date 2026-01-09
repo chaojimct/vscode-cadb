@@ -44,7 +44,7 @@ export interface DatasourceInputData {
 }
 
 export class Datasource extends vscode.TreeItem {
-	public data: DatasourceInputData;
+  public data: DatasourceInputData;
   public children: Datasource[] = [];
   public parent?: Datasource;
   public type: string;
@@ -72,10 +72,12 @@ export class Datasource extends vscode.TreeItem {
       return Promise.resolve(undefined);
     }
     switch (this.type) {
-			case "user":
+      case "user":
         return this.dataloader.descUser(this);
-			case "datasource":
+      case "datasource":
         return this.dataloader.descDatasource(this);
+      case "collection":
+        return this.dataloader.descDatabase(this);
       case "document":
         return this.dataloader.descTable(this);
       default:
@@ -88,9 +90,9 @@ export class Datasource extends vscode.TreeItem {
     databaseManager?: DatabaseManager
   ): Promise<void> => {
     switch (this.type) {
-			case "datasourceType":
-				// TODO: 创建数据库
-				break;
+      case "datasourceType":
+        // TODO: 创建数据库
+        break;
       case "fileType":
         if (!this.parent || !this.parent.label) {
           return Promise.resolve();
@@ -99,56 +101,61 @@ export class Datasource extends vscode.TreeItem {
           context.globalStorageUri,
           this.parent.label.toString()
         );
-        
+
         // 创建新的 .jsql 文件（SQL Notebook）
-          const dayjs = require("dayjs");
+        const dayjs = require("dayjs");
         const filename = dayjs().format("YYYYMMDDHHmmss") + ".jsql";
-          const fileUri = vscode.Uri.joinPath(dsPath, filename);
-        
+        const fileUri = vscode.Uri.joinPath(dsPath, filename);
+
         // 查找当前数据库和数据源信息
         let datasourceName: string | null = null;
         let databaseName: string | null = null;
-        
+
         // 向上查找连接和数据库节点
         let current: Datasource | undefined = this.parent;
         while (current) {
-          if (current.type === 'collection') {
+          if (current.type === "collection") {
             databaseName = current.label?.toString() || null;
           }
-          if (current.type === 'datasource') {
+          if (current.type === "datasource") {
             datasourceName = current.label?.toString() || null;
           }
           current = current.parent;
         }
-        
+
         // 创建空的 notebook 内容，包含数据库连接信息
         const emptyNotebook = {
           datasource: datasourceName,
           database: databaseName,
-          cells: []
+          cells: [],
         };
         const content = JSON.stringify(emptyNotebook, null, 2);
-        
+
         // 写入文件
-        await vscode.workspace.fs.writeFile(fileUri, Buffer.from(content, 'utf-8'));
-        
+        await vscode.workspace.fs.writeFile(
+          fileUri,
+          Buffer.from(content, "utf-8")
+        );
+
         // 打开文件作为 Notebook
-        const notebookDocument = await vscode.workspace.openNotebookDocument(fileUri);
+        const notebookDocument = await vscode.workspace.openNotebookDocument(
+          fileUri
+        );
         await vscode.window.showNotebookDocument(notebookDocument);
-        
+
         // 如果有 databaseManager，自动设置数据库
         if (databaseManager && databaseName) {
           // 查找当前数据库节点
           let dbNode: Datasource | undefined = this.parent;
           while (dbNode) {
-            if (dbNode.type === 'collection' && dbNode.label === databaseName) {
+            if (dbNode.type === "collection" && dbNode.label === databaseName) {
               databaseManager.setCurrentDatabase(dbNode, true);
               break;
             }
             dbNode = dbNode.parent;
           }
         }
-        
+
         // 刷新文件列表
         this.dataloader?.listFiles(this, dsPath);
         break;
@@ -206,7 +213,7 @@ export class Datasource extends vscode.TreeItem {
     parent?: Datasource
   ) {
     super(input.name);
-		this.data = input;
+    this.data = input;
     this.dataloader = dataloader;
     this.parent = parent;
     this.type = this.contextValue = input.type;
@@ -269,13 +276,24 @@ export class Datasource extends vscode.TreeItem {
         command: "cadb.file.open",
         arguments: [this],
       };
+      this.iconPath = {
+        light: vscode.Uri.file(
+          path.join(__filename, ...iconDir, "SQL_light.svg")
+        ),
+        dark: vscode.Uri.file(
+          path.join(__filename, ...iconDir, "SQL_dark.svg")
+        ),
+      };
+    } else {
+      this.iconPath = {
+        light: vscode.Uri.file(
+          path.join(__filename, ...iconDir, "Folder_light.svg")
+        ),
+        dark: vscode.Uri.file(
+          path.join(__filename, ...iconDir, "Folder_dark.svg")
+        ),
+      };
     }
-    this.iconPath = {
-      light: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "SQL_light.svg")
-      ),
-      dark: vscode.Uri.file(path.join(__filename, ...iconDir, "SQL_dark.svg")),
-    };
   }
 
   private initIndexType(input: DatasourceInputData): void {
@@ -340,13 +358,24 @@ export class Datasource extends vscode.TreeItem {
   private initUserType(input: DatasourceInputData): void {
     if (input.type === "user") {
       this.description = `${input.extra}`;
+      this.iconPath = {
+        light: vscode.Uri.file(
+          path.join(__filename, ...iconDir, "User_light.svg")
+        ),
+        dark: vscode.Uri.file(
+          path.join(__filename, ...iconDir, "User_dark.svg")
+        ),
+      };
+    } else {
+      this.iconPath = {
+        light: vscode.Uri.file(
+          path.join(__filename, ...iconDir, "Folder_light.svg")
+        ),
+        dark: vscode.Uri.file(
+          path.join(__filename, ...iconDir, "Folder_dark.svg")
+        ),
+      };
     }
-    this.iconPath = {
-      light: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "User_light.svg")
-      ),
-      dark: vscode.Uri.file(path.join(__filename, ...iconDir, "User_dark.svg")),
-    };
   }
 
   private initItem(input: DatasourceInputData): void {
@@ -354,9 +383,7 @@ export class Datasource extends vscode.TreeItem {
       light: vscode.Uri.file(
         path.join(__filename, ...iconDir, "Item_light.svg")
       ),
-      dark: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "Item_dark.svg")
-      ),
+      dark: vscode.Uri.file(path.join(__filename, ...iconDir, "Item_dark.svg")),
     };
   }
 
@@ -401,10 +428,10 @@ export class Datasource extends vscode.TreeItem {
     } else {
       this.iconPath = {
         light: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "Database_light.svg")
+          path.join(__filename, ...iconDir, "Folder_light.svg")
         ),
         dark: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "Database_dark.svg")
+          path.join(__filename, ...iconDir, "Folder_dark.svg")
         ),
       };
     }

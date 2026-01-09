@@ -152,7 +152,9 @@ body {
   border: none;
   opacity: 1 !important;
   visibility: visible !important;
-  display: inline-block !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
 }
 
 .layui-btn-danger:hover {
@@ -163,7 +165,9 @@ body {
 #deleteBtn {
   opacity: 1 !important;
   visibility: visible !important;
-  display: inline-block !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
 }
 
 /* 滚动条样式适配 VSCode */

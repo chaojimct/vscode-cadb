@@ -76,15 +76,15 @@
       },
       {
         "command": "cadb.datasource.selectDatabases",
-        "title": "选择数据库"
+        "title": "选择"
       },
       {
         "command": "cadb.collection.useDatabase",
-        "title": "使用数据库"
+        "title": "使用"
       },
       {
         "command": "cadb.datasource.copyConnection",
-        "title": "复制连接地址"
+        "title": "复制"
       },
       {
         "command": "cadb.datasource.copyConnectionAddress",
@@ -265,7 +265,7 @@
     "submenus": [
       {
         "id": "cadb.datasource.copyConnectionSubmenu",
-        "label": "复制连接地址"
+        "label": "复制"
       }
     ],
     "configuration": {

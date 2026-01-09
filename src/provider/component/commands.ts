@@ -9,6 +9,17 @@ import { ResultWebviewProvider } from "../result_provider";
 import { DatabaseSelector } from "./database_selector";
 import { createWebview } from "../webview_helper";
 
+function findAncestorDatasource(node: Datasource): Datasource | undefined {
+  let current: Datasource | undefined = node;
+  while (current) {
+    if (current.type === "datasource") {
+      return current;
+    }
+    current = current.parent;
+  }
+  return undefined;
+}
+
 async function editEntry(provider: DataSourceProvider, item: Datasource) {
   let panel = null;
   let configType = "";
@@ -23,6 +34,15 @@ async function editEntry(provider: DataSourceProvider, item: Datasource) {
   } else if (item.type === "user") {
     panel = createWebview(provider, "settings", `【${item.label}】编辑`);
     configType = "user";
+  } else if (item.type === "collection") {
+    const datasourceNode = findAncestorDatasource(item);
+    const dbType = datasourceNode?.data?.dbType || "mysql";
+    if (dbType !== "mysql") {
+      vscode.window.showWarningMessage("当前仅支持 MySQL 数据库编辑");
+      return;
+    }
+    panel = createWebview(provider, "settings", `【${item.label}】编辑`);
+    configType = "database";
   } else if (
     item.type === "document" ||
     item.type === "field" ||
@@ -33,12 +53,46 @@ async function editEntry(provider: DataSourceProvider, item: Datasource) {
     return;
   }
   
-  const data: FormResult | undefined = await item.edit();
-  panel.webview.postMessage({
-    command: "load",
-    configType: configType,
-    data: data,
-  });
+  let data: FormResult | undefined = undefined;
+  try {
+    data = await item.edit();
+  } catch (error) {
+    console.error("加载编辑数据失败:", error);
+    vscode.window.showErrorMessage(
+      `加载编辑数据失败: ${error instanceof Error ? error.message : String(error)}`
+    );
+    return;
+  }
+  if (configType === "database") {
+    const databaseData = data?.rowData?.[0] || {};
+    let collations: Datasource[] = [];
+    try {
+      collations = item.dataloader ? await item.dataloader.listCollations(item) : [];
+    } catch {
+      collations = [];
+    }
+    const options = collations.map((c) => ({
+      label: c.label?.toString() || "",
+      value: c.label?.toString() || "",
+    }));
+
+    panel.webview.postMessage({
+      command: "load",
+      configType: configType,
+      data: {
+        ...databaseData,
+        _mode: "edit",
+        _originalName: databaseData?.name || item.label?.toString() || "",
+      },
+      options: { collation: options },
+    });
+  } else {
+    panel.webview.postMessage({
+      command: "load",
+      configType: configType,
+      data: data,
+    });
+  }
   
   panel.webview.onDidReceiveMessage(async (message) => {
     switch (message.command) {
@@ -59,6 +113,14 @@ async function editEntry(provider: DataSourceProvider, item: Datasource) {
               command: "status",
               success: true,
               message: "✔️ 用户信息更新成功",
+            });
+          } else if (item.type === "collection") {
+            await updateDatabaseConfig(item, message.payload);
+            provider.refresh();
+            panel.webview.postMessage({
+              command: "status",
+              success: true,
+              message: "✔️ 数据库配置更新成功",
             });
           }
         } catch (error) {
@@ -162,6 +224,51 @@ async function updateUserInfo(
   }
 }
 
+async function updateDatabaseConfig(item: Datasource, payload: any): Promise<void> {
+  const databaseName = item.label?.toString() || "";
+  const originalName = payload?._originalName || databaseName;
+  const requestedName = payload?.name || originalName;
+  if (requestedName !== originalName) {
+    throw new Error("暂不支持重命名数据库");
+  }
+
+  const collation = payload?.collation;
+  if (!collation) {
+    throw new Error("排序规则不能为空");
+  }
+  if (!/^[0-9A-Za-z_]+$/.test(String(collation))) {
+    throw new Error("排序规则格式非法");
+  }
+
+  if (!item.dataloader) {
+    throw new Error("无法获取数据库连接");
+  }
+
+  await item.connect();
+  const conn: any = item.dataloader.getConnection();
+  if (!conn || typeof conn.query !== "function") {
+    throw new Error("当前数据源不支持编辑数据库");
+  }
+
+  const escapedDbName = originalName.replace(/`/g, "``");
+  const charset = String(collation).split("_")[0];
+  if (!/^[0-9A-Za-z_]+$/.test(charset)) {
+    throw new Error("字符集格式非法");
+  }
+  await new Promise<void>((resolve, reject) => {
+    conn.query(
+      `ALTER DATABASE \`${escapedDbName}\` CHARACTER SET ${charset} COLLATE ${collation}`,
+      (err: any) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      }
+    );
+  });
+}
+
 async function addEntry(item: any, provider: DataSourceProvider) {
   if (item && item.type === "datasourceType") {
     const dataloader = (item as Datasource).dataloader;
@@ -169,7 +276,7 @@ async function addEntry(item: any, provider: DataSourceProvider) {
       return;
     }
 
-    const collations = await dataloader.listCollations();
+    const collations = await dataloader.listCollations(item);
     const options = collations.map((c) => ({
       label: c.label?.toString() || "",
       value: c.label?.toString() || "",
@@ -241,8 +348,8 @@ async function addEntry(item: any, provider: DataSourceProvider) {
     return;
   }
 
-  if (item) {
-    await (item as Datasource).create(provider.context, provider.databaseManager);
+  if (item instanceof Datasource) {
+    await item.create(provider.context, provider.databaseManager);
     provider.refresh();
   } else {
     const panel = createWebview(provider, "settings", "数据库连接配置");

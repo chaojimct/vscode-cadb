@@ -393,9 +393,9 @@ body {
 }
 
 .layui-colla-title::before {
-  content: '▶';
+  content: '';
   display: inline-block;
-  margin-right: 8px;
+  margin-right: 18px;
   font-size: 10px;
   transition: transform 0.2s ease;
   color: var(--vscode-icon-foreground, var(--vscode-foreground));

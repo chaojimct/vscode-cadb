@@ -176,8 +176,9 @@ function initUserForm(data = {}) {
  * 初始化数据库创建表单
  */
 function initDatabaseForm(data = {}, options = {}) {
-  $("#pageTitle").text("创建数据库");
-  $("#pageSubtitle").text("创建一个新的数据库");
+  const isEditMode = data && data._mode === "edit";
+  $("#pageTitle").text(isEditMode ? "编辑数据库" : "创建数据库");
+  $("#pageSubtitle").text(isEditMode ? "修改数据库配置" : "创建一个新的数据库");
 
   // 检查字段配置是否已加载
   if (!databaseFieldMapping) {
@@ -192,6 +193,13 @@ function initDatabaseForm(data = {}, options = {}) {
   // 如果提供了排序规则选项，更新下拉框
   if (options && options.collation) {
     mapping.collation.options = options.collation;
+  }
+  
+  if (data && data._mode) {
+    mapping._mode = { type: "hidden" };
+  }
+  if (data && data._originalName) {
+    mapping._originalName = { type: "hidden" };
   }
 
   dynamicForm = new DynamicForm({
@@ -261,7 +269,8 @@ function handleDatabaseSave(data) {
     payload: data,
   });
 
-  showStatus("正在创建数据库...", "success");
+  const isEditMode = data && data._mode === "edit";
+  showStatus(isEditMode ? "正在保存数据库..." : "正在创建数据库...", "success");
 }
 
 /**

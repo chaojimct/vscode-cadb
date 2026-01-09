@@ -33,7 +33,7 @@ export class MySQLDataloader implements Dataloader {
     };
     this.conn = createConnection(this.connectionConfig);
   }
-	listCollations(): Promise<Datasource[]> {
+	listCollations(_: Datasource): Promise<Datasource[]> {
 		return new Promise((resolve) => {
 			this.ensureConnection().then(() => {
 				this.conn.query("SHOW COLLATION", (err, results: any[]) => {
@@ -160,14 +160,36 @@ export class MySQLDataloader implements Dataloader {
       });
     });
   }
-  descDatabase(ds: Datasource): Promise<FormResult | undefined> {
+  async descDatabase(ds: Datasource): Promise<FormResult | undefined> {
+    const databaseName = ds.label?.toString() || ds.data?.name;
+    if (!databaseName) {
+      return undefined;
+    }
+
+    try {
+      await this.ensureConnection();
+    } catch (error) {
+      vscode.window.showErrorMessage(
+        `连接数据库失败：${error instanceof Error ? error.message : String(error)}`
+      );
+      return undefined;
+    }
+
     return new Promise<FormResult | undefined>((resolve) => {
-      this.conn.query(``, (err, results) => {
-        if (err) {
-          vscode.window.showErrorMessage(err.message);
-          return resolve(undefined);
+      this.conn.query(
+        "SELECT DEFAULT_COLLATION_NAME AS collation FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?",
+        [databaseName],
+        (err, results: any[]) => {
+          if (err) {
+            vscode.window.showErrorMessage(err.message);
+            return resolve(undefined);
+          }
+          const collation = results?.[0]?.collation ?? "";
+          return resolve({
+            rowData: [{ name: databaseName, collation }],
+          });
         }
-      });
+      );
     });
   }
   descTable(ds: Datasource): Promise<FormResult | undefined> {
