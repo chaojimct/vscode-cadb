@@ -145,8 +145,15 @@ export class SqlNotebookController {
     try {
       execution.start(startTime);
 
-      const datasourceName = currentConnection!.label?.toString() || '';
-      const databaseName = currentDatabase!.label?.toString() || '';
+      const finalConnection = this._databaseManager.getCurrentConnection();
+      const finalDatabase = this._databaseManager.getCurrentDatabase();
+      
+      if (!finalConnection || !finalDatabase) {
+        return;
+      }
+
+      const datasourceName = finalConnection.label?.toString() || '';
+      const databaseName = finalDatabase.label?.toString() || '';
 
       const connection = await this._getConnection(datasourceName, databaseName);
       const sql = cell.document.getText().trim();
@@ -165,6 +172,9 @@ export class SqlNotebookController {
         });
       });
       const executionTime = Date.now() - startTime;
+
+      // 保存数据库连接信息到 Notebook 元数据
+      await this._saveNotebookMetadata(cell.notebook, datasourceName, databaseName);
 
       // 处理结果
       if (Array.isArray(result)) {
@@ -272,6 +282,50 @@ export class SqlNotebookController {
     });
 
     return connection;
+  }
+
+  /**
+   * 保存数据库连接信息到 Notebook 元数据
+   */
+  private async _saveNotebookMetadata(
+    notebook: vscode.NotebookDocument,
+    datasource: string,
+    database: string
+  ): Promise<void> {
+    try {
+      // 使用 WorkspaceEdit 来更新 Notebook 元数据
+      const edit = new vscode.WorkspaceEdit();
+      const metadata = {
+        ...notebook.metadata,
+        datasource,
+        database,
+      };
+      
+      // 创建新的 NotebookData，保留原有的 cells
+      const notebookData = new vscode.NotebookData(
+        notebook.getCells().map(cell => {
+          const cellData = new vscode.NotebookCellData(
+            cell.kind,
+            cell.document.getText(),
+            cell.document.languageId
+          );
+          cellData.outputs = [...cell.outputs];
+          cellData.metadata = cell.metadata;
+          return cellData;
+        })
+      );
+      notebookData.metadata = metadata;
+      
+      edit.set(notebook.uri, [
+        vscode.NotebookEdit.updateNotebookMetadata(metadata)
+      ]);
+      
+      await vscode.workspace.applyEdit(edit);
+      
+      console.log(`[Notebook] 已保存连接信息: ${datasource} / ${database}`);
+    } catch (error) {
+      console.error('[Notebook] 保存元数据失败:', error);
+    }
   }
 
   /**

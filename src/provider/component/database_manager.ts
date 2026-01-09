@@ -180,8 +180,9 @@ export class DatabaseManager {
   /**
    * 直接设置当前数据库（从 TreeView 中选择）
    * @param database - 数据库 Datasource 对象（type: collection）
+   * @param silent - 是否静默设置（不显示成功消息）
    */
-  public setCurrentDatabase(database: Datasource): void {
+  public setCurrentDatabase(database: Datasource, silent: boolean = false): void {
     // 查找数据库的连接节点
     // 结构可能为: datasource -> datasourceType -> collection
     let connectionNode: Datasource | undefined = undefined;
@@ -208,9 +209,11 @@ export class DatabaseManager {
     this.notifyDatabaseChanged();
     
     // 显示成功消息
-    vscode.window.showInformationMessage(
-      `已切换到数据库: ${this.currentConnection.label} / ${this.currentDatabase.label}`
-    );
+    if (!silent) {
+      vscode.window.showInformationMessage(
+        `已切换到数据库: ${this.currentConnection.label} / ${this.currentDatabase.label}`
+      );
+    }
   }
 }
 
