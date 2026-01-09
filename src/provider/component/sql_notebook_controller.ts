@@ -52,6 +52,43 @@ export class SqlNotebookController {
     setInterval(() => {
       this._cleanupConnections();
     }, 60000); // 每分钟检查一次
+    
+    // 监听 Active Notebook 变化，自动恢复连接状态
+    vscode.window.onDidChangeActiveNotebookEditor((editor) => {
+      if (editor && editor.notebook.notebookType === notebookType) {
+        this._restoreConnectionFromMetadata(editor.notebook);
+      }
+    });
+
+    // 初始化时如果已有激活的 SQL Notebook，尝试恢复
+    if (vscode.window.activeNotebookEditor && vscode.window.activeNotebookEditor.notebook.notebookType === notebookType) {
+      this._restoreConnectionFromMetadata(vscode.window.activeNotebookEditor.notebook);
+    }
+  }
+
+  /**
+   * 尝试从 Notebook 元数据中恢复连接信息
+   */
+  private async _restoreConnectionFromMetadata(notebook: vscode.NotebookDocument): Promise<boolean> {
+    const metadata = notebook.metadata;
+    if (metadata && metadata.datasource && metadata.database) {
+      const currentConn = this._databaseManager.getCurrentConnection();
+      const currentDb = this._databaseManager.getCurrentDatabase();
+      
+      // 如果当前已经选中了相同的，直接返回成功
+      if (currentConn?.label === metadata.datasource && currentDb?.label === metadata.database) {
+        return true;
+      }
+      
+      // 尝试恢复
+      const success = await this._databaseManager.setActiveDatabase(metadata.datasource, metadata.database);
+      if (success) {
+        // 如果成功恢复，更新控制器描述
+        this._updateDescription();
+      }
+      return success;
+    }
+    return false;
   }
 
   /**
@@ -107,6 +144,9 @@ export class SqlNotebookController {
   }
 
   private async _doExecuteCell(cell: vscode.NotebookCell): Promise<void> {
+    // 执行前尝试从 Metadata 恢复连接
+    await this._restoreConnectionFromMetadata(cell.notebook);
+
     const currentConnection = this._databaseManager.getCurrentConnection();
     const currentDatabase = this._databaseManager.getCurrentDatabase();
 
@@ -173,7 +213,9 @@ export class SqlNotebookController {
       // 处理结果
       if (Array.isArray(result)) {
         // SELECT 查询结果
+        const html = this._generateHtmlTable(result);
         const outputItems: vscode.NotebookCellOutputItem[] = [
+          vscode.NotebookCellOutputItem.text(html, 'text/html'),
           vscode.NotebookCellOutputItem.json(result, 'application/json')
         ];
         const output = new vscode.NotebookCellOutput(outputItems);
@@ -197,6 +239,61 @@ export class SqlNotebookController {
     } finally {
       execution.end(true, Date.now());
     }
+  }
+
+  /**
+   * 生成 HTML 表格
+   */
+  private _generateHtmlTable(data: any[]): string {
+    if (data.length === 0) {
+      return '<div style="padding: 10px; color: var(--vscode-descriptionForeground);"><i>No results found</i></div>';
+    }
+    
+    const columns = Object.keys(data[0]);
+    
+    let html = '<div style="overflow-x: auto;"><table style="border-collapse: collapse; width: 100%; font-family: var(--vscode-font-family); font-size: var(--vscode-editor-font-size);">';
+    
+    // Header
+    html += '<thead><tr>';
+    columns.forEach(col => {
+      html += `<th style="border: 1px solid var(--vscode-panel-border); padding: 6px; background-color: var(--vscode-editor-inactiveSelectionBackground); text-align: left; font-weight: bold; color: var(--vscode-editor-foreground);">${col}</th>`;
+    });
+    html += '</tr></thead>';
+    
+    // Body
+    html += '<tbody>';
+    data.forEach((row, index) => {
+      // 使用透明度来实现斑马纹，适应不同主题
+      const bgStyle = index % 2 === 0 ? '' : 'background-color: var(--vscode-keybindingTable-rowsBackground);';
+      html += `<tr style="${bgStyle}">`;
+      columns.forEach(col => {
+        const value = row[col];
+        let displayValue = '';
+        if (value === null) {
+          displayValue = '<span style="color: var(--vscode-descriptionForeground); font-style: italic;">null</span>';
+        } else if (value instanceof Date) {
+          displayValue = value.toISOString();
+        } else if (typeof value === 'object') {
+          displayValue = JSON.stringify(value);
+        } else {
+          // 转义 HTML 字符防止注入或显示错误
+          displayValue = String(value)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+        }
+        html += `<td style="border: 1px solid var(--vscode-panel-border); padding: 6px; color: var(--vscode-editor-foreground);">${displayValue}</td>`;
+      });
+      html += '</tr>';
+    });
+    html += '</tbody>';
+    
+    html += '</table></div>';
+    html += `<div style="margin-top: 8px; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Total: ${data.length} rows</div>`;
+    
+    return html;
   }
 
   /**

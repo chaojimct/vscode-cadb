@@ -214,5 +214,43 @@ export class DatabaseManager {
       );
     }
   }
+
+  /**
+    * 根据名称设置当前数据库（用于从缓存或文件恢复状态）
+    */
+   public async setActiveDatabase(connectionName: string, databaseName: string): Promise<boolean> {
+     const connections = this.provider.getConnections().map((conn) => new Datasource(conn));
+     const connection = connections.find(c => c.label === connectionName || c.data.name === connectionName);
+     
+     if (!connection) {
+       return false;
+     }
+ 
+     // 设置当前连接
+     this.currentConnection = connection;
+     
+     // 构造一个临时的数据库节点对象
+     // 注意：这个对象可能不包含完整的信息，仅用于显示和记录状态
+     const dbNode = new Datasource({
+         type: 'collection',
+         name: databaseName,
+         tooltip: databaseName
+     });
+     dbNode.label = databaseName;
+     
+     // 构建层级关系，以便 getCurrentConnection 能正常工作（虽然我们直接设置了 currentConnection）
+     const typeNode = new Datasource({
+         type: 'datasourceType',
+         name: 'Databases',
+         tooltip: 'Databases'
+     });
+     typeNode.parent = connection;
+     dbNode.parent = typeNode;
+     
+     this.currentDatabase = dbNode;
+     this.notifyDatabaseChanged();
+     
+     return true;
+   }
 }
 
