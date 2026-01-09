@@ -675,13 +675,32 @@ export function registerDatasourceItemCommands(
     try {
       // 判断文件扩展名是否为 .jsql
       if (fileName.toLowerCase().endsWith('.jsql')) {
-				console.log(fileItem);
+        // 查找文件所属的数据库节点
+        // 文件结构: datasource -> datasourceType -> collection -> collectionType -> fileType -> file
+        // 或: datasource -> datasourceType -> collection -> fileType -> file
+        let databaseNode: Datasource | undefined = undefined;
+        let current: Datasource | undefined = fileItem.parent; // fileType
+        
+        while (current) {
+          if (current.type === 'collection') {
+            databaseNode = current;
+            break;
+          }
+          current = current.parent;
+        }
+
         // 使用 SQL Notebook 方式打开
         const notebookDocument = await vscode.workspace.openNotebookDocument(dsPath);
         await vscode.window.showNotebookDocument(notebookDocument, {
           preview: false,
           viewColumn: vscode.ViewColumn.Active,
         });
+
+        // 如果找到了数据库节点，自动设置数据库（静默模式）
+        if (databaseNode && databaseManager) {
+          databaseManager.setCurrentDatabase(databaseNode, true);
+          console.log(`[File Open] 自动设置数据库: ${databaseNode.label}`);
+        }
       } else {
         // 使用普通文本编辑器打开
       const doc = await vscode.workspace.openTextDocument(dsPath);

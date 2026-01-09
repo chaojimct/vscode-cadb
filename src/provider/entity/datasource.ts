@@ -105,10 +105,26 @@ export class Datasource extends vscode.TreeItem {
         const filename = dayjs().format("YYYYMMDDHHmmss") + ".jsql";
           const fileUri = vscode.Uri.joinPath(dsPath, filename);
         
-        // 创建空的 notebook 内容
+        // 查找当前数据库和数据源信息
+        let datasourceName: string | null = null;
+        let databaseName: string | null = null;
+        
+        // 向上查找连接和数据库节点
+        let current: Datasource | undefined = this.parent;
+        while (current) {
+          if (current.type === 'collection') {
+            databaseName = current.label?.toString() || null;
+          }
+          if (current.type === 'datasource') {
+            datasourceName = current.label?.toString() || null;
+          }
+          current = current.parent;
+        }
+        
+        // 创建空的 notebook 内容，包含数据库连接信息
         const emptyNotebook = {
-          datasource: null,
-          database: null,
+          datasource: datasourceName,
+          database: databaseName,
           cells: []
         };
         const content = JSON.stringify(emptyNotebook, null, 2);
@@ -119,6 +135,19 @@ export class Datasource extends vscode.TreeItem {
         // 打开文件作为 Notebook
         const notebookDocument = await vscode.workspace.openNotebookDocument(fileUri);
         await vscode.window.showNotebookDocument(notebookDocument);
+        
+        // 如果有 databaseManager，自动设置数据库
+        if (databaseManager && databaseName) {
+          // 查找当前数据库节点
+          let dbNode: Datasource | undefined = this.parent;
+          while (dbNode) {
+            if (dbNode.type === 'collection' && dbNode.label === databaseName) {
+              databaseManager.setCurrentDatabase(dbNode, true);
+              break;
+            }
+            dbNode = dbNode.parent;
+          }
+        }
         
         // 刷新文件列表
         this.dataloader?.listFiles(this, dsPath);

@@ -151,6 +151,75 @@ export function activate(context: vscode.ExtensionContext) {
   const notebookRenderer = new SqlNotebookRenderer(context);
   context.subscriptions.push(notebookRenderer);
 
+  // 监听 Notebook 打开事件，自动设置数据库连接
+  context.subscriptions.push(
+    vscode.workspace.onDidOpenNotebookDocument(async (notebook) => {
+      // 只处理 SQL Notebook
+      if (notebook.notebookType !== 'cadb.sqlNotebook') {
+        return;
+      }
+
+      // 读取 Notebook 元数据中的数据库连接信息
+      const metadata = notebook.metadata;
+      const datasourceName = metadata?.datasource;
+      const databaseName = metadata?.database;
+
+      if (datasourceName && databaseName) {
+        console.log(`[Notebook] 检测到连接信息: ${datasourceName} / ${databaseName}`);
+        
+        // 查找对应的数据源和数据库
+        try {
+          const connections = provider.getConnections();
+          const connectionData = connections.find(
+            (conn) => conn.name === datasourceName
+          );
+
+          if (connectionData) {
+            const connection = new Datasource(connectionData);
+            
+            // 展开连接获取数据库列表
+            await vscode.window.withProgress(
+              {
+                location: vscode.ProgressLocation.Notification,
+                title: `正在加载数据库连接...`,
+                cancellable: false,
+              },
+              async () => {
+                const objects = await connection.expand(context);
+                const datasourceTypeNode = objects.find(
+                  (obj) => obj.type === 'datasourceType'
+                );
+
+                if (datasourceTypeNode) {
+                  const databases = await datasourceTypeNode.expand(context);
+                  const database = databases.find(
+                    (db) => db.label === databaseName
+                  );
+
+                  if (database) {
+                    // 设置当前数据库（静默模式）
+                    databaseManager.setCurrentDatabase(database, true);
+                    console.log(
+                      `[Notebook] 已自动设置数据库: ${datasourceName} / ${databaseName}`
+                    );
+                  } else {
+                    console.warn(
+                      `[Notebook] 找不到数据库: ${databaseName}`
+                    );
+                  }
+                }
+              }
+            );
+          } else {
+            console.warn(`[Notebook] 找不到数据源: ${datasourceName}`);
+          }
+        } catch (error) {
+          console.error('[Notebook] 自动设置数据库失败:', error);
+        }
+      }
+    })
+  );
+
   // 注册 Notebook 数据库状态显示命令（用于工具栏显示）
   context.subscriptions.push(
     vscode.commands.registerCommand('cadb.notebook.showDatabaseStatus', () => {
