@@ -299,29 +299,47 @@ export class Datasource extends vscode.TreeItem {
   private initIndexType(input: DatasourceInputData): void {
     if (input.type === "index") {
       this.description = input.extra;
+      this.iconPath = {
+        light: vscode.Uri.file(
+          path.join(__filename, ...iconDir, "Index_light.svg")
+        ),
+        dark: vscode.Uri.file(
+          path.join(__filename, ...iconDir, "Index_dark.svg")
+        ),
+      };
+    } else {
+      this.iconPath = {
+        light: vscode.Uri.file(
+          path.join(__filename, ...iconDir, "Folder_light.svg")
+        ),
+        dark: vscode.Uri.file(
+          path.join(__filename, ...iconDir, "Folder_dark.svg")
+        ),
+      };
     }
-    this.iconPath = {
-      light: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "Index_light.svg")
-      ),
-      dark: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "Index_dark.svg")
-      ),
-    };
   }
 
   private initFieldType(input: DatasourceInputData): void {
     if (input.type === "field") {
       this.description = input.extra;
+      this.iconPath = {
+        light: vscode.Uri.file(
+          path.join(__filename, ...iconDir, "Column_light.svg")
+        ),
+        dark: vscode.Uri.file(
+          path.join(__filename, ...iconDir, "Column_dark.svg")
+        ),
+      };
+    } else {
+      this.iconPath = {
+        light: vscode.Uri.file(
+          path.join(__filename, ...iconDir, "Folder_light.svg")
+        ),
+        dark: vscode.Uri.file(
+          path.join(__filename, ...iconDir, "Folder_dark.svg")
+        ),
+      };
     }
-    this.iconPath = {
-      light: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "Column_light.svg")
-      ),
-      dark: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "Column_dark.svg")
-      ),
-    };
   }
 
   private initDocument(input: DatasourceInputData): void {
@@ -344,15 +362,24 @@ export class Datasource extends vscode.TreeItem {
   private initCollectionType(input: DatasourceInputData): void {
     if (input.type === "collection") {
       this.description = `${input.extra}`;
+      this.iconPath = {
+        light: vscode.Uri.file(
+          path.join(__filename, ...iconDir, "Database_light.svg")
+        ),
+        dark: vscode.Uri.file(
+          path.join(__filename, ...iconDir, "Database_dark.svg")
+        ),
+      };
+    } else {
+      this.iconPath = {
+        light: vscode.Uri.file(
+          path.join(__filename, ...iconDir, "Folder_light.svg")
+        ),
+        dark: vscode.Uri.file(
+          path.join(__filename, ...iconDir, "Folder_dark.svg")
+        ),
+      };
     }
-    this.iconPath = {
-      light: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "Database_light.svg")
-      ),
-      dark: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "Database_dark.svg")
-      ),
-    };
   }
 
   private initUserType(input: DatasourceInputData): void {

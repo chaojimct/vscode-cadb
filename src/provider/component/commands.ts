@@ -3,7 +3,6 @@ import { DataSourceProvider } from "../database_provider";
 import { Datasource } from "../entity/datasource";
 import path from "path";
 import { FormResult } from "../entity/dataloader";
-import { generateNonce } from "../utils";
 import { DatabaseManager } from "./database_manager";
 import { ResultWebviewProvider } from "../result_provider";
 import { DatabaseSelector } from "./database_selector";

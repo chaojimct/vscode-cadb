@@ -12,11 +12,11 @@
     // 隐藏字段
     type: {
       type: "hidden",
-			value: "datasource"
+      value: "datasource",
     },
-		extra: {
-			type: "hidden",
-		},
+    extra: {
+      type: "hidden",
+    },
     // 基础字段
     dbType: {
       type: "select",
@@ -206,24 +206,24 @@
     authentication_string: {
       type: "hidden",
     },
-		password_last_changed: {
-			type: "hidden",
-		},
-		password_lifetime: {
-			type: "hidden",
-		},
-		Password_reuse_history: {
-			type: "hidden",
-		},
-		Password_reuse_time: {
-			type: "hidden",
-		},
-		Password_require_current: {
-			type: "hidden",
-		},
-		User_attributes: {
-			type: "hidden",
-		},
+    password_last_changed: {
+      type: "hidden",
+    },
+    password_lifetime: {
+      type: "hidden",
+    },
+    Password_reuse_history: {
+      type: "hidden",
+    },
+    Password_reuse_time: {
+      type: "hidden",
+    },
+    Password_require_current: {
+      type: "hidden",
+    },
+    User_attributes: {
+      type: "hidden",
+    },
     // 基础字段
     User: {
       type: "text",
@@ -353,6 +353,12 @@
   // ==================== 表字段编辑配置 ====================
 
   const tableFieldMapping = {
+    id: {
+      type: "hidden",
+    },
+    extra: {
+      type: "hidden",
+    },
     name: {
       type: "text",
       label: "字段名",
@@ -421,6 +427,9 @@
   // ==================== 索引编辑配置 ====================
 
   const indexFieldMapping = {
+    id: {
+      type: "hidden",
+    },
     name: {
       type: "text",
       label: "索引名",
@@ -469,15 +478,15 @@
       label: "数据库名",
       category: "base",
       required: true,
-      placeholder: "请输入数据库名称"
+      placeholder: "请输入数据库名称",
     },
     collation: {
       type: "select",
       label: "排序规则",
       category: "base",
       required: true,
-      options: [] // 将在运行时动态填充
-    }
+      options: [], // 将在运行时动态填充
+    },
   };
 
   // ==================== 导出配置 ====================
