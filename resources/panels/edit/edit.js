@@ -150,10 +150,21 @@ layui.use(["element", "form", "layer"], function () {
     currentEditItem = index;
     currentEditType = "index";
 
+    // 更新字段选项
+    if (mockData.fields && mockData.fields.length > 0) {
+      indexMapping.fields.options = mockData.fields.map(f => ({
+        value: f.name,
+        label: f.name
+      }));
+    }
+
     // 处理 fields 字段（数组转字符串）
     const indexData = { ...index };
     if (Array.isArray(indexData.fields)) {
-      indexData.fields = indexData.fields.join(", ");
+      indexData.fields = indexData.fields.join(",");
+    } else if (typeof indexData.fields === 'string') {
+      // 确保没有空格
+      indexData.fields = indexData.fields.replace(/,\s+/g, ',');
     }
 
     // 创建动态表单
@@ -426,7 +437,7 @@ layui.use(["element", "form", "layer"], function () {
           // 将字段数组转换为逗号分隔的字符串（用于显示）
           if (Array.isArray(idx.fields)) {
             idx.fieldsArray = idx.fields;
-            idx.fields = idx.fields.join(", ");
+            idx.fields = idx.fields.join(",");
           }
           indexes.push(idx);
         });

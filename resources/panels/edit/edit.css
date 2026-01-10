@@ -142,7 +142,8 @@ body {
 
 /* 表单容器 */
 #formContainer {
-  max-width: 600px;
+  max-width: 100%;
+  min-width: 600px;
 }
 
 /* 危险按钮样式 */

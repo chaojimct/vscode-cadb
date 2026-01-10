@@ -450,12 +450,15 @@
       ],
     },
     fields: {
-      type: "text",
+      type: "ordered-multi-select",
       label: "涉及字段",
       category: "base",
       required: true,
-      placeholder: "字段名，多个用逗号分隔",
-      hint: "例如: id, name 或单个字段 email",
+      colspan: 2,
+      options: [], // 运行时动态填充
+    },
+    fieldsArray: {
+      type: "hidden",
     },
     unique: {
       type: "switch",

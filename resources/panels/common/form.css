@@ -9,10 +9,7 @@
     #007acc
   );
   --vscode-foreground: var(--vscode-foreground, #cccccc);
-  --vscode-descriptionForeground: var(
-    --vscode-descriptionForeground,
-    #717171
-  );
+  --vscode-descriptionForeground: var(--vscode-descriptionForeground, #717171);
   --vscode-button-background: var(--vscode-button-background, #0e639c);
   --vscode-button-foreground: var(--vscode-button-foreground, #ffffff);
   --vscode-button-hoverBackground: var(
@@ -50,7 +47,7 @@ body {
 
 /* 表单容器 */
 .form-container {
-  max-width: 900px;
+  max-width: 100%;
   margin: 0 auto;
   padding: 20px;
 }
@@ -251,7 +248,7 @@ body {
 
 /* 选中后的对勾 */
 .layui-form-checked[lay-skin="primary"] i::after {
-  content: '';
+  content: "";
   position: absolute;
   left: 4px;
   top: 1px;
@@ -352,6 +349,167 @@ body {
   clear: both;
 }
 
+/* 穿梭框样式适配 */
+.layui-transfer {
+  margin-top: 0;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.layui-transfer-box {
+  background-color: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border);
+  flex: 1;
+  width: auto !important;
+  min-width: 200px;
+  height: 300px !important; /* 固定高度，避免内容多少导致高度不一致 */
+  border-radius: 2px;
+}
+
+/* 中间按钮部分不需要 flex: 1 */
+.layui-transfer-active {
+  margin: 0 10px;
+  flex: 0 0 auto;
+}
+
+.layui-transfer-header {
+  background-color: var(--vscode-sideBar-background, #252526);
+  border-bottom: 1px solid var(--vscode-input-border);
+  color: var(--vscode-foreground);
+  padding: 8px 12px;
+  height: auto;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+}
+
+.layui-form-checkbox[lay-skin="primary"] > div {
+  color: var(--vscode-foreground) !important;
+}
+
+.layui-transfer-header .layui-form-checkbox {
+  margin-top: 0;
+}
+
+.layui-transfer-header .layui-form-checkbox span {
+  color: var(--vscode-foreground) !important;
+}
+
+.layui-transfer-data {
+  background-color: var(--vscode-input-background);
+  height: calc(100% - 88px) !important; /* 减去header和search的高度 */
+}
+
+.layui-transfer-data li {
+  padding: 6px 12px;
+  transition: background-color 0.1s;
+}
+
+.layui-transfer-data li:hover {
+  background-color: var(--vscode-list-hoverBackground);
+}
+
+/* 列表项文本颜色强制适配 */
+.layui-transfer-data li span,
+.layui-transfer-data .layui-form-checkbox span {
+  color: var(--vscode-foreground) !important;
+}
+
+/* 选中项样式 */
+.layui-transfer-data li .layui-form-checkbox[lay-skin="primary"] {
+  padding-left: 24px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* 按钮样式适配 */
+.layui-transfer-active .layui-btn {
+  background-color: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border: none;
+  height: 28px;
+  line-height: 28px;
+  padding: 0 12px;
+  margin-bottom: 8px;
+  display: block;
+  margin-left: 0;
+  border-radius: 2px;
+}
+
+.layui-transfer-active .layui-btn:hover {
+  background-color: var(--vscode-button-hoverBackground);
+}
+
+.layui-transfer-active .layui-btn-disabled {
+  background-color: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+  opacity: 0.5;
+}
+
+/* 搜索框适配 */
+.layui-transfer-search {
+  padding: 8px;
+  background-color: var(--vscode-input-background);
+  border-bottom: 1px solid var(--vscode-input-border);
+}
+
+.layui-transfer-search .layui-input {
+  background-color: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border);
+  height: 28px;
+  padding-left: 28px; /* 为图标留出空间 */
+}
+
+.layui-transfer-search .layui-input:focus {
+  border-color: var(--vscode-focusBorder);
+  box-shadow: 0 0 0 1px var(--vscode-focusBorder);
+}
+
+.layui-transfer-search .layui-input::placeholder {
+  color: var(--vscode-input-placeholderForeground);
+}
+
+.layui-transfer-search .layui-icon-search {
+  color: var(--vscode-descriptionForeground);
+  top: 14px;
+  left: 16px;
+  font-size: 14px;
+}
+
+/* 无数据提示 */
+.layui-none {
+  color: var(--vscode-descriptionForeground);
+  padding: 15px;
+  text-align: center;
+  font-size: 13px;
+}
+
+/* 滚动条适配 */
+.layui-transfer-data::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.layui-transfer-data::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.layui-transfer-data::-webkit-scrollbar-thumb {
+  background: var(--vscode-scrollbarSlider-background, #424242);
+  border-radius: 5px;
+}
+
+.layui-transfer-data::-webkit-scrollbar-thumb:hover {
+  background: var(--vscode-scrollbarSlider-hoverBackground, #4f4f4f);
+}
+
+.layui-transfer-data::-webkit-scrollbar-thumb:active {
+  background: var(--vscode-scrollbarSlider-activeBackground, #5f5f5f);
+}
+
 /* 确保表单项包含浮动元素 */
 .layui-form-item {
   overflow: hidden;
@@ -375,7 +533,10 @@ body {
 }
 
 .layui-colla-title {
-  background-color: var(--vscode-sideBar-background, var(--vscode-input-background));
+  background-color: var(
+    --vscode-sideBar-background,
+    var(--vscode-input-background)
+  );
   color: var(--vscode-foreground);
   font-weight: 500;
   font-size: 13px;
@@ -389,11 +550,14 @@ body {
 }
 
 .layui-colla-title:hover {
-  background-color: var(--vscode-list-hoverBackground, var(--vscode-hoverBackground));
+  background-color: var(
+    --vscode-list-hoverBackground,
+    var(--vscode-hoverBackground)
+  );
 }
 
 .layui-colla-title::before {
-  content: '';
+  content: "";
   display: inline-block;
   margin-right: 18px;
   font-size: 10px;
