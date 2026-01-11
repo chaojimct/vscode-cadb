@@ -92,7 +92,13 @@ $(function () {
   // 绑定按钮事件
   $("#btn-add").on("click", dbTable.addRow);
   $("#btn-refresh").on("click", () => {
-    dbTable.refreshTable();
+    // 重新查询数据
+    if (vscode) {
+      vscode.postMessage({
+        command: "refresh",
+      });
+    }
+
     // 清空过滤条件
     if (whereInput) {
       whereInput.clear();

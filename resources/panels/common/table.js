@@ -96,8 +96,8 @@ class DatabaseTableData {
       resizableColumns: true,
       // 占位符文本
       placeholder: "暂无数据",
-      // 启用虚拟 DOM（提升大数据性能）
-      virtualDom: true,
+      // 渲染模式：basic (禁用虚拟 DOM，解决 hidden 容器报错问题)
+      renderVertical: "basic",
       // 响应式列
       responsiveLayout: false,
     });
@@ -190,6 +190,7 @@ class DatabaseTableData {
    * 刷新表格
    */
   refreshTable = () => {
+		console.log(this.tableData);
     if (!this.table) {
       return;
     }
@@ -211,17 +212,18 @@ class DatabaseTableData {
       return;
     }
 
-    // 使用 Tabulator 的范围选择 API 获取选中的单元格
-    const selectedCells = this.table.getSelectedCells();
-    if (selectedCells.length === 0) {
+    // 使用 Tabulator 的范围选择 API 获取选中的行
+    const ranges = this.table.getRanges();
+    if (!ranges || ranges.length === 0) {
       console.warn("请先选择要删除的行");
       return;
     }
 
     // 获取选中的行（去重）
     const selectedRowsSet = new Set();
-    selectedCells.forEach((cell) => {
-      selectedRowsSet.add(cell.getRow());
+    ranges.forEach((range) => {
+      const rows = range.getRows();
+      rows.forEach((row) => selectedRowsSet.add(row));
     });
 
     const selectedRowsArray = Array.from(selectedRowsSet);

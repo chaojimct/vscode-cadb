@@ -448,7 +448,7 @@ layui.use(["tabs", "layer"], function () {
       headerSort: true,
       resizableColumns: true,
       placeholder: "暂无数据",
-      virtualDom: true,
+      renderVertical: "basic",
       movableColumns: true,
       tooltips: true,
       clipboard: true,

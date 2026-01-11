@@ -6,107 +6,160 @@
 /* === Layer 基础样式 === */
 .layui-layer {
   background-color: var(--vscode-editor-background) !important;
-  border: 1px solid var(--vscode-border) !important;
+  border: 1px solid var(--vscode-widget-border, var(--vscode-border)) !important;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
   border-radius: 4px !important;
 }
 
-.layui-layer-content {
-  color: var(--vscode-foreground) !important;
-  background-color: transparent !important;
-  padding: 12px 16px !important;
-  font-size: 14px !important;
-  line-height: 1.5 !important;
-}
-
-/* === 对话框样式 === */
-.layui-layer-dialog {
-  background-color: var(--vscode-editor-background) !important;
-  border: 1px solid var(--vscode-border) !important;
-}
-
+/* === 标题栏优化 === */
 .layui-layer-title {
-  background-color: var(--vscode-input-background) !important;
+  background-color: var(--vscode-editor-background) !important;
   color: var(--vscode-foreground) !important;
-  border-bottom: 1px solid var(--vscode-border) !important;
+  border-bottom: none !important;
   font-size: 14px !important;
   font-weight: 600 !important;
-  padding: 12px 16px !important;
+  padding: 16px 20px 0 20px !important;
+  height: auto !important;
+  line-height: 24px !important;
 }
 
+/* === 关闭按钮优化 === */
 .layui-layer-setwin {
-  top: 12px !important;
-  right: 12px !important;
+  top: 16px !important;
+  right: 16px !important;
 }
 
 .layui-layer-setwin a {
+  font-family: "codicon" !important;
+  font-size: 16px !important;
   color: var(--vscode-foreground) !important;
+  background: none !important;
+  width: 16px !important;
+  height: 16px !important;
+  text-decoration: none !important;
   opacity: 0.7;
   transition: opacity 0.2s;
+  cursor: pointer !important;
 }
 
 .layui-layer-setwin a:hover {
   opacity: 1;
-  background-color: var(--vscode-hover) !important;
 }
 
-/* 对话框内容 */
+.layui-layer-setwin .layui-layer-close1 {
+  background: none !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+}
+
+.layui-layer-setwin .layui-layer-close1::before {
+  content: "\ea76"; /* codicon-close */
+}
+
+/* === 内容区域优化 === */
+.layui-layer-content {
+  color: var(--vscode-foreground) !important;
+  background-color: transparent !important;
+  padding: 12px 20px !important;
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+}
+
+/* 对话框特定样式 */
+.layui-layer-dialog {
+  height: auto !important;
+}
+
 .layui-layer-dialog .layui-layer-content {
-  padding: 20px 24px !important;
-  color: var(--vscode-foreground) !important;
-  font-size: 14px !important;
-  line-height: 1.6 !important;
+  padding: 20px !important;
+  height: auto !important;
+  overflow: visible !important;
 }
 
+/* 带图标时的内边距 */
+.layui-layer-dialog .layui-layer-padding {
+  padding-left: 56px !important;
+  padding-right: 20px !important;
+  padding-top: 20px !important;
+  padding-bottom: 20px !important;
+}
+
+/* === 图标样式替换为 Codicons === */
 .layui-layer-dialog .layui-layer-ico {
-  color: var(--vscode-foreground) !important;
+  background: none !important;
+  width: 24px !important;
+  height: 24px !important;
+  font-family: "codicon" !important;
+  font-size: 24px !important;
+  line-height: 24px !important;
+  text-align: center !important;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  position: absolute !important;
+  top: 20px !important;
+  left: 20px !important;
+  font-weight: normal !important;
 }
 
-/* 对话框图标颜色 */
-.layui-layer-ico1 {
-  color: #89d185 !important;
+/* 成功图标 (icon: 1) */
+.layui-layer-ico1::before {
+  content: "\ea81" !important; /* check */
+  color: var(--vscode-testing-iconPassed, #89d185) !important;
 }
 
-.layui-layer-ico2 {
-  color: var(--vscode-errorForeground) !important;
+/* 错误图标 (icon: 2) */
+.layui-layer-ico2::before {
+  content: "\ea87" !important; /* error */
+  color: var(--vscode-testing-iconFailed, #f14c4c) !important;
 }
 
-.layui-layer-ico3 {
-  color: #4fc3f7 !important;
+/* 询问图标 (icon: 3) */
+.layui-layer-ico3::before {
+  content: "\ea85" !important; /* question */
+  color: var(--vscode-editorInfo-foreground, #3794ff) !important;
 }
 
-.layui-layer-ico0 {
-  color: #ffa726 !important;
+/* 警告图标 (icon: 0) */
+.layui-layer-ico0::before {
+  content: "\ea67" !important; /* warning */
+  color: var(--vscode-editorWarning-foreground, #cca700) !important;
 }
 
-/* 对话框按钮 */
+/* === 按钮区域优化 === */
 .layui-layer-btn {
-  background-color: var(--vscode-editor-background) !important;
-  border-top: 1px solid var(--vscode-border) !important;
-  padding: 12px 16px !important;
+  background-color: transparent !important;
+  border-top: none !important;
+  padding: 0 20px 20px 20px !important;
   text-align: right !important;
 }
 
 .layui-layer-btn a {
-  background-color: var(--vscode-button-background) !important;
-  color: var(--vscode-button-foreground) !important;
-  border: none !important;
+  height: 28px !important;
+  line-height: 28px !important;
+  padding: 0 12px !important;
   border-radius: 2px !important;
-  padding: 6px 16px !important;
+  margin-left: 10px !important;
   font-size: 13px !important;
-  transition: background-color 0.2s !important;
-  margin-left: 8px !important;
+  border: 1px solid transparent !important;
+  box-sizing: border-box !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
-.layui-layer-btn a:hover {
-  background-color: var(--vscode-button-hoverBackground) !important;
-}
-
+/* 确认按钮 (Primary) */
 .layui-layer-btn .layui-layer-btn0 {
   background-color: var(--vscode-button-background) !important;
   color: var(--vscode-button-foreground) !important;
 }
 
+.layui-layer-btn .layui-layer-btn0:hover {
+  background-color: var(--vscode-button-hoverBackground) !important;
+}
+
+/* 取消按钮 (Secondary) */
 .layui-layer-btn .layui-layer-btn1 {
   background-color: var(--vscode-button-secondaryBackground) !important;
   color: var(--vscode-button-secondaryForeground) !important;
@@ -118,7 +171,8 @@
 
 /* === 遮罩层 === */
 .layui-layer-shade {
-  background-color: rgba(0, 0, 0, 0.5) !important;
+  background-color: var(--vscode-editor-background) !important;
+  opacity: 0.5 !important;
 }
 
 /* === Loading 加载样式 === */
@@ -133,38 +187,48 @@
 }
 
 .layui-layer-loading .layui-layer-ico {
-  border-color: var(--vscode-focus) transparent transparent transparent !important;
+  background: none !important;
+}
+/* 使用 VSCode 风格的 loading 动画 (这里简单处理，实际可能需要 SVG) */
+.layui-layer-loading .layui-layer-ico16 {
+   /* loading-2 */
+   background-size: contain !important;
 }
 
 /* === Prompt 输入框样式 === */
-.layui-layer-prompt {
-  background-color: var(--vscode-editor-background) !important;
-}
-
-.layui-layer-input {
+.layui-layer-prompt .layui-layer-input {
   background-color: var(--vscode-input-background) !important;
   color: var(--vscode-input-foreground) !important;
-  border: 1px solid var(--vscode-border) !important;
+  border: 1px solid var(--vscode-input-border, var(--vscode-border)) !important;
   border-radius: 2px !important;
-  padding: 6px 10px !important;
-  font-size: 13px !important;
+  padding: 6px 8px !important;
+  height: 32px !important;
+  line-height: 20px !important;
+  box-shadow: none !important;
 }
 
-.layui-layer-input:focus {
-  border-color: var(--vscode-focus) !important;
-  outline: none !important;
-  box-shadow: 0 0 0 1px var(--vscode-focus) !important;
+.layui-layer-prompt .layui-layer-input:focus {
+  border-color: var(--vscode-focusBorder) !important;
+  outline: 1px solid var(--vscode-focusBorder) !important;
+  outline-offset: -1px !important;
 }
 
-/* === 响应式优化 === */
+/* 响应式适配 */
 @media (max-width: 768px) {
-  .layui-layer-content {
-    padding: 10px 14px !important;
-    font-size: 13px !important;
+  .layui-layer-title {
+    padding: 12px 16px 0 16px !important;
   }
-  
-  .layui-layer-btn a {
-    padding: 5px 12px !important;
-    font-size: 12px !important;
+  .layui-layer-dialog .layui-layer-content {
+    padding: 16px !important;
+  }
+  .layui-layer-btn {
+    padding: 0 16px 16px 16px !important;
+  }
+  .layui-layer-dialog .layui-layer-padding {
+    padding-left: 48px !important;
+  }
+  .layui-layer-dialog .layui-layer-ico {
+    left: 16px !important;
+    top: 16px !important;
   }
 }

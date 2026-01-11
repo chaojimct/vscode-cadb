@@ -1,10 +1,6 @@
 import {
   createClient,
-  RedisArgument,
   RedisClientType,
-  RedisFunctions,
-  RedisModules,
-  RedisScripts,
 } from "redis";
 import { Uri } from "vscode";
 import {
