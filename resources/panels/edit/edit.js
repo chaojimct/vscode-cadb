@@ -269,11 +269,15 @@ layui.use(["element", "form", "layer"], function () {
       const currentFields = [...data.fields].sort().join(",");
       
       const duplicate = mockData.indexes.find(i => {
-        if (i.id === currentEditItem.id) return false;
+        if (i.id === currentEditItem.id) {
+					return false;
+				}
         
         // 检查目标是否是唯一索引/主键
         const isTargetUnique = i.unique === true || String(i.unique) === "true" || i.type === "unique" || i.type === "primary";
-        if (!isTargetUnique) return false;
+        if (!isTargetUnique) {
+					return false;
+				}
         
         // 获取目标字段列表
         let otherFields = i.fields;

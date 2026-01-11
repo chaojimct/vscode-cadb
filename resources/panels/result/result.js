@@ -362,14 +362,6 @@ layui.use(["tabs", "layer"], function () {
   }
 
   /**
-   * 切换标签页
-   * @param {string} tabId - 标签页ID
-   */
-  function switchTab(tabId) {
-    tabs.change(TABS_ID, tabId);
-  }
-
-  /**
    * 关闭标签页
    * @param {string} tabId - 标签页ID
    */
