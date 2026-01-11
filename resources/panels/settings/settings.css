@@ -3,7 +3,7 @@
 /* 权限复选框网格布局（用于用户配置） */
 .permission-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px 15px;
   margin: 15px 0;
 }
@@ -38,13 +38,13 @@
 }
 
 /* 响应式调整 */
-@media (max-width: 768px) {
+@media (max-width: 1200px) {
   .permission-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 768px) {
   .permission-grid {
     grid-template-columns: 1fr;
   }

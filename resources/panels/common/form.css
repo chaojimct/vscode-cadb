@@ -214,6 +214,10 @@ body {
   vertical-align: middle;
 }
 
+.layui-form-item .layui-form-checkbox[lay-skin=primary] {
+	margin-top: 5px !important;
+}
+
 /* Checkbox 图标样式 - 未选中 */
 .layui-form-checkbox[lay-skin="primary"] i {
   width: 16px;
@@ -315,7 +319,7 @@ body {
 /* 字段分组布局 - 响应式网格 */
 .field-group {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 0 30px;
   margin-bottom: 10px;
 }
@@ -335,10 +339,22 @@ body {
   margin-left: 115px; /* 100px(label) + 15px(padding-right) */
 }
 
+/* 响应式适配 */
+@media (max-width: 1200px) {
+  .field-group {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 /* 单列布局时不使用 grid */
 @media (max-width: 768px) {
   .field-group {
     grid-template-columns: 1fr;
+  }
+  
+  /* 强制重置跨列属性 */
+  .field-group .layui-form-item {
+    grid-column: auto !important;
   }
 }
 
