@@ -111,6 +111,10 @@
         "title": "删除"
       },
       {
+        "command": "cadb.delete",
+        "title": "删除"
+      },
+      {
         "command": "cadb.notebook.new",
         "title": "新建 Notebook",
         "icon": {
@@ -234,6 +238,11 @@
         {
           "command": "cadb.file.delete",
           "when": "view == datasource && viewItem == file",
+          "group": "context"
+        },
+        {
+          "command": "cadb.delete",
+          "when": "view == datasource && !(viewItem =~ /Type$/) && viewItem != file",
           "group": "context"
         }
       ],

@@ -451,6 +451,25 @@ export function registerDatasourceCommands(
     editEntry(provider, item)
   ));
   
+  // 注册通用删除命令
+  disposables.push(vscode.commands.registerCommand("cadb.delete", async (item: Datasource) => {
+    if (!item) {
+      return;
+    }
+    
+    const confirm = await vscode.window.showWarningMessage(
+      `确定要删除 "${item.label}" 吗？此操作无法撤销。`,
+      { modal: true },
+      "删除",
+      "取消"
+    );
+
+    if (confirm === "删除") {
+      // TODO: 实现具体的删除逻辑
+      vscode.window.showInformationMessage(`TODO: 删除 "${item.label}" 的逻辑待实现`);
+    }
+  }));
+  
   disposables.push(vscode.commands.registerCommand("cadb.datasource.expand", async (item) => {
     const children = await (item as Datasource).expand(provider.context);
     provider.createChildren(item as Datasource, children);
