@@ -33,6 +33,12 @@ export class MySQLDataloader implements Dataloader {
     };
     this.conn = createConnection(this.connectionConfig);
   }
+	rootNode(): Datasource {
+		return this.ds;
+	}
+	dbType(): string {
+		return this.ds.data.dbType || "mysql";
+	}
 	listCollations(_: Datasource): Promise<Datasource[]> {
 		return new Promise((resolve) => {
 			this.ensureConnection().then(() => {

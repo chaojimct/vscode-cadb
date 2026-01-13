@@ -1,7 +1,4 @@
-import {
-  createClient,
-  RedisClientType,
-} from "redis";
+import { createClient, RedisClientType } from "redis";
 import { Uri } from "vscode";
 import {
   Dataloader,
@@ -27,6 +24,12 @@ export class RedisDataloader implements Dataloader {
       password: input.password,
     });
   }
+  rootNode(): Datasource {
+    return this.ds;
+  }
+  dbType(): string {
+    return this.ds.data.dbType || "redis";
+  }
   listCollations(ds: Datasource): Promise<Datasource[]> {
     return Promise.resolve([]);
   }
@@ -39,9 +42,11 @@ export class RedisDataloader implements Dataloader {
     type: string
   ): Promise<Datasource[]> {
     const result: Datasource[] = [];
-		if (ds.parent && ds.parent.label) {
-			await this.client.select(parseInt(ds.parent.label.toString().substring(2)));
-		}
+    if (ds.parent && ds.parent.label) {
+      await this.client.select(
+        parseInt(ds.parent.label.toString().substring(2))
+      );
+    }
     // 其他情况
     for await (const keys of this.client.scanIterator({
       TYPE: type,
@@ -102,7 +107,12 @@ export class RedisDataloader implements Dataloader {
     for (let i = 0; i < databasesNum; i++) {
       ds.children.push(
         new Datasource(
-          { type: "collection", extra: "", name: `DB${i}`, tooltip: `数据库${i}` },
+          {
+            type: "collection",
+            extra: "",
+            name: `DB${i}`,
+            tooltip: `数据库${i}`,
+          },
           this,
           ds
         )

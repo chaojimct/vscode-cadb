@@ -330,6 +330,11 @@ export class Datasource extends vscode.TreeItem {
 
   private initItem(_: DatasourceInputData): void {
     this.iconPath = new vscode.ThemeIcon("note");
+		this.command = {
+      title: "查看数据",
+      command: "cadb.item.showData",
+      arguments: [this],
+    };
   }
 
   private initFolder(_: DatasourceInputData): void {

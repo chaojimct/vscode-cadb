@@ -53,6 +53,8 @@ export interface SaveResult {
 }
 
 export interface Dataloader {
+	rootNode(): Datasource;
+	dbType(): string;
   test(): Promise<PromiseResult>;
   connect(): Promise<void>;
   getConnection(): any; // 返回数据库连接对象
