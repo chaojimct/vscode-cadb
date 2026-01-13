@@ -123,11 +123,6 @@ async function saveDatasourceConfigForCreate(
   provider: DataSourceProvider,
   payload: any
 ): Promise<void> {
-  if (payload?.dbType === "oss") {
-    await saveOssDatasourceConfig(provider, payload, {});
-    return;
-  }
-
   await Datasource.createInstance(
     provider.getConnections(),
     provider.context,

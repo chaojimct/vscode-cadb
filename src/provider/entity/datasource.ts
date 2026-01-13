@@ -9,6 +9,7 @@ import {
 import { MySQLDataloader } from "./mysql_dataloader";
 import type { DatabaseManager } from "../component/database_manager";
 import { RedisDataloader } from "./redis_dataloader";
+import { OssDataLoader } from "./oss_dataloader";
 
 const iconDir: string[] = ["..", "..", "resources", "icons"];
 
@@ -35,12 +36,17 @@ export interface DatasourceInputData {
   tooltip: string;
   extra?: string;
 
-  dbType?: "mysql" | "redis";
+  dbType?: "mysql" | "redis" | "oss";
   database?: string;
   username?: string;
   password?: string;
   host?: string;
   port?: number;
+	endpoint?: string;
+	accessKeyId?: string;
+	accessSecretKey?: string;
+	bucket?: string;
+	region?: string;
 }
 
 export class Datasource extends vscode.TreeItem {
@@ -367,6 +373,18 @@ export class Datasource extends vscode.TreeItem {
           };
           this.dataloader = new RedisDataloader(this, input);
           break;
+				case "oss":
+					this.description = `${input.bucket}`;
+					this.iconPath = {
+						light: vscode.Uri.file(
+							path.join(__filename, ...iconDir, "oss", "OSS_light.svg")
+						),
+						dark: vscode.Uri.file(
+							path.join(__filename, ...iconDir, "oss", "OSS_dark.svg")
+						),
+					};
+					this.dataloader = new OssDataLoader(this, input);
+					break;
       }
     } else {
       this.iconPath = new vscode.ThemeIcon("folder");

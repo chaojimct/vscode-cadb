@@ -50,7 +50,7 @@
       show: "dbType == 'oss'",
       fullRow: true,
     },
-    accessKey: {
+    accessKeyId: {
       type: "text",
       label: "AccessKey",
       category: "base",
@@ -60,7 +60,7 @@
       show: "dbType == 'oss'",
       fullRow: true,
     },
-    secretKey: {
+    accessSecretKey: {
       type: "password",
       label: "SecretKey",
       category: "base",
@@ -80,7 +80,7 @@
       show: "dbType == 'oss'",
       fullRow: true,
     },
-    regionId: {
+    region: {
       type: "text",
       label: "Region ID",
       category: "base",

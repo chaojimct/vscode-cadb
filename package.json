@@ -19,7 +19,7 @@
         {
           "id": "datasource",
           "title": "CADB",
-          "icon": "$(database)"
+          "icon": "./resources/icons/logo.svg"
         }
       ],
       "panel": [
@@ -326,6 +326,7 @@
     "webpack-cli": "^6.0.1"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.967.0",
     "@vscode/codicons": "^0.0.44",
     "dayjs": "^1.11.19",
     "jquery": "^3.7.1",
