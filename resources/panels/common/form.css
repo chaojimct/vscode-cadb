@@ -316,16 +316,16 @@ body {
   cursor: not-allowed;
 }
 
-/* 字段分组布局 - 响应式网格 */
+/* 字段分组布局 - 统一单列布局，确保所有输入框宽度一致 */
 .field-group {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0 30px;
+  display: flex;
+  flex-direction: column;
   margin-bottom: 10px;
 }
 
 .field-group .layui-form-item {
   margin-bottom: 18px;
+  width: 100%;
   min-width: 0; /* 防止内容溢出 */
   overflow: hidden; /* 确保清除浮动 */
 }
@@ -339,23 +339,15 @@ body {
   margin-left: 115px; /* 100px(label) + 15px(padding-right) */
 }
 
+/* 移除之前的响应式网格设置 */
 /* 响应式适配 */
 @media (max-width: 1200px) {
-  .field-group {
-    grid-template-columns: repeat(2, 1fr);
-  }
+  /* 不再需要调整列数 */
 }
 
 /* 单列布局时不使用 grid */
 @media (max-width: 768px) {
-  .field-group {
-    grid-template-columns: 1fr;
-  }
-  
-  /* 强制重置跨列属性 */
-  .field-group .layui-form-item {
-    grid-column: auto !important;
-  }
+  /* 不再需要特殊处理 */
 }
 
 /* 清除浮动 */

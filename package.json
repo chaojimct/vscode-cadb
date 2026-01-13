@@ -19,14 +19,14 @@
         {
           "id": "datasource",
           "title": "CADB",
-          "icon": "resources/icons/logo.svg"
+          "icon": "$(database)"
         }
       ],
       "panel": [
         {
           "id": "query",
           "title": "查询",
-          "icon": "resources/icons/query.svg"
+          "icon": "$(search-sparkle)"
         }
       ]
     },
@@ -35,7 +35,7 @@
         {
           "id": "datasource",
           "name": "数据源",
-          "icon": "resources/icons/logo.svg",
+          "icon": "$(database)",
           "contextualTitle": "Datasource Explorer"
         }
       ],
@@ -44,7 +44,7 @@
           "type": "webview",
           "id": "query",
           "name": "查询",
-          "icon": "resources/icons/query.svg",
+          "icon": "$(search-sparkle)",
           "contextualTitle": "Query Result"
         }
       ]
@@ -53,74 +53,72 @@
       {
         "command": "cadb.datasource.add",
         "title": "新建项",
-        "icon": {
-          "light": "resources/plus-light.svg",
-          "dark": "resources/plus-dark.svg"
-        }
+        "icon": "$(add)"
       },
       {
         "command": "cadb.datasource.refresh",
         "title": "刷新",
-        "icon": {
-          "light": "resources/refresh-light.svg",
-          "dark": "resources/refresh-dark.svg"
-        }
+        "icon": "$(refresh)"
       },
       {
         "command": "cadb.datasource.edit",
         "title": "编辑",
-        "icon": {
-          "light": "resources/edit-light.svg",
-          "dark": "resources/edit-dark.svg"
-        }
+        "icon": "$(edit)"
       },
       {
         "command": "cadb.datasource.selectDatabases",
-        "title": "选择"
+        "title": "选择",
+        "icon": "$(cursor)"
       },
       {
         "command": "cadb.collection.useDatabase",
-        "title": "使用"
+        "title": "使用",
+        "icon": "$(cursor)"
       },
       {
         "command": "cadb.datasource.copyConnection",
-        "title": "复制"
+        "title": "复制",
+        "icon": "$(copy)"
       },
       {
         "command": "cadb.datasource.copyConnectionAddress",
-        "title": "仅连接地址"
+        "title": "仅连接地址",
+        "icon": "$(attach)"
       },
       {
         "command": "cadb.datasource.copyCredentials",
-        "title": "仅用户名密码"
+        "title": "仅用户名密码",
+        "icon": "$(attach)"
       },
       {
         "command": "cadb.datasource.copyFullConnection",
-        "title": "完整连接"
+        "title": "完整连接",
+        "icon": "$(attach)"
       },
       {
         "command": "cadb.file.execute",
-        "title": "执行"
+        "title": "执行",
+        "icon": "$(play)"
       },
       {
         "command": "cadb.file.rename",
-        "title": "重命名"
+        "title": "重命名",
+        "icon": "$(rename)"
       },
       {
         "command": "cadb.file.delete",
-        "title": "删除"
+        "title": "删除",
+        "icon": "$(close)"
       },
       {
         "command": "cadb.delete",
-        "title": "删除"
+        "title": "删除",
+        "icon": "$(close)"
       },
       {
         "command": "cadb.notebook.new",
         "title": "新建 Notebook",
-        "icon": {
-          "light": "resources/Note_light.svg",
-          "dark": "resources/Note_dark.svg"
-        }
+        "icon": "$(new-file)"
       },
       {
         "command": "cadb.sql.selectDatabase",
@@ -295,8 +293,8 @@
         "cadb.sqlNotebook.lineHeight": {
           "type": "number",
           "default": 1.5,
-          "minimum": 1.0,
-          "maximum": 3.0,
+          "minimum": 1,
+          "maximum": 3,
           "description": "SQL Notebook 编辑器行高"
         }
       }

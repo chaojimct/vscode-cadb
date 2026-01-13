@@ -276,82 +276,33 @@ export class Datasource extends vscode.TreeItem {
         command: "cadb.file.open",
         arguments: [this],
       };
-      this.iconPath = {
-        light: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "SQL_light.svg")
-        ),
-        dark: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "SQL_dark.svg")
-        ),
-      };
+      this.iconPath = new vscode.ThemeIcon("file-text");
     } else {
-      this.iconPath = {
-        light: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "Folder_light.svg")
-        ),
-        dark: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "Folder_dark.svg")
-        ),
-      };
+      this.iconPath = new vscode.ThemeIcon("folder");
     }
   }
 
   private initIndexType(input: DatasourceInputData): void {
     if (input.type === "index") {
       this.description = input.extra;
-      this.iconPath = {
-        light: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "Index_light.svg")
-        ),
-        dark: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "Index_dark.svg")
-        ),
-      };
+      this.iconPath = new vscode.ThemeIcon("type-hierarchy");
     } else {
-      this.iconPath = {
-        light: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "Folder_light.svg")
-        ),
-        dark: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "Folder_dark.svg")
-        ),
-      };
+      this.iconPath = new vscode.ThemeIcon("folder");
     }
   }
 
   private initFieldType(input: DatasourceInputData): void {
     if (input.type === "field") {
       this.description = input.extra;
-      this.iconPath = {
-        light: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "Column_light.svg")
-        ),
-        dark: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "Column_dark.svg")
-        ),
-      };
+      this.iconPath = new vscode.ThemeIcon("symbol-constant");
     } else {
-      this.iconPath = {
-        light: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "Folder_light.svg")
-        ),
-        dark: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "Folder_dark.svg")
-        ),
-      };
+      this.iconPath = new vscode.ThemeIcon("folder");
     }
   }
 
   private initDocument(input: DatasourceInputData): void {
     this.description = `${input.extra}`;
-    this.iconPath = {
-      light: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "Table_light.svg")
-      ),
-      dark: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "Table_dark.svg")
-      ),
-    };
+    this.iconPath = new vscode.ThemeIcon("table");
     this.command = {
       title: "查看数据",
       command: "cadb.item.showData",
@@ -362,67 +313,27 @@ export class Datasource extends vscode.TreeItem {
   private initCollectionType(input: DatasourceInputData): void {
     if (input.type === "collection") {
       this.description = `${input.extra}`;
-      this.iconPath = {
-        light: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "Database_light.svg")
-        ),
-        dark: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "Database_dark.svg")
-        ),
-      };
+      this.iconPath = new vscode.ThemeIcon("database");
     } else {
-      this.iconPath = {
-        light: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "Folder_light.svg")
-        ),
-        dark: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "Folder_dark.svg")
-        ),
-      };
+      this.iconPath = new vscode.ThemeIcon("folder");
     }
   }
 
   private initUserType(input: DatasourceInputData): void {
     if (input.type === "user") {
       this.description = `${input.extra}`;
-      this.iconPath = {
-        light: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "User_light.svg")
-        ),
-        dark: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "User_dark.svg")
-        ),
-      };
+      this.iconPath = new vscode.ThemeIcon("account");
     } else {
-      this.iconPath = {
-        light: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "Folder_light.svg")
-        ),
-        dark: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "Folder_dark.svg")
-        ),
-      };
+      this.iconPath = new vscode.ThemeIcon("folder");
     }
   }
 
-  private initItem(input: DatasourceInputData): void {
-    this.iconPath = {
-      light: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "Item_light.svg")
-      ),
-      dark: vscode.Uri.file(path.join(__filename, ...iconDir, "Item_dark.svg")),
-    };
+  private initItem(_: DatasourceInputData): void {
+    this.iconPath = new vscode.ThemeIcon("note");
   }
 
-  private initFolder(input: DatasourceInputData): void {
-    this.iconPath = {
-      light: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "Folder_light.svg")
-      ),
-      dark: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "Folder_dark.svg")
-      ),
-    };
+  private initFolder(_: DatasourceInputData): void {
+    this.iconPath = new vscode.ThemeIcon("folder");
   }
 
   private initDatasource(input: DatasourceInputData): void {
@@ -453,14 +364,7 @@ export class Datasource extends vscode.TreeItem {
           break;
       }
     } else {
-      this.iconPath = {
-        light: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "Folder_light.svg")
-        ),
-        dark: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "Folder_dark.svg")
-        ),
-      };
+      this.iconPath = new vscode.ThemeIcon("folder");
     }
   }
 

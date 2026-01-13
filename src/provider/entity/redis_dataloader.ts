@@ -39,6 +39,9 @@ export class RedisDataloader implements Dataloader {
     type: string
   ): Promise<Datasource[]> {
     const result: Datasource[] = [];
+		if (ds.parent && ds.parent.label) {
+			await this.client.select(parseInt(ds.parent.label.toString().substring(2)));
+		}
     // 其他情况
     for await (const keys of this.client.scanIterator({
       TYPE: type,

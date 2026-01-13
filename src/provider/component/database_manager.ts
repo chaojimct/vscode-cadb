@@ -76,7 +76,7 @@ export class DatabaseManager {
   /**
    * 选择连接
    */
-  public async selectConnection(): Promise<Datasource | undefined> {
+  public async selectConnection(docType: string = "sql"): Promise<Datasource | undefined> {
     const connections = this.provider.getConnections().map((conn) => new Datasource(conn));
 
     if (connections.length === 0) {
@@ -87,8 +87,12 @@ export class DatabaseManager {
     interface ConnectionQuickPickItem extends vscode.QuickPickItem {
       datasource: Datasource;
     }
-
-    const connectionItems: ConnectionQuickPickItem[] = connections.map(
+    const connectionItems: ConnectionQuickPickItem[] = connections.filter(e => {
+			if (docType === 'sql') {
+				return e.data.dbType === "mysql";
+			}
+			return false;
+		}).map(
       (conn) => ({
         label: `$(plug) ${conn.label}`,
         description: typeof conn.tooltip === "string" ? conn.tooltip : "",

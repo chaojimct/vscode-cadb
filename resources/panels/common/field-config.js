@@ -24,9 +24,11 @@
       category: "base",
       required: true,
       colspan: 2,
+      fullRow: true,
       options: [
         { value: "mysql", label: "MySQL" },
         { value: "redis", label: "Redis" },
+        { value: "oss", label: "OSS" },
       ],
     },
     name: {
@@ -38,12 +40,63 @@
       placeholder: "例如：生产数据库",
       hint: "给此连接起一个易于识别的名称",
     },
+    endpoint: {
+      type: "text",
+      label: "Endpoint",
+      category: "base",
+      required: true,
+      colspan: 2,
+      placeholder: "例如：https://oss-cn-hangzhou.aliyuncs.com",
+      show: "dbType == 'oss'",
+      fullRow: true,
+    },
+    accessKey: {
+      type: "text",
+      label: "AccessKey",
+      category: "base",
+      required: true,
+      colspan: 2,
+      placeholder: "AccessKey ID",
+      show: "dbType == 'oss'",
+      fullRow: true,
+    },
+    secretKey: {
+      type: "password",
+      label: "SecretKey",
+      category: "base",
+      required: true,
+      colspan: 2,
+      placeholder: "AccessKey Secret",
+      show: "dbType == 'oss'",
+      fullRow: true,
+    },
+    bucket: {
+      type: "text",
+      label: "Bucket",
+      category: "base",
+      required: true,
+      colspan: 2,
+      placeholder: "Bucket 名称",
+      show: "dbType == 'oss'",
+      fullRow: true,
+    },
+    regionId: {
+      type: "text",
+      label: "Region ID",
+      category: "base",
+      required: true,
+      colspan: 2,
+      placeholder: "例如：cn-hangzhou",
+      show: "dbType == 'oss'",
+      fullRow: true,
+    },
     host: {
       type: "text",
       label: "主机地址",
       category: "base",
       colspan: 2,
       placeholder: "localhost 或 IP 地址",
+      hidden: "dbType == 'oss'",
     },
     port: {
       type: "number",
@@ -54,7 +107,7 @@
       default: "dbType == 'mysql' ? 3306 : (dbType == 'redis' ? 6379 : 5432)",
       min: 1,
       max: 65535,
-      hidden: "dbType == 'sqlite'", // 当数据库类型是 sqlite 时隐藏（hidden 优先级高于 show）
+      hidden: "dbType == 'sqlite' || dbType == 'oss'", // 当数据库类型是 sqlite 时隐藏（hidden 优先级高于 show）
     },
     username: {
       type: "text",
@@ -63,6 +116,7 @@
       colspan: 2,
       placeholder: "数据库用户名",
       show: "dbType != 'redis'", // 当数据库类型不是 redis 时显示
+      hidden: "dbType == 'oss'",
     },
     password: {
       type: "password",
@@ -70,6 +124,7 @@
       category: "base",
       colspan: 2,
       placeholder: "数据库密码",
+      hidden: "dbType == 'oss'",
     },
     database: {
       type: "text",
@@ -79,6 +134,7 @@
       placeholder: "数据库名称",
       hint: "要连接的数据库名称（可选）",
       show: "dbType != 'redis'", // 当数据库类型不是 redis 时显示
+      hidden: "dbType == 'oss'",
     },
 
     // SQLite 专用字段
@@ -105,6 +161,7 @@
         { value: "latin1", label: "latin1" },
         { value: "gbk", label: "gbk" },
       ],
+      hidden: "dbType == 'oss'",
     },
     timezone: {
       type: "text",
@@ -112,6 +169,7 @@
       category: "advance",
       colspan: 2,
       placeholder: "+08:00",
+      hidden: "dbType == 'oss'",
     },
     connectTimeout: {
       type: "number",
@@ -120,6 +178,7 @@
       colspan: 2,
       placeholder: "10000",
       min: 0,
+      hidden: "dbType == 'oss'",
     },
   };
 

@@ -8,6 +8,152 @@ import { ResultWebviewProvider } from "../result_provider";
 import { DatabaseSelector } from "./database_selector";
 import { createWebview } from "../webview_helper";
 
+/**
+ * 将 unknown 错误转换为可展示的消息文本
+ */
+function toErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * 向 settings webview 回传统一的状态消息
+ */
+function postWebviewStatus(
+  webview: vscode.Webview,
+  payload: { success: boolean; message: string }
+) {
+  webview.postMessage({
+    command: "status",
+    success: payload.success,
+    message: payload.message,
+  });
+}
+
+/**
+ * 处理 settings webview 的保存消息
+ * - datasource：更新连接配置（按 dbType 分发）
+ * - user：更新用户信息
+ * - collection：更新数据库配置（仅 MySQL）
+ */
+async function handleSettingsSaveMessage(
+  provider: DataSourceProvider,
+  item: Datasource,
+  panel: vscode.WebviewPanel,
+  payload: any
+) {
+  try {
+    if (item.type === "datasource") {
+      await saveDatasourceConfigForEdit(provider, item, payload);
+      postWebviewStatus(panel.webview, {
+        success: true,
+        message: "✔️ 连接配置更新成功",
+      });
+      return;
+    }
+
+    if (item.type === "user") {
+      await updateUserInfo(provider, item, payload);
+      postWebviewStatus(panel.webview, {
+        success: true,
+        message: "✔️ 用户信息更新成功",
+      });
+      return;
+    }
+
+    if (item.type === "collection") {
+      await updateDatabaseConfig(item, payload);
+      provider.refresh();
+      postWebviewStatus(panel.webview, {
+        success: true,
+        message: "✔️ 数据库配置更新成功",
+      });
+    }
+  } catch (error) {
+    console.error("保存失败:", error);
+    postWebviewStatus(panel.webview, {
+      success: false,
+      message: `❗ 保存失败: ${toErrorMessage(error)}`,
+    });
+  }
+}
+
+/**
+ * 处理 settings webview 的测试连接消息（仅 datasource）
+ */
+async function handleSettingsTestMessage(
+  provider: DataSourceProvider,
+  item: Datasource,
+  panel: vscode.WebviewPanel,
+  payload: any
+) {
+  if (item.type !== "datasource") {
+    return;
+  }
+
+  try {
+    const db = await Datasource.createInstance(
+      provider.getConnections(),
+      provider.context,
+      payload
+    );
+    const res = await db.test();
+    if (res.success) {
+      postWebviewStatus(panel.webview, {
+        success: true,
+        message: "✔️ 连接测试成功",
+      });
+    } else {
+      postWebviewStatus(panel.webview, {
+        success: false,
+        message: `❗ ${res.message}`,
+      });
+    }
+  } catch (error) {
+    postWebviewStatus(panel.webview, {
+      success: false,
+      message: `❗ 测试失败: ${toErrorMessage(error)}`,
+    });
+  }
+}
+
+/**
+ * 新建数据源时的保存入口（按 dbType 分发）
+ */
+async function saveDatasourceConfigForCreate(
+  provider: DataSourceProvider,
+  payload: any
+): Promise<void> {
+  if (payload?.dbType === "oss") {
+    await saveOssDatasourceConfig(provider, payload, {});
+    return;
+  }
+
+  await Datasource.createInstance(
+    provider.getConnections(),
+    provider.context,
+    payload,
+    true
+  );
+}
+
+/**
+ * 编辑数据源时的保存入口（按 dbType 分发）
+ */
+async function saveDatasourceConfigForEdit(
+  provider: DataSourceProvider,
+  item: Datasource,
+  payload: any
+): Promise<void> {
+  if (payload?.dbType === "oss") {
+    await saveOssDatasourceConfig(provider, payload, {
+      originalName: item.label?.toString() || "",
+    });
+    return;
+  }
+
+  await updateNonOssDatasourceConfig(provider, item, payload);
+}
+
 function findAncestorByType(
   node: Datasource,
   type: string
@@ -121,85 +267,19 @@ async function editEntry(provider: DataSourceProvider, item: Datasource) {
   panel.webview.onDidReceiveMessage(async (message) => {
     switch (message.command) {
       case "save":
-        try {
-          if (item.type === "datasource") {
-            // 更新数据库连接配置
-            await updateDatasourceConfig(provider, item, message.payload);
-            panel.webview.postMessage({
-              command: "status",
-              success: true,
-              message: "✔️ 连接配置更新成功",
-            });
-          } else if (item.type === "user") {
-            // 更新用户信息
-            await updateUserInfo(provider, item, message.payload);
-            panel.webview.postMessage({
-              command: "status",
-              success: true,
-              message: "✔️ 用户信息更新成功",
-            });
-          } else if (item.type === "collection") {
-            await updateDatabaseConfig(item, message.payload);
-            provider.refresh();
-            panel.webview.postMessage({
-              command: "status",
-              success: true,
-              message: "✔️ 数据库配置更新成功",
-            });
-          }
-        } catch (error) {
-          console.error("保存失败:", error);
-          panel.webview.postMessage({
-            command: "status",
-            success: false,
-            message: `❗ 保存失败: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          });
-        }
+        await handleSettingsSaveMessage(provider, item, panel, message.payload);
         break;
       case "test":
-        // 测试连接（仅用于数据库连接配置）
-        if (item.type === "datasource") {
-          try {
-            const db = await Datasource.createInstance(
-              provider.getConnections(),
-              provider.context,
-              message.payload
-            );
-            const res = await db.test();
-            if (res.success) {
-              panel.webview.postMessage({
-                command: "status",
-                success: true,
-                message: "✔️ 连接测试成功",
-              });
-            } else {
-              panel.webview.postMessage({
-                command: "status",
-                success: false,
-                message: `❗ ${res.message}`,
-              });
-            }
-          } catch (error) {
-            panel.webview.postMessage({
-              command: "status",
-              success: false,
-              message: `❗ 测试失败: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            });
-          }
-        }
+        await handleSettingsTestMessage(provider, item, panel, message.payload);
         break;
     }
   });
 }
 
 /**
- * 更新数据库连接配置
+ * 更新非 OSS 数据源连接配置
  */
-async function updateDatasourceConfig(
+async function updateNonOssDatasourceConfig(
   provider: DataSourceProvider,
   item: Datasource,
   payload: any
@@ -231,6 +311,19 @@ async function updateDatasourceConfig(
 
   // 刷新视图
   provider.refresh();
+}
+
+async function saveOssDatasourceConfig(
+  provider: DataSourceProvider,
+  payload: any,
+  options: { originalName?: string }
+): Promise<void> {
+  console.log(payload);
+  // TODO: 实现 OSS 数据源保存逻辑（新建/编辑共用此入口）
+  void provider;
+  void payload;
+  void options;
+  throw new Error("OSS 数据源保存逻辑未实现");
 }
 
 /**
@@ -397,39 +490,45 @@ async function addEntry(item: any, provider: DataSourceProvider) {
       switch (message.command) {
         case "save":
           {
-            await Datasource.createInstance(
-              provider.getConnections(),
-              provider.context,
-              message.payload,
-              true
-            );
-            provider.refresh();
-            panel.webview.postMessage({
-              command: "status",
-              success: true,
-              message: "✔️保存成功",
-            });
+            try {
+              await saveDatasourceConfigForCreate(provider, message.payload);
+              provider.refresh();
+              postWebviewStatus(panel.webview, {
+                success: true,
+                message: "✔️保存成功",
+              });
+            } catch (error) {
+              postWebviewStatus(panel.webview, {
+                success: false,
+                message: `❗ 保存失败: ${toErrorMessage(error)}`,
+              });
+            }
           }
           return;
         case "test":
           {
-            const db = await Datasource.createInstance(
-              provider.getConnections(),
-              provider.context,
-              message.payload
-            );
-            const res = await db.test();
-            if (res.success) {
-              panel.webview.postMessage({
-                command: "status",
-                success: res.success,
-                message: "✔️连接成功",
-              });
-            } else {
-              panel.webview.postMessage({
-                command: "status",
-                success: res.success,
-                message: `❗${res.message}`,
+            try {
+              const db = await Datasource.createInstance(
+                provider.getConnections(),
+                provider.context,
+                message.payload
+              );
+              const res = await db.test();
+              if (res.success) {
+                postWebviewStatus(panel.webview, {
+                  success: res.success,
+                  message: "✔️连接成功",
+                });
+              } else {
+                postWebviewStatus(panel.webview, {
+                  success: res.success,
+                  message: `❗${res.message}`,
+                });
+              }
+            } catch (error) {
+              postWebviewStatus(panel.webview, {
+                success: false,
+                message: `❗ 测试失败: ${toErrorMessage(error)}`,
               });
             }
           }
@@ -450,6 +549,7 @@ export function registerDatasourceCommands(
     vscode.commands.registerCommand(
       "cadb.datasource.refresh",
       async (item?: Datasource) => {
+				console.log(item?.type);
         if (item && item.type === "datasource") {
           // 如果指定了数据源，则完整加载该数据源
           await vscode.window.withProgress(

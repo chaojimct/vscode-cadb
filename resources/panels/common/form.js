@@ -262,7 +262,7 @@ class DynamicForm {
     const normalFields = [];
 
     fields.forEach((field) => {
-      if (field.config.hint) {
+      if (field.config.hint || field.config.fullRow) {
         fieldsWithHint.push(field);
       } else {
         normalFields.push(field);
