@@ -125,6 +125,52 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
     }));
   }
 
+  /**
+   * 快速展开节点（只加载到表级别，不加载字段）
+   * @param node 要展开的节点
+   * @param maxDepth 最大递归深度，默认2（连接->数据库->表）
+   */
+  private async expandRecursiveFast(node: Datasource, maxDepth: number = 2, currentDepth: number = 0): Promise<void> {
+    if (currentDepth >= maxDepth) {
+      return;
+    }
+
+    try {
+      const children = await node.expand(this.context);
+      node.children = children || [];
+      
+      // 如果是 datasourceType (Databases)，可能需要过滤
+      if (node.type === 'datasourceType' && node.parent) {
+         const connectionName = node.parent.label?.toString();
+         if (connectionName && this.treeState.selectedDatabases?.[connectionName]) {
+            const selectedDbs = this.treeState.selectedDatabases[connectionName];
+            if (selectedDbs.length > 0) {
+              node.children = node.children.filter(child => 
+                selectedDbs.includes(child.label?.toString() || '')
+              );
+            }
+         }
+      }
+
+      // 并行处理子节点，提高性能
+      const childPromises = node.children.map(async (child) => {
+        // 只展开容器类型，不加载字段（字段按需加载）
+        if (['datasourceType', 'collectionType', 'folder', 'collection'].includes(child.type)) {
+          await this.expandRecursiveFast(child, maxDepth, currentDepth + 1);
+        }
+        // document（表）节点不在这里加载字段，字段会在用户展开时按需加载
+      });
+
+      await Promise.all(childPromises);
+    } catch (e) {
+      console.error(`展开节点 ${node.label} 失败:`, e);
+    }
+  }
+
+  /**
+   * 完整展开节点（包含所有层级，包括字段）
+   * @param node 要展开的节点
+   */
   private async expandRecursive(node: Datasource): Promise<void> {
     try {
       const children = await node.expand(this.context);
@@ -169,11 +215,30 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
       cancellable: false
     }, async (progress) => {
       const cache: Record<string, CachedNode[]> = {};
-      for (const node of this.rootNodes) {
-        progress.report({ message: `正在加载 ${node.label}` });
-        await this.expandRecursive(node);
-        cache[node.label as string] = this.serializeChildren(node.children);
-      }
+      
+      // 并行处理所有连接，大幅提升性能
+      const nodePromises = this.rootNodes.map(async (node, index) => {
+        try {
+          progress.report({ 
+            message: `正在加载 ${node.label} (${index + 1}/${this.rootNodes.length})`,
+            increment: 100 / this.rootNodes.length
+          });
+          
+          // 使用快速展开模式：只加载到表级别，不加载字段
+          // 字段信息会在用户展开表时按需加载，避免初始同步时加载大量不必要的数据
+          await this.expandRecursiveFast(node, 2);
+          
+          cache[node.label as string] = this.serializeChildren(node.children);
+        } catch (error) {
+          console.error(`加载连接 ${node.label} 失败:`, error);
+          // 即使失败也保存空数组，避免重复尝试
+          cache[node.label as string] = [];
+        }
+      });
+
+      // 等待所有连接并行加载完成
+      await Promise.all(nodePromises);
+      
       this.treeState.cachedTreeData = cache;
       this.saveTreeState();
       this._onDidChangeTreeData.fire();
