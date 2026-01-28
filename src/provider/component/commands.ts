@@ -624,95 +624,149 @@ export function registerDatasourceCommands(
     })
   );
 
-  // 注册选择数据库命令
+  // 注册选择数据库/表命令
   disposables.push(
     vscode.commands.registerCommand(
-      "cadb.datasource.selectDatabases",
+      "cadb.datasource.filterEntry",
       async (item: Datasource) => {
         try {
-          // 确保 item 是 datasourceType 节点
-          if (item.type !== "datasourceType") {
-            vscode.window.showWarningMessage("请在数据库列表节点上执行此操作");
+          // 确保 item 是 datasourceType 或 collectionType 节点
+          if (item.type !== "datasourceType" && item.type !== "collectionType") {
             return;
           }
 
-          // 获取父节点（连接节点）
-          const connectionNode = item.parent;
+          // 获取连接节点
+          let connectionNode: Datasource | undefined = item.parent;
+          if (item.type === "collectionType") {
+            // 对于 collectionType，需要向上查找连接节点
+            while (connectionNode && connectionNode.type !== "datasource") {
+              connectionNode = connectionNode.parent;
+            }
+          }
+          
           if (!connectionNode || !connectionNode.label) {
             vscode.window.showWarningMessage("无法找到连接信息");
             return;
           }
 
           const connectionName = connectionNode.label.toString();
+          
           // 显示加载提示
           await vscode.window.withProgress(
             {
               location: vscode.ProgressLocation.Notification,
-              title: "正在加载数据库列表...",
+              title: "正在加载列表...",
               cancellable: false,
             },
             async () => {
-              // 获取所有数据库
-              const allDatabases = await item.expand(provider.context);
-
-              if (allDatabases.length === 0) {
-                vscode.window.showWarningMessage("该连接没有可用的数据库");
-                return;
-              }
-              // 获取当前已选择的数据库
-              const currentSelected =
-                provider.getSelectedDatabases(connectionName);
-              // 创建 QuickPick 项
-              interface DatabaseQuickPickItem extends vscode.QuickPickItem {
-                database: string;
-              }
-
-              const quickPickItems: DatabaseQuickPickItem[] = allDatabases.map(
-                (db) => ({
-                  label: db.label?.toString() || "",
-                  description: db.description
-                    ? typeof db.description === "string"
-                      ? db.description
-                      : db.description.toString()
-                    : undefined,
-                  database: db.label?.toString() || "",
-                  picked: currentSelected.includes(db.label?.toString() || ""),
-                })
-              );
-
-              // 显示多选 QuickPick
-              const selected = await vscode.window.showQuickPick(
-                quickPickItems,
-                {
-                  placeHolder: `选择要显示的数据库（当前连接: ${connectionName}）`,
-                  canPickMany: true,
-                  matchOnDescription: true,
+              if (item.type === "datasourceType") {
+                // 处理数据库过滤
+                const allDatabases = await item.expand(provider.context);
+                if (allDatabases.length === 0) {
+                  return;
                 }
-              );
+                // 获取当前已选择的数据库
+                const currentSelected =
+                  provider.getSelectedDatabases(connectionName);
+                // 创建 QuickPick 项
+                interface DatabaseQuickPickItem extends vscode.QuickPickItem {
+                  database: string;
+                }
 
-              if (selected) {
-                const selectedDbs = selected.map((item) => item.database);
-                // 保存选择
-                provider.setSelectedDatabases(connectionName, selectedDbs);
-
-                // 清空 datasourceType 节点的子节点缓存，强制重新加载
-                item.children = [];
-
-                // 刷新 TreeView
-                provider.refresh();
-
-                vscode.window.showInformationMessage(
-                  `已选择 ${selectedDbs.length} 个数据库${
-                    selectedDbs.length === 0 ? "（将显示全部）" : ""
-                  }`
+                const quickPickItems: DatabaseQuickPickItem[] = allDatabases.map(
+                  (db) => ({
+                    label: db.label?.toString() || "",
+                    description: db.description
+                      ? typeof db.description === "string"
+                        ? db.description
+                        : db.description.toString()
+                      : undefined,
+                    database: db.label?.toString() || "",
+                    picked: currentSelected.includes(db.label?.toString() || ""),
+                  })
                 );
+
+                // 显示多选 QuickPick
+                const selected = await vscode.window.showQuickPick(
+                  quickPickItems,
+                  {
+                    placeHolder: `选择要显示的数据库（当前连接: ${connectionName}）`,
+                    canPickMany: true,
+                    matchOnDescription: true,
+                  }
+                );
+
+                if (selected) {
+                  const selectedDbs = selected.map((item) => item.database);
+                  // 保存选择
+                  provider.setSelectedDatabases(connectionName, selectedDbs);
+                  // 清空 datasourceType 节点的子节点缓存，强制重新加载
+                  item.children = [];
+                  // 刷新 TreeView
+                  provider.refresh();
+                }
+              } else if (item.type === "collectionType") {
+                // 处理表过滤
+                const databaseNode = item.parent;
+                if (!databaseNode || !databaseNode.label) {
+                  vscode.window.showWarningMessage("无法找到数据库信息");
+                  return;
+                }
+                
+                const databaseName = databaseNode.label.toString();
+                const allTables = await item.expand(provider.context);
+                if (allTables.length === 0) {
+                  return;
+                }
+                
+                // 获取当前已选择的表
+                const currentSelected =
+                  provider.getSelectedTables(connectionName, databaseName);
+                
+                // 创建 QuickPick 项
+                interface TableQuickPickItem extends vscode.QuickPickItem {
+                  table: string;
+                }
+
+                const quickPickItems: TableQuickPickItem[] = allTables.map(
+                  (table) => ({
+                    label: table.label?.toString() || "",
+                    description: table.description
+                      ? typeof table.description === "string"
+                        ? table.description
+                        : table.description.toString()
+                      : undefined,
+                    table: table.label?.toString() || "",
+                    picked: currentSelected.includes(table.label?.toString() || ""),
+                  })
+                );
+
+                // 显示多选 QuickPick
+                const selected = await vscode.window.showQuickPick(
+                  quickPickItems,
+                  {
+                    placeHolder: `选择要显示的表（数据库: ${databaseName}）`,
+                    canPickMany: true,
+                    matchOnDescription: true,
+                  }
+                );
+
+                if (selected) {
+                  const selectedTables = selected.map((item) => item.table);
+                  // 保存选择
+                  provider.setSelectedTables(connectionName, databaseName, selectedTables);
+                  // 清空 collectionType 节点的子节点缓存，强制重新加载
+                  item.children = [];
+                  // 刷新 TreeView
+                  provider.refresh();
+                }
               }
             }
           );
         } catch (error) {
-          console.error("[SelectDatabases] 错误:", error);
+          console.error("[FilterEntry] 错误:", error);
           vscode.window.showErrorMessage(
-            `选择数据库失败: ${
+            `选择列表项失败: ${
               error instanceof Error ? error.message : String(error)
             }`
           );

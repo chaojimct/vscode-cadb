@@ -56,11 +56,6 @@ export class DatabaseManager {
       // 保存数据库并更新状态栏
       this.currentDatabase = selectedDatabase;
       this.notifyDatabaseChanged();
-
-      // 显示成功消息
-      vscode.window.showInformationMessage(
-        `已选择数据库: ${this.currentConnection.label} / ${this.currentDatabase.label}`
-      );
     } catch (error) {
       console.error("[DatabaseManager] 选择数据库时出错:", error);
       vscode.window.showErrorMessage(

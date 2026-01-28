@@ -388,6 +388,7 @@ export class Datasource extends vscode.TreeItem {
       }
     } else {
       this.iconPath = new vscode.ThemeIcon("folder");
+      this.description = input.extra;
     }
   }
 

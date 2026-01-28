@@ -721,7 +721,7 @@ ORDER BY
       if (!table || !database) {
         return resolve([]);
       }
-      this.conn.query(`DESC ${database}.${table}`, (err, results) => {
+      this.conn.query(`DESC \`${database}\`.\`${table}\``, (err, results) => {
         if (err) {
           vscode.window.showErrorMessage(err.message);
           return resolve([]);
@@ -747,7 +747,7 @@ ORDER BY
       }
       this.conn.query(
         `
-		SELECT * FROM ${database}.${table} LIMIT ${(page - 1) * pageSize}, ${pageSize}
+		SELECT * FROM \`${database}\`.\`${table}\` LIMIT ${(page - 1) * pageSize}, ${pageSize}
 		`,
         (err, results) => {
           if (err) {

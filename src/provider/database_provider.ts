@@ -16,6 +16,7 @@ interface CachedNode {
 interface TreeState {
   expandedNodes: string[]; // 存储已展开节点的路径
   selectedDatabases?: Record<string, string[]>; // 存储每个连接选择显示的数据库
+  selectedTables?: Record<string, string[]>; // 存储每个数据库选择显示的表，key格式为 "connectionName:databaseName"
   cachedTreeData?: Record<string, CachedNode[]>; // 存储缓存的树数据
 }
 
@@ -148,6 +149,9 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
       const children = await node.expand(this.context);
       node.children = children || [];
       
+      // 保存总个数（过滤前）
+      const totalCount = node.children.length;
+      
       // 如果是 datasourceType (Databases)，可能需要过滤
       if (node.type === 'datasourceType' && node.parent) {
          const connectionName = node.parent.label?.toString();
@@ -159,6 +163,37 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
               );
             }
          }
+      }
+
+      // 如果是 collectionType 节点，根据选择过滤表
+      if (node.type === 'collectionType' && node.parent) {
+        const databaseName = node.parent.label?.toString();
+        // 向上查找连接节点
+        let connectionNode: Datasource | undefined = node.parent;
+        while (connectionNode && connectionNode.type !== 'datasource') {
+          connectionNode = connectionNode.parent;
+        }
+        const connectionName = connectionNode?.label?.toString();
+        
+        if (connectionName && databaseName) {
+          const key = `${connectionName}:${databaseName}`;
+          if (this.treeState.selectedTables?.[key]) {
+            const selectedTables = this.treeState.selectedTables[key];
+            if (selectedTables.length > 0) {
+              node.children = node.children.filter(child => 
+                selectedTables.includes(child.label?.toString() || '')
+              );
+            }
+          }
+        }
+      }
+
+      // 更新 datasourceType 和 collectionType 节点的 extra 属性为 x/N 格式
+      if (node.type === 'datasourceType' || node.type === 'collectionType') {
+        const displayedCount = node.children.length;
+        const extraText = `${displayedCount}/${totalCount}`;
+        node.data.extra = extraText;
+        node.description = extraText;
       }
 
       // 并行处理子节点，提高性能
@@ -185,6 +220,9 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
       const children = await node.expand(this.context);
       node.children = children || [];
       
+      // 保存总个数（过滤前）
+      const totalCount = node.children.length;
+      
       // 如果是 datasourceType (Databases)，可能需要过滤
       if (node.type === 'datasourceType' && node.parent) {
          const connectionName = node.parent.label?.toString();
@@ -196,6 +234,37 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
               );
             }
          }
+      }
+
+      // 如果是 collectionType 节点，根据选择过滤表
+      if (node.type === 'collectionType' && node.parent) {
+        const databaseName = node.parent.label?.toString();
+        // 向上查找连接节点
+        let connectionNode: Datasource | undefined = node.parent;
+        while (connectionNode && connectionNode.type !== 'datasource') {
+          connectionNode = connectionNode.parent;
+        }
+        const connectionName = connectionNode?.label?.toString();
+        
+        if (connectionName && databaseName) {
+          const key = `${connectionName}:${databaseName}`;
+          if (this.treeState.selectedTables?.[key]) {
+            const selectedTables = this.treeState.selectedTables[key];
+            if (selectedTables.length > 0) {
+              node.children = node.children.filter(child => 
+                selectedTables.includes(child.label?.toString() || '')
+              );
+            }
+          }
+        }
+      }
+
+      // 更新 datasourceType 和 collectionType 节点的 extra 属性为 x/N 格式
+      if (node.type === 'datasourceType' || node.type === 'collectionType') {
+        const displayedCount = node.children.length;
+        const extraText = `${displayedCount}/${totalCount}`;
+        node.data.extra = extraText;
+        node.description = extraText;
       }
 
       for (const child of node.children) {
@@ -279,6 +348,26 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
     if (element) {
       // If children already loaded, return them
       if (element.children && element.children.length) {
+        // 如果是 datasourceType 或 collectionType，确保计数显示正确
+        if (element.type === 'datasourceType' || element.type === 'collectionType') {
+          const currentCount = element.children.length;
+          // 尝试从 extra 中解析总数，如果无法解析则使用当前数量
+          let totalCount = currentCount;
+          if (element.data.extra) {
+            const match = element.data.extra.match(/(\d+)\/(\d+)/);
+            if (match) {
+              totalCount = parseInt(match[2], 10);
+            } else {
+              // 如果 extra 不是 x/N 格式，说明还没有设置过，使用当前数量
+              totalCount = currentCount;
+            }
+          }
+          // 如果 datasourceType 被过滤了，当前显示数量可能小于总数
+          // 但总数应该保持不变（从 extra 中获取）
+          const extraText = `${currentCount}/${totalCount}`;
+          element.data.extra = extraText;
+          element.description = extraText;
+        }
         // 确保子节点的描述已从 data.extra 同步
         for (const child of element.children) {
           if (child.data && child.data.extra && !child.description) {
@@ -292,6 +381,9 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
       return element.expand(this.context).then(async (children) => {
         element.children = children || [];
         
+        // 保存总个数（过滤前）
+        const totalCount = element.children.length;
+        
         // 如果是 datasourceType 节点，根据选择过滤数据库
         if (element.type === 'datasourceType' && element.parent) {
           const connectionName = element.parent.label?.toString();
@@ -304,6 +396,38 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
               );
             }
           }
+        }
+        
+        // 如果是 collectionType 节点，根据选择过滤表
+        if (element.type === 'collectionType' && element.parent) {
+          const databaseName = element.parent.label?.toString();
+          // 向上查找连接节点
+          let connectionNode: Datasource | undefined = element.parent;
+          while (connectionNode && connectionNode.type !== 'datasource') {
+            connectionNode = connectionNode.parent;
+          }
+          const connectionName = connectionNode?.label?.toString();
+          
+          if (connectionName && databaseName) {
+            const key = `${connectionName}:${databaseName}`;
+            if (this.treeState.selectedTables?.[key]) {
+              const selectedTables = this.treeState.selectedTables[key];
+              if (selectedTables.length > 0) {
+                // 过滤只显示选中的表
+                element.children = element.children.filter(child => 
+                  selectedTables.includes(child.label?.toString() || '')
+                );
+              }
+            }
+          }
+        }
+        
+        // 更新 datasourceType 和 collectionType 节点的 extra 属性为 x/N 格式
+        if (element.type === 'datasourceType' || element.type === 'collectionType') {
+          const displayedCount = element.children.length;
+          const extraText = `${displayedCount}/${totalCount}`;
+          element.data.extra = extraText;
+          element.description = extraText;
         }
         
         // 如果是表节点（document），加载字段并更新描述
@@ -375,7 +499,8 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
   private loadTreeState(): TreeState {
     return this.context.globalState.get<TreeState>('cadb.treeState', {
       expandedNodes: [],
-      selectedDatabases: {}
+      selectedDatabases: {},
+      selectedTables: {}
     });
   }
 
@@ -454,6 +579,26 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
   }
 
   /**
+   * 设置数据库的选中表
+   */
+  public setSelectedTables(connectionName: string, databaseName: string, tables: string[]): void {
+    if (!this.treeState.selectedTables) {
+      this.treeState.selectedTables = {};
+    }
+    const key = `${connectionName}:${databaseName}`;
+    this.treeState.selectedTables[key] = tables;
+    this.saveTreeState();
+  }
+
+  /**
+   * 获取数据库的选中表
+   */
+  public getSelectedTables(connectionName: string, databaseName: string): string[] {
+    const key = `${connectionName}:${databaseName}`;
+    return this.treeState.selectedTables?.[key] || [];
+  }
+
+  /**
    * 递归加载数据源的所有子节点
    * @param datasource 数据源节点
    * @param progress 进度回调
@@ -502,6 +647,37 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
       // 加载所有表
       const tables = await tableTypeNode.expand(this.context);
       tableTypeNode.children = tables || [];
+      
+      // 保存总个数（过滤前）
+      const totalCount = tableTypeNode.children.length;
+      
+      // 应用过滤逻辑
+      const databaseName = collection.label?.toString();
+      // 向上查找连接节点
+      let connectionNode: Datasource | undefined = collection;
+      while (connectionNode && connectionNode.type !== 'datasource') {
+        connectionNode = connectionNode.parent;
+      }
+      const connectionName = connectionNode?.label?.toString();
+      
+      if (connectionName && databaseName) {
+        const key = `${connectionName}:${databaseName}`;
+        if (this.treeState.selectedTables?.[key]) {
+          const selectedTables = this.treeState.selectedTables[key];
+          if (selectedTables.length > 0) {
+            // 过滤只显示选中的表
+            tableTypeNode.children = tableTypeNode.children.filter(child => 
+              selectedTables.includes(child.label?.toString() || '')
+            );
+          }
+        }
+      }
+      
+      // 更新 collectionType 节点的计数显示为 x/N 格式
+      const displayedCount = tableTypeNode.children.length;
+      const extraText = `${displayedCount}/${totalCount}`;
+      tableTypeNode.data.extra = extraText;
+      tableTypeNode.description = extraText;
       this._onDidChangeTreeData.fire(tableTypeNode);
 
       // 更新数据库描述为表的数量

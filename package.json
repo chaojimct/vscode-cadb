@@ -66,8 +66,8 @@
         "icon": "$(edit)"
       },
       {
-        "command": "cadb.datasource.selectDatabases",
-        "title": "选择",
+        "command": "cadb.datasource.filterEntry",
+        "title": "过滤显示",
         "icon": "$(cursor)"
       },
       {
@@ -124,6 +124,11 @@
         "command": "cadb.sql.selectDatabase",
         "title": "选择数据库",
         "icon": "$(database)"
+      },
+      {
+        "command": "cadb.sql.selectTable",
+        "title": "选择表",
+        "icon": "$(file)"
       },
       {
         "command": "cadb.notebook.showDatabaseStatus",
@@ -209,8 +214,8 @@
           "group": "inline"
         },
         {
-          "command": "cadb.datasource.selectDatabases",
-          "when": "view == datasource && viewItem == datasourceType",
+          "command": "cadb.datasource.filterEntry",
+          "when": "view == datasource && (viewItem == datasourceType || viewItem == collectionType)",
           "group": "context"
         },
         {
@@ -259,6 +264,11 @@
       "notebook/toolbar": [
         {
           "command": "cadb.sql.selectDatabase",
+          "when": "notebookType == cadb.sqlNotebook",
+          "group": "navigation"
+        },
+        {
+          "command": "cadb.sql.selectTable",
           "when": "notebookType == cadb.sqlNotebook",
           "group": "navigation"
         },
