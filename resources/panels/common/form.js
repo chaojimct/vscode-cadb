@@ -28,11 +28,12 @@ class DynamicForm {
 
     this.ready = new Promise((resolve) => {
       // 初始化 Layui
-      layui.use(["form", "layer", "element", "laydate"], () => {
+      layui.use(["form", "layer", "element", "laydate", "transfer"], () => {
         this.form = layui.form;
         this.layer = layui.layer;
         this.element = layui.element;
         this.laydate = layui.laydate;
+        this.transfer = layui.transfer;
         resolve();
       });
     });
@@ -45,7 +46,7 @@ class DynamicForm {
    */
   async load(data) {
     await this.ready;
-
+		console.log(data);
     this.currentData = data || {};
     const dataFields = Object.keys(this.currentData);
 
@@ -130,6 +131,9 @@ class DynamicForm {
     
     // 初始化密码框的眼睛图标
     this.initPasswordFields();
+
+    // 初始化穿梭框字段
+    this.initTransferFields();
 
     // 初始化字段显示状态
     this.updateAllFieldsVisibility();
@@ -258,7 +262,7 @@ class DynamicForm {
     const normalFields = [];
 
     fields.forEach((field) => {
-      if (field.config.hint) {
+      if (field.config.hint || field.config.fullRow) {
         fieldsWithHint.push(field);
       } else {
         normalFields.push(field);
@@ -304,7 +308,12 @@ class DynamicForm {
       : "";
     const fieldAttr = `data-field-name="${fieldName}"`;
 
-    let html = `<div class="layui-form-item" ${fieldAttr} ${showAttr} ${hiddenAttr}>`;
+    // 处理跨列
+    const colspan = config.colspan || 1;
+    const styleAttr =
+      colspan > 1 ? `style="grid-column: span ${colspan};"` : "";
+
+    let html = `<div class="layui-form-item" ${fieldAttr} ${showAttr} ${hiddenAttr} ${styleAttr}>`;
 
     switch (config.type) {
       case "select":
@@ -334,6 +343,9 @@ class DynamicForm {
       case "password":
         html += this.generatePasswordField(fieldName, config);
         break;
+      case "ordered-multi-select":
+        html += this.generateTransferField(fieldName, config);
+        break;
       case "text":
       default:
         html += this.generateInputField(fieldName, config);
@@ -348,6 +360,19 @@ class DynamicForm {
     html += "</div>";
 
     return html;
+  }
+
+  /**
+   * 生成穿梭框字段 (替代原有的 ordered-multi-select)
+   */
+  generateTransferField(fieldName, config) {
+    // 穿梭框容器
+    return `
+      <label class="layui-form-label">${config.label}</label>
+      <div class="layui-input-block">
+        <div id="transfer-${fieldName}" class="transfer-container" data-field-name="${fieldName}"></div>
+      </div>
+    `;
   }
 
   /**
@@ -800,6 +825,59 @@ class DynamicForm {
   }
 
   /**
+   * 初始化穿梭框字段
+   */
+  initTransferFields() {
+    if (!this.transfer) {
+			return;
+		}
+
+    const self = this;
+    // 查找所有穿梭框容器
+    this.container.find(".transfer-container").each(function() {
+      const $el = $(this);
+      const fieldName = $el.attr("data-field-name");
+      const config = self.getFieldConfig(fieldName);
+      
+      // 准备穿梭框数据
+      let data = [];
+      if (Array.isArray(config.options)) {
+        data = config.options.map(opt => {
+          if (typeof opt === 'object') {
+            // 穿梭框需要 title 属性
+            return { "value": opt.value, "title": opt.label || opt.title || opt.value, "disabled": opt.disabled || false, "checked": opt.checked || false };
+          } else {
+            return { "value": opt, "title": opt };
+          }
+        });
+      }
+
+      // 获取初始值
+      let value = [];
+      if (self.currentData[fieldName]) {
+        if (Array.isArray(self.currentData[fieldName])) {
+          value = self.currentData[fieldName];
+        } else if (typeof self.currentData[fieldName] === 'string') {
+          value = self.currentData[fieldName].split(',');
+        }
+      }
+
+      // 渲染穿梭框
+      self.transfer.render({
+        elem: '#' + $el.attr('id'),
+        data: data,
+        value: value,
+        title: ['可选字段', '已选字段'],
+        showSearch: true,
+        id: fieldName, // 重要：用于 getData 获取数据
+        // 宽度和高度可以根据需要调整
+        // width: 200, 
+        // height: 300
+      });
+    });
+  }
+
+  /**
    * 填充表单数据
    * @param {Object} data 表单数据
    */
@@ -823,6 +901,18 @@ class DynamicForm {
           break;
         case "select":
           $field.val(value);
+          break;
+        case "ordered-multi-select":
+          // 穿梭框通过 reload 更新值
+          if (this.transfer) {
+            let values = [];
+            if (value) {
+              values = Array.isArray(value) ? value : value.split(',');
+            }
+            this.transfer.reload(fieldName, {
+              value: values
+            });
+          }
           break;
         case "date":
         case "time":
@@ -877,10 +967,30 @@ class DynamicForm {
     const formData = {};
     const $form = this.container.find("form");
 
+    // 处理穿梭框数据（因为它们可能没有 name 属性或者不是标准的表单元素）
+    if (this.transfer) {
+      this.container.find(".transfer-container").each((index, element) => {
+        const $el = $(element);
+        const fieldName = $el.attr("data-field-name");
+        // 获取右侧数据
+        const data = this.transfer.getData(fieldName); 
+        if (data && Array.isArray(data)) {
+           // 提取 value 并转为逗号分隔字符串 (保持与之前行为一致)
+           const values = data.map(item => item.value);
+           formData[fieldName] = values.join(',');
+        }
+      });
+    }
+
     $form.find("[name]").each((index, element) => {
       const $element = $(element);
       const fieldName = $element.attr("name");
       const config = this.getFieldConfig(fieldName);
+
+      // 如果已经在穿梭框处理中获取了，就跳过
+      if (formData.hasOwnProperty(fieldName)) {
+        return;
+      }
 
       switch (config.type) {
         case "checkbox":

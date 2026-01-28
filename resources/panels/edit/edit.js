@@ -77,7 +77,7 @@ layui.use(["element", "form", "layer"], function () {
     const $fieldList = $("#field-list");
     $fieldList.empty();
 
-    mockData.fields.forEach((field) => {
+    mockData.fields.forEach((field, index) => {
       // 根据字段类型显示不同的图标和标记
       let icon = "layui-icon-cols";
       let badge = "";
@@ -91,9 +91,19 @@ layui.use(["element", "form", "layer"], function () {
         badge = '<span style="color: #5FB878; margin-left: 5px; font-size: 11px;">[IDX]</span>';
       }
       
+      const isFirst = index === 0;
+      const isLast = index === mockData.fields.length - 1;
+
       $fieldList.append(`
         <li class="menu-item" data-id="${field.id}" data-type="field">
-          <i class="layui-icon ${icon}"></i> ${field.name}${badge}
+          <div class="menu-item-content">
+            <i class="layui-icon ${icon}"></i> ${field.name}${badge}
+          </div>
+          <div class="menu-item-actions">
+            ${!isFirst ? '<i class="layui-icon layui-icon-up menu-item-action menu-item-up" title="上移"></i>' : ''}
+            ${!isLast ? '<i class="layui-icon layui-icon-down menu-item-action menu-item-down" title="下移"></i>' : ''}
+            <i class="layui-icon layui-icon-delete menu-item-action menu-item-delete" title="删除字段"></i>
+          </div>
         </li>
       `);
     });
@@ -150,10 +160,21 @@ layui.use(["element", "form", "layer"], function () {
     currentEditItem = index;
     currentEditType = "index";
 
+    // 更新字段选项
+    if (mockData.fields && mockData.fields.length > 0) {
+      indexMapping.fields.options = mockData.fields.map(f => ({
+        value: f.name,
+        label: f.name
+      }));
+    }
+
     // 处理 fields 字段（数组转字符串）
     const indexData = { ...index };
     if (Array.isArray(indexData.fields)) {
-      indexData.fields = indexData.fields.join(", ");
+      indexData.fields = indexData.fields.join(",");
+    } else if (typeof indexData.fields === 'string') {
+      // 确保没有空格
+      indexData.fields = indexData.fields.replace(/,\s+/g, ',');
     }
 
     // 创建动态表单
@@ -223,6 +244,60 @@ layui.use(["element", "form", "layer"], function () {
         .filter((f) => f);
     }
 
+    // ==================== 校验逻辑 ====================
+    
+    // 1. 主键必须是唯一索引
+    if (data.type === "primary") {
+      data.unique = true;
+      
+      // 检查是否已有其他主键
+      const otherPrimary = mockData.indexes.find(i => 
+        i.id !== currentEditItem.id && i.type === "primary"
+      );
+      if (otherPrimary) {
+        layer.msg("表中只能有一个主键", { icon: 5 });
+        return;
+      }
+    }
+
+    // 2. 唯一索引字段组合不能重复
+    // 检查范围：唯一索引(unique=true) 和 主键
+    // 注意：表单可能返回字符串 "true"/"false" 或布尔值
+    const isCurrentUnique = data.unique === true || String(data.unique) === "true" || data.type === "unique" || data.type === "primary";
+    
+    if (isCurrentUnique) {
+      const currentFields = [...data.fields].sort().join(",");
+      
+      const duplicate = mockData.indexes.find(i => {
+        if (i.id === currentEditItem.id) {
+					return false;
+				}
+        
+        // 检查目标是否是唯一索引/主键
+        const isTargetUnique = i.unique === true || String(i.unique) === "true" || i.type === "unique" || i.type === "primary";
+        if (!isTargetUnique) {
+					return false;
+				}
+        
+        // 获取目标字段列表
+        let otherFields = i.fields;
+        if (typeof otherFields === "string") {
+          otherFields = otherFields.split(",").map(f => f.trim()).filter(f => f);
+        } else if (!Array.isArray(otherFields)) {
+          otherFields = [];
+        }
+        
+        const otherFieldsStr = [...otherFields].sort().join(",");
+        return currentFields === otherFieldsStr;
+      });
+
+      if (duplicate) {
+        layer.msg("唯一索引字段组合不能重复", { icon: 5 });
+        return;
+      }
+    }
+    // ==================== 校验结束 ====================
+
     if (currentEditItem) {
       Object.assign(currentEditItem, data);
       renderIndexList();
@@ -257,7 +332,6 @@ layui.use(["element", "form", "layer"], function () {
         if (idx !== -1) {
           mockData.fields.splice(idx, 1);
           renderFieldList();
-          console.log('字段已删除');
 
           // 通知 VSCode
         vscode.postMessage({
@@ -291,7 +365,6 @@ layui.use(["element", "form", "layer"], function () {
         if (idx !== -1) {
           mockData.indexes.splice(idx, 1);
           renderIndexList();
-          console.log('索引已删除');
 
           // 通知 VSCode
           vscode.postMessage({
@@ -309,7 +382,12 @@ layui.use(["element", "form", "layer"], function () {
   renderIndexList();
 
   // 菜单项点击事件（事件委托）
-  $(document).on("click", ".menu-item", function () {
+  $(document).on("click", ".menu-item", function (e) {
+    // 如果点击的是删除按钮，不触发选中
+    if ($(e.target).hasClass("menu-item-delete")) {
+      return;
+    }
+
     const $this = $(this);
     const type = $this.data("type");
     const id = $this.data("id");
@@ -330,6 +408,67 @@ layui.use(["element", "form", "layer"], function () {
         loadIndexForm(index);
       }
     }
+  });
+
+  // 删除按钮点击事件（事件委托）
+  $(document).on("click", ".menu-item-delete", function (e) {
+    e.stopPropagation(); // 阻止冒泡
+    const $item = $(this).closest(".menu-item");
+    const type = $item.data("type");
+    const id = $item.data("id");
+
+    if (type === "field") {
+      const field = mockData.fields.find((f) => f.id === id);
+      if (field) {
+        currentEditItem = field;
+        handleDeleteField();
+      }
+    } else if (type === "index") {
+      const index = mockData.indexes.find((i) => i.id === id);
+      if (index) {
+        currentEditItem = index;
+        handleDeleteIndex();
+      }
+    }
+  });
+
+  // 添加按钮点击事件
+  $("#add-field-btn").on("click", function () {
+    const newField = {
+      id: "field-new-" + Date.now(),
+      name: "new_column",
+      type: "varchar",
+      length: 255,
+      defaultValue: "",
+      nullable: true,
+      key: "",
+      extra: "",
+      comment: "",
+    };
+    mockData.fields.push(newField);
+    renderFieldList();
+    // 选中新添加的字段
+    const $newItem = $(`#field-list .menu-item[data-id="${newField.id}"]`);
+    $newItem.trigger("click");
+    // 滚动到底部
+    $newItem[0].scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+
+  $("#add-index-btn").on("click", function () {
+    const newIndex = {
+      id: "index-new-" + Date.now(),
+      name: "new_index",
+      type: "index",
+      fields: [],
+      unique: false,
+    };
+    mockData.indexes.push(newIndex);
+    renderIndexList();
+    // 选中新添加的索引
+    const $newItem = $(`#index-list .menu-item[data-id="${newIndex.id}"]`);
+    $newItem.trigger("click");
+    // 滚动到底部
+    $newItem[0].scrollIntoView({ behavior: "smooth", block: "center" });
   });
 
   // 监听 Tab 切换事件
@@ -428,16 +567,13 @@ layui.use(["element", "form", "layer"], function () {
           // 将字段数组转换为逗号分隔的字符串（用于显示）
           if (Array.isArray(idx.fields)) {
             idx.fieldsArray = idx.fields;
-            idx.fields = idx.fields.join(", ");
+            idx.fields = idx.fields.join(",");
           }
           indexes.push(idx);
         });
         
         mockData.fields = fields;
         mockData.indexes = indexes;
-        
-        console.log("加载的字段数据:", fields);
-        console.log("加载的索引数据:", indexes);
       } else if (data && data.fields) {
         // 兼容旧格式
         mockData.fields = data.fields;
@@ -452,8 +588,6 @@ layui.use(["element", "form", "layer"], function () {
     } else if (command === "status") {
       const statusMsg = data.message || "操作完成";
       const statusType = data.success ? '成功' : '失败';
-      console.log(`操作状态: ${statusType} - ${statusMsg}`);
-      
       if (dynamicForm) {
         dynamicForm.showStatus(statusMsg, data.success ? "success" : "error");
       }

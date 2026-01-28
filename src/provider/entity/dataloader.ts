@@ -53,12 +53,14 @@ export interface SaveResult {
 }
 
 export interface Dataloader {
+	rootNode(): Datasource;
+	dbType(): string;
   test(): Promise<PromiseResult>;
   connect(): Promise<void>;
   getConnection(): any; // 返回数据库连接对象
 
   // 列举所有支持的排序规则
-  listCollations(): Promise<Datasource[]>;
+  listCollations(ds: Datasource): Promise<Datasource[]>;
   createDatabase(params: any): Promise<void>;
   listFiles(ds: Datasource, path: vscode.Uri): Promise<Datasource[]>;
 

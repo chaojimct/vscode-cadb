@@ -9,6 +9,7 @@ import {
 import { MySQLDataloader } from "./mysql_dataloader";
 import type { DatabaseManager } from "../component/database_manager";
 import { RedisDataloader } from "./redis_dataloader";
+import { OssDataLoader } from "./oss_dataloader";
 
 const iconDir: string[] = ["..", "..", "resources", "icons"];
 
@@ -35,16 +36,21 @@ export interface DatasourceInputData {
   tooltip: string;
   extra?: string;
 
-  dbType?: "mysql" | "redis";
+  dbType?: "mysql" | "redis" | "oss";
   database?: string;
   username?: string;
   password?: string;
   host?: string;
   port?: number;
+	endpoint?: string;
+	accessKeyId?: string;
+	accessSecretKey?: string;
+	bucket?: string;
+	region?: string;
 }
 
 export class Datasource extends vscode.TreeItem {
-	public data: DatasourceInputData;
+  public data: DatasourceInputData;
   public children: Datasource[] = [];
   public parent?: Datasource;
   public type: string;
@@ -72,10 +78,12 @@ export class Datasource extends vscode.TreeItem {
       return Promise.resolve(undefined);
     }
     switch (this.type) {
-			case "user":
+      case "user":
         return this.dataloader.descUser(this);
-			case "datasource":
+      case "datasource":
         return this.dataloader.descDatasource(this);
+      case "collection":
+        return this.dataloader.descDatabase(this);
       case "document":
         return this.dataloader.descTable(this);
       default:
@@ -88,9 +96,9 @@ export class Datasource extends vscode.TreeItem {
     databaseManager?: DatabaseManager
   ): Promise<void> => {
     switch (this.type) {
-			case "datasourceType":
-				// TODO: 创建数据库
-				break;
+      case "datasourceType":
+        // TODO: 创建数据库
+        break;
       case "fileType":
         if (!this.parent || !this.parent.label) {
           return Promise.resolve();
@@ -99,56 +107,61 @@ export class Datasource extends vscode.TreeItem {
           context.globalStorageUri,
           this.parent.label.toString()
         );
-        
+
         // 创建新的 .jsql 文件（SQL Notebook）
-          const dayjs = require("dayjs");
+        const dayjs = require("dayjs");
         const filename = dayjs().format("YYYYMMDDHHmmss") + ".jsql";
-          const fileUri = vscode.Uri.joinPath(dsPath, filename);
-        
+        const fileUri = vscode.Uri.joinPath(dsPath, filename);
+
         // 查找当前数据库和数据源信息
         let datasourceName: string | null = null;
         let databaseName: string | null = null;
-        
+
         // 向上查找连接和数据库节点
         let current: Datasource | undefined = this.parent;
         while (current) {
-          if (current.type === 'collection') {
+          if (current.type === "collection") {
             databaseName = current.label?.toString() || null;
           }
-          if (current.type === 'datasource') {
+          if (current.type === "datasource") {
             datasourceName = current.label?.toString() || null;
           }
           current = current.parent;
         }
-        
+
         // 创建空的 notebook 内容，包含数据库连接信息
         const emptyNotebook = {
           datasource: datasourceName,
           database: databaseName,
-          cells: []
+          cells: [],
         };
         const content = JSON.stringify(emptyNotebook, null, 2);
-        
+
         // 写入文件
-        await vscode.workspace.fs.writeFile(fileUri, Buffer.from(content, 'utf-8'));
-        
+        await vscode.workspace.fs.writeFile(
+          fileUri,
+          Buffer.from(content, "utf-8")
+        );
+
         // 打开文件作为 Notebook
-        const notebookDocument = await vscode.workspace.openNotebookDocument(fileUri);
+        const notebookDocument = await vscode.workspace.openNotebookDocument(
+          fileUri
+        );
         await vscode.window.showNotebookDocument(notebookDocument);
-        
+
         // 如果有 databaseManager，自动设置数据库
         if (databaseManager && databaseName) {
           // 查找当前数据库节点
           let dbNode: Datasource | undefined = this.parent;
           while (dbNode) {
-            if (dbNode.type === 'collection' && dbNode.label === databaseName) {
+            if (dbNode.type === "collection" && dbNode.label === databaseName) {
               databaseManager.setCurrentDatabase(dbNode, true);
               break;
             }
             dbNode = dbNode.parent;
           }
         }
-        
+
         // 刷新文件列表
         this.dataloader?.listFiles(this, dsPath);
         break;
@@ -206,7 +219,7 @@ export class Datasource extends vscode.TreeItem {
     parent?: Datasource
   ) {
     super(input.name);
-		this.data = input;
+    this.data = input;
     this.dataloader = dataloader;
     this.parent = parent;
     this.type = this.contextValue = input.type;
@@ -269,53 +282,33 @@ export class Datasource extends vscode.TreeItem {
         command: "cadb.file.open",
         arguments: [this],
       };
+      this.iconPath = new vscode.ThemeIcon("file-text");
+    } else {
+      this.iconPath = new vscode.ThemeIcon("folder");
     }
-    this.iconPath = {
-      light: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "SQL_light.svg")
-      ),
-      dark: vscode.Uri.file(path.join(__filename, ...iconDir, "SQL_dark.svg")),
-    };
   }
 
   private initIndexType(input: DatasourceInputData): void {
     if (input.type === "index") {
       this.description = input.extra;
+      this.iconPath = new vscode.ThemeIcon("type-hierarchy");
+    } else {
+      this.iconPath = new vscode.ThemeIcon("folder");
     }
-    this.iconPath = {
-      light: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "Index_light.svg")
-      ),
-      dark: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "Index_dark.svg")
-      ),
-    };
   }
 
   private initFieldType(input: DatasourceInputData): void {
     if (input.type === "field") {
       this.description = input.extra;
+      this.iconPath = new vscode.ThemeIcon("symbol-constant");
+    } else {
+      this.iconPath = new vscode.ThemeIcon("folder");
     }
-    this.iconPath = {
-      light: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "Column_light.svg")
-      ),
-      dark: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "Column_dark.svg")
-      ),
-    };
   }
 
   private initDocument(input: DatasourceInputData): void {
     this.description = `${input.extra}`;
-    this.iconPath = {
-      light: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "Table_light.svg")
-      ),
-      dark: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "Table_dark.svg")
-      ),
-    };
+    this.iconPath = new vscode.ThemeIcon("table");
     this.command = {
       title: "查看数据",
       command: "cadb.item.showData",
@@ -326,49 +319,32 @@ export class Datasource extends vscode.TreeItem {
   private initCollectionType(input: DatasourceInputData): void {
     if (input.type === "collection") {
       this.description = `${input.extra}`;
+      this.iconPath = new vscode.ThemeIcon("database");
+    } else {
+      this.iconPath = new vscode.ThemeIcon("folder");
     }
-    this.iconPath = {
-      light: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "Database_light.svg")
-      ),
-      dark: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "Database_dark.svg")
-      ),
-    };
   }
 
   private initUserType(input: DatasourceInputData): void {
     if (input.type === "user") {
       this.description = `${input.extra}`;
+      this.iconPath = new vscode.ThemeIcon("account");
+    } else {
+      this.iconPath = new vscode.ThemeIcon("folder");
     }
-    this.iconPath = {
-      light: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "User_light.svg")
-      ),
-      dark: vscode.Uri.file(path.join(__filename, ...iconDir, "User_dark.svg")),
+  }
+
+  private initItem(_: DatasourceInputData): void {
+    this.iconPath = new vscode.ThemeIcon("note");
+		this.command = {
+      title: "查看数据",
+      command: "cadb.item.showData",
+      arguments: [this],
     };
   }
 
-  private initItem(input: DatasourceInputData): void {
-    this.iconPath = {
-      light: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "Item_light.svg")
-      ),
-      dark: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "Item_dark.svg")
-      ),
-    };
-  }
-
-  private initFolder(input: DatasourceInputData): void {
-    this.iconPath = {
-      light: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "Folder_light.svg")
-      ),
-      dark: vscode.Uri.file(
-        path.join(__filename, ...iconDir, "Folder_dark.svg")
-      ),
-    };
+  private initFolder(_: DatasourceInputData): void {
+    this.iconPath = new vscode.ThemeIcon("folder");
   }
 
   private initDatasource(input: DatasourceInputData): void {
@@ -397,16 +373,21 @@ export class Datasource extends vscode.TreeItem {
           };
           this.dataloader = new RedisDataloader(this, input);
           break;
+				case "oss":
+					this.description = `${input.bucket}`;
+					this.iconPath = {
+						light: vscode.Uri.file(
+							path.join(__filename, ...iconDir, "oss", "OSS_light.svg")
+						),
+						dark: vscode.Uri.file(
+							path.join(__filename, ...iconDir, "oss", "OSS_dark.svg")
+						),
+					};
+					this.dataloader = new OssDataLoader(this, input);
+					break;
       }
     } else {
-      this.iconPath = {
-        light: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "Database_light.svg")
-        ),
-        dark: vscode.Uri.file(
-          path.join(__filename, ...iconDir, "Database_dark.svg")
-        ),
-      };
+      this.iconPath = new vscode.ThemeIcon("folder");
     }
   }
 

@@ -90,12 +90,24 @@ body {
 
 .layui-tab-item {
   height: 100%;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow-y: hidden;
+  display: none;
+  flex-direction: column;
 }
 
-/* 菜单列表 */
+.layui-tab-item.layui-show {
+  display: flex;
+}
+
+.toolbar {
+  padding: 10px;
+  border-bottom: 1px solid var(--vscode-border);
+  flex-shrink: 0;
+}
+
 .menu-list {
+  flex: 1;
+  overflow-y: auto;
   list-style: none;
   padding: 0;
   margin: 0;
@@ -109,6 +121,59 @@ body {
   color: var(--vscode-fg);
   transition: background 0.2s;
   position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.menu-item-content {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  flex: 1;
+  justify-content: flex-start;
+}
+
+.menu-item-content i {
+  margin-right: 8px;
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.menu-item-actions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.menu-item:hover .menu-item-actions {
+  opacity: 1;
+}
+
+.menu-item-action {
+  color: var(--vscode-fg);
+  padding: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.menu-item-action:hover {
+  background-color: var(--vscode-hover);
+  color: var(--vscode-select-fg);
+}
+
+.menu-item-delete {
+  color: #ff5722;
+}
+
+.menu-item-delete:hover {
+  background-color: rgba(255, 87, 34, 0.1);
+  color: #ff5722;
 }
 
 .menu-item:hover {
@@ -142,7 +207,8 @@ body {
 
 /* 表单容器 */
 #formContainer {
-  max-width: 600px;
+  max-width: 100%;
+  min-width: 600px;
 }
 
 /* 危险按钮样式 */
@@ -152,7 +218,9 @@ body {
   border: none;
   opacity: 1 !important;
   visibility: visible !important;
-  display: inline-block !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
 }
 
 .layui-btn-danger:hover {
@@ -163,7 +231,9 @@ body {
 #deleteBtn {
   opacity: 1 !important;
   visibility: visible !important;
-  display: inline-block !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
 }
 
 /* 滚动条样式适配 VSCode */

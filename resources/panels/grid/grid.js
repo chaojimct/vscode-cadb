@@ -92,7 +92,13 @@ $(function () {
   // 绑定按钮事件
   $("#btn-add").on("click", dbTable.addRow);
   $("#btn-refresh").on("click", () => {
-    dbTable.refreshTable();
+    // 重新查询数据
+    if (vscode) {
+      vscode.postMessage({
+        command: "refresh",
+      });
+    }
+
     // 清空过滤条件
     if (whereInput) {
       whereInput.clear();
@@ -110,7 +116,6 @@ $(function () {
   $("#btn-save").on("click", () => {
     const changedRows = dbTable.getChangedRows();
     if (changedRows.length === 0) {
-      console.log('没有需要保存的修改');
       if (vscode) {
         vscode.postMessage({
           command: "status",
@@ -149,7 +154,6 @@ $(function () {
     } else if (command === "status") {
       const message = data.message || (data.success ? "操作完成" : "操作失败");
       if (data.success) {
-        console.log('✓', message);
         // 可以在这里添加成功提示，比如显示一个临时提示框
         if (window.showSuccessMessage) {
           window.showSuccessMessage(message);

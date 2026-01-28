@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>键值数据</title>
+    <meta http-equiv="Content-Security-Policy" content="{{csp}}" />
+    <script
+      nonce="{{resource-nonce}}"
+      src="{{node-resources-uri}}/jquery/dist/jquery.min.js"
+    ></script>
+    <script
+      nonce="{{resource-nonce}}"
+      src="{{node-resources-uri}}/layui/dist/layui.js"
+    ></script>
+    <link
+      rel="stylesheet"
+      href="{{node-resources-uri}}/layui/dist/css/layui.css"
+    />
+    <script
+      nonce="{{resource-nonce}}"
+      src="{{node-resources-uri}}/tabulator-tables/dist/js/tabulator.min.js"
+    ></script>
+    <link
+      rel="stylesheet"
+      href="{{node-resources-uri}}/tabulator-tables/dist/css/tabulator.min.css"
+    />
+    <link rel="stylesheet" href="{{resources-uri}}/common/layui-theme.css" />
+    <link rel="stylesheet" href="{{resources-uri}}/common/table.css" />
+    <link rel="stylesheet" href="{{resources-uri}}/items/items.css" />
+  </head>
+
+  <body>
+    <div class="table-wrapper">
+      <div id="grid"></div>
+    </div>
+
+    <script
+      nonce="{{resource-nonce}}"
+      src="{{resources-uri}}/common/table.js"
+    ></script>
+    <script
+      nonce="{{resource-nonce}}"
+      src="{{resources-uri}}/items/items.js"
+    ></script>
+  </body>
+  </html>

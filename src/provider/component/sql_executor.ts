@@ -360,10 +360,6 @@ export class SqlExecutor {
 
     // 从缓存中删除过期项
     expiredKeys.forEach((key) => this._connectionCache.delete(key));
-
-    if (expiredKeys.length > 0) {
-      console.log(`[SQL Executor] 清理了 ${expiredKeys.length} 个过期连接`);
-    }
   }
 
   dispose(): void {

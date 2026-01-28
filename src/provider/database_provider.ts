@@ -56,6 +56,15 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
         ),
         "utf-8"
       ),
+      items: readFileSync(
+        path.join(
+          this.context.extensionPath,
+          "resources",
+          "panels",
+          "items.html"
+        ),
+        "utf-8"
+      ),
     };
 
     // 加载树状态

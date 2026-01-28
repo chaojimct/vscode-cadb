@@ -5,7 +5,7 @@ import { generateNonce } from "./utils";
 
 export function createWebview(
   provider: DataSourceProvider,
-  viewType: "settings" | "datasourceTable" | "tableEdit",
+  viewType: "settings" | "datasourceTable" | "tableEdit" | "items",
   title: string
 ): vscode.WebviewPanel {
   const panel = vscode.window.createWebviewPanel(

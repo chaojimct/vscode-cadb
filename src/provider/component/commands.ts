@@ -3,26 +3,207 @@ import { DataSourceProvider } from "../database_provider";
 import { Datasource } from "../entity/datasource";
 import path from "path";
 import { FormResult } from "../entity/dataloader";
-import { generateNonce } from "../utils";
 import { DatabaseManager } from "./database_manager";
 import { ResultWebviewProvider } from "../result_provider";
 import { DatabaseSelector } from "./database_selector";
 import { createWebview } from "../webview_helper";
 
+/**
+ * 将 unknown 错误转换为可展示的消息文本
+ */
+function toErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * 向 settings webview 回传统一的状态消息
+ */
+function postWebviewStatus(
+  webview: vscode.Webview,
+  payload: { success: boolean; message: string }
+) {
+  webview.postMessage({
+    command: "status",
+    success: payload.success,
+    message: payload.message,
+  });
+}
+
+/**
+ * 处理 settings webview 的保存消息
+ * - datasource：更新连接配置（按 dbType 分发）
+ * - user：更新用户信息
+ * - collection：更新数据库配置（仅 MySQL）
+ */
+async function handleSettingsSaveMessage(
+  provider: DataSourceProvider,
+  item: Datasource,
+  panel: vscode.WebviewPanel,
+  payload: any
+) {
+  try {
+    if (item.type === "datasource") {
+      await saveDatasourceConfigForEdit(provider, item, payload);
+      postWebviewStatus(panel.webview, {
+        success: true,
+        message: "✔️ 连接配置更新成功",
+      });
+      return;
+    }
+
+    if (item.type === "user") {
+      await updateUserInfo(provider, item, payload);
+      postWebviewStatus(panel.webview, {
+        success: true,
+        message: "✔️ 用户信息更新成功",
+      });
+      return;
+    }
+
+    if (item.type === "collection") {
+      await updateDatabaseConfig(item, payload);
+      provider.refresh();
+      postWebviewStatus(panel.webview, {
+        success: true,
+        message: "✔️ 数据库配置更新成功",
+      });
+    }
+  } catch (error) {
+    console.error("保存失败:", error);
+    postWebviewStatus(panel.webview, {
+      success: false,
+      message: `❗ 保存失败: ${toErrorMessage(error)}`,
+    });
+  }
+}
+
+/**
+ * 处理 settings webview 的测试连接消息（仅 datasource）
+ */
+async function handleSettingsTestMessage(
+  provider: DataSourceProvider,
+  item: Datasource,
+  panel: vscode.WebviewPanel,
+  payload: any
+) {
+  if (item.type !== "datasource") {
+    return;
+  }
+
+  try {
+    const db = await Datasource.createInstance(
+      provider.getConnections(),
+      provider.context,
+      payload
+    );
+    const res = await db.test();
+    if (res.success) {
+      postWebviewStatus(panel.webview, {
+        success: true,
+        message: "✔️ 连接测试成功",
+      });
+    } else {
+      postWebviewStatus(panel.webview, {
+        success: false,
+        message: `❗ ${res.message}`,
+      });
+    }
+  } catch (error) {
+    postWebviewStatus(panel.webview, {
+      success: false,
+      message: `❗ 测试失败: ${toErrorMessage(error)}`,
+    });
+  }
+}
+
+/**
+ * 新建数据源时的保存入口（按 dbType 分发）
+ */
+async function saveDatasourceConfigForCreate(
+  provider: DataSourceProvider,
+  payload: any
+): Promise<void> {
+  await Datasource.createInstance(
+    provider.getConnections(),
+    provider.context,
+    payload,
+    true
+  );
+}
+
+/**
+ * 编辑数据源时的保存入口（按 dbType 分发）
+ */
+async function saveDatasourceConfigForEdit(
+  provider: DataSourceProvider,
+  item: Datasource,
+  payload: any
+): Promise<void> {
+  if (payload?.dbType === "oss") {
+    await saveOssDatasourceConfig(provider, payload, {
+      originalName: item.label?.toString() || "",
+    });
+    return;
+  }
+
+  await updateNonOssDatasourceConfig(provider, item, payload);
+}
+
+function findAncestorByType(
+  node: Datasource,
+  type: string
+): Datasource | undefined {
+  let current: Datasource | undefined = node;
+  while (current) {
+    if (current.type === type) {
+      return current;
+    }
+    current = current.parent;
+  }
+  return undefined;
+}
+
+function validateAndGetFilePath(
+  item: any,
+  operation: string
+): string | undefined {
+  const fileItem = item as Datasource;
+  if (!fileItem || fileItem.type !== "file") {
+    vscode.window.showErrorMessage(`无法${operation}：不是有效的文件项`);
+    return undefined;
+  }
+
+  const filePath =
+    typeof fileItem.tooltip === "string"
+      ? fileItem.tooltip
+      : fileItem.tooltip?.value || "";
+
+  if (!filePath) {
+    vscode.window.showErrorMessage("无法获取文件路径");
+    return undefined;
+  }
+  return filePath;
+}
+
 async function editEntry(provider: DataSourceProvider, item: Datasource) {
   let panel = null;
   let configType = "";
-  
+
   if (item.type === "datasource") {
-    panel = createWebview(
-      provider,
-      "settings",
-      `【${item.label}】编辑`
-    );
+    panel = createWebview(provider, "settings", `【${item.label}】编辑`);
     configType = "datasource";
   } else if (item.type === "user") {
     panel = createWebview(provider, "settings", `【${item.label}】编辑`);
     configType = "user";
+  } else if (item.type === "collection") {
+    const datasourceNode = findAncestorByType(item, "datasource");
+    const dbType = datasourceNode?.data?.dbType || "mysql";
+    if (dbType !== "mysql") {
+      vscode.window.showWarningMessage("当前仅支持 MySQL 数据库编辑");
+      return;
+    }
+    panel = createWebview(provider, "settings", `【${item.label}】编辑`);
+    configType = "database";
   } else if (
     item.type === "document" ||
     item.type === "field" ||
@@ -32,84 +213,68 @@ async function editEntry(provider: DataSourceProvider, item: Datasource) {
   } else {
     return;
   }
-  
-  const data: FormResult | undefined = await item.edit();
-  panel.webview.postMessage({
-    command: "load",
-    configType: configType,
-    data: data,
-  });
-  
+
+  let data: FormResult | undefined = undefined;
+  try {
+    data = await item.edit();
+  } catch (error) {
+    console.error("加载编辑数据失败:", error);
+    vscode.window.showErrorMessage(
+      `加载编辑数据失败: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+    return;
+  }
+  if (configType === "database") {
+    const databaseData = data?.rowData?.[0] || {};
+    let collations: Datasource[] = [];
+    try {
+      collations = item.dataloader
+        ? await item.dataloader.listCollations(item)
+        : [];
+    } catch {
+      collations = [];
+    }
+    const options = collations.map((c) => ({
+      label: c.label?.toString() || "",
+      value: c.label?.toString() || "",
+    }));
+
+    panel.webview.postMessage({
+      command: "load",
+      configType: configType,
+      data: {
+        ...databaseData,
+        _mode: "edit",
+        _originalName: databaseData?.name || item.label?.toString() || "",
+      },
+      options: { collation: options },
+    });
+  } else {
+    panel.webview.postMessage({
+      command: "load",
+      configType: configType,
+      data: data,
+    });
+  }
+
   panel.webview.onDidReceiveMessage(async (message) => {
     switch (message.command) {
       case "save":
-        try {
-          if (item.type === "datasource") {
-            // 更新数据库连接配置
-            await updateDatasourceConfig(provider, item, message.payload);
-            panel.webview.postMessage({
-              command: "status",
-              success: true,
-              message: "✔️ 连接配置更新成功",
-            });
-          } else if (item.type === "user") {
-            // 更新用户信息
-            await updateUserInfo(provider, item, message.payload);
-            panel.webview.postMessage({
-              command: "status",
-              success: true,
-              message: "✔️ 用户信息更新成功",
-            });
-          }
-        } catch (error) {
-          console.error("保存失败:", error);
-          panel.webview.postMessage({
-            command: "status",
-            success: false,
-            message: `❗ 保存失败: ${error instanceof Error ? error.message : String(error)}`,
-          });
-        }
+        await handleSettingsSaveMessage(provider, item, panel, message.payload);
         break;
       case "test":
-        // 测试连接（仅用于数据库连接配置）
-        if (item.type === "datasource") {
-          try {
-            const db = await Datasource.createInstance(
-              provider.getConnections(),
-              provider.context,
-              message.payload
-            );
-            const res = await db.test();
-            if (res.success) {
-              panel.webview.postMessage({
-                command: "status",
-                success: true,
-                message: "✔️ 连接测试成功",
-              });
-            } else {
-              panel.webview.postMessage({
-                command: "status",
-                success: false,
-                message: `❗ ${res.message}`,
-              });
-            }
-          } catch (error) {
-            panel.webview.postMessage({
-              command: "status",
-              success: false,
-              message: `❗ 测试失败: ${error instanceof Error ? error.message : String(error)}`,
-            });
-          }
-        }
+        await handleSettingsTestMessage(provider, item, panel, message.payload);
         break;
     }
   });
 }
 
 /**
- * 更新数据库连接配置
+ * 更新非 OSS 数据源连接配置
  */
-async function updateDatasourceConfig(
+async function updateNonOssDatasourceConfig(
   provider: DataSourceProvider,
   item: Datasource,
   payload: any
@@ -118,11 +283,11 @@ async function updateDatasourceConfig(
   const index = connections.findIndex(
     (conn) => conn.name === item.label?.toString()
   );
-  
+
   if (index === -1) {
     throw new Error("未找到要更新的连接配置");
   }
-  
+
   // 更新配置数据
   connections[index] = {
     type: "datasource",
@@ -135,12 +300,25 @@ async function updateDatasourceConfig(
     password: payload.password,
     database: payload.database,
   };
-  
+
   // 保存到全局状态
   await provider.context.globalState.update("cadb.connections", connections);
-  
+
   // 刷新视图
   provider.refresh();
+}
+
+async function saveOssDatasourceConfig(
+  provider: DataSourceProvider,
+  payload: any,
+  options: { originalName?: string }
+): Promise<void> {
+  console.log(payload);
+  // TODO: 实现 OSS 数据源保存逻辑（新建/编辑共用此入口）
+  void provider;
+  void payload;
+  void options;
+  throw new Error("OSS 数据源保存逻辑未实现");
 }
 
 /**
@@ -156,10 +334,60 @@ async function updateUserInfo(
   if (item.dataloader) {
     // TODO: 实现用户信息的数据库更新逻辑
     // 这需要在 dataloader 中添加 updateUser 方法
-    vscode.window.showInformationMessage("用户信息已更新（需要实现数据库更新逻辑）");
+    vscode.window.showInformationMessage(
+      "用户信息已更新（需要实现数据库更新逻辑）"
+    );
   } else {
     throw new Error("无法获取数据库连接");
   }
+}
+
+async function updateDatabaseConfig(
+  item: Datasource,
+  payload: any
+): Promise<void> {
+  const databaseName = item.label?.toString() || "";
+  const originalName = payload?._originalName || databaseName;
+  const requestedName = payload?.name || originalName;
+  if (requestedName !== originalName) {
+    throw new Error("暂不支持重命名数据库");
+  }
+
+  const collation = payload?.collation;
+  if (!collation) {
+    throw new Error("排序规则不能为空");
+  }
+  if (!/^[0-9A-Za-z_]+$/.test(String(collation))) {
+    throw new Error("排序规则格式非法");
+  }
+
+  if (!item.dataloader) {
+    throw new Error("无法获取数据库连接");
+  }
+
+  await item.connect();
+  const conn: any = item.dataloader.getConnection();
+  if (!conn || typeof conn.query !== "function") {
+    throw new Error("当前数据源不支持编辑数据库");
+  }
+
+  const escapedDbName = originalName.replace(/`/g, "``");
+  const charset = String(collation).split("_")[0];
+  if (!/^[0-9A-Za-z_]+$/.test(charset)) {
+    throw new Error("字符集格式非法");
+  }
+  await new Promise<void>((resolve, reject) => {
+    conn.query(
+      `ALTER DATABASE \`${escapedDbName}\` CHARACTER SET ${charset} COLLATE ${collation}`,
+      (err: any) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      }
+    );
+  });
 }
 
 async function addEntry(item: any, provider: DataSourceProvider) {
@@ -169,14 +397,14 @@ async function addEntry(item: any, provider: DataSourceProvider) {
       return;
     }
 
-    const collations = await dataloader.listCollations();
+    const collations = await dataloader.listCollations(item);
     const options = collations.map((c) => ({
       label: c.label?.toString() || "",
       value: c.label?.toString() || "",
     }));
 
     const panel = createWebview(provider, "settings", "创建数据库");
-    
+
     // 直接发送初始化数据（页面加载时会自动处理）
     panel.webview.postMessage({
       command: "load",
@@ -184,7 +412,7 @@ async function addEntry(item: any, provider: DataSourceProvider) {
       data: {}, // 新建数据库，使用空数据
       options: { collation: options },
     });
-    
+
     // 监听来自 webview 的消息
     panel.webview.onDidReceiveMessage(async (message) => {
       switch (message.command) {
@@ -198,23 +426,23 @@ async function addEntry(item: any, provider: DataSourceProvider) {
               message: "✔️ 数据库创建成功",
             });
             setTimeout(() => panel.dispose(), 1000);
-            
+
             // 刷新数据库列表
             provider.refresh(item);
-            
+
             // 等待刷新完成后，找到新创建的数据库节点并加载其子节点
             setTimeout(async () => {
               try {
                 // 重新展开 datasourceType 节点以获取最新的数据库列表
                 const databases = await item.expand(provider.context);
                 item.children = databases || [];
-                
+
                 // 找到新创建的数据库节点
                 const newDatabase = item.children.find(
                   (db: Datasource) => db.label?.toString() === databaseName
                 );
-                
-                if (newDatabase && newDatabase.type === 'collection') {
+
+                if (newDatabase && newDatabase.type === "collection") {
                   // 加载新数据库的子节点（表），这会更新 description 为表数量
                   await provider.loadCollectionChildren(newDatabase);
                 }
@@ -241,8 +469,8 @@ async function addEntry(item: any, provider: DataSourceProvider) {
     return;
   }
 
-  if (item) {
-    await (item as Datasource).create(provider.context, provider.databaseManager);
+  if (item instanceof Datasource) {
+    await item.create(provider.context, provider.databaseManager);
     provider.refresh();
   } else {
     const panel = createWebview(provider, "settings", "数据库连接配置");
@@ -252,44 +480,50 @@ async function addEntry(item: any, provider: DataSourceProvider) {
       configType: "datasource",
       data: null,
     });
-    
+
     panel.webview.onDidReceiveMessage(async (message) => {
       switch (message.command) {
         case "save":
           {
-            await Datasource.createInstance(
-              provider.getConnections(),
-              provider.context,
-              message.payload,
-              true
-            );
-            provider.refresh();
-            panel.webview.postMessage({
-              command: "status",
-              success: true,
-              message: "✔️保存成功",
-            });
+            try {
+              await saveDatasourceConfigForCreate(provider, message.payload);
+              provider.refresh();
+              postWebviewStatus(panel.webview, {
+                success: true,
+                message: "✔️保存成功",
+              });
+            } catch (error) {
+              postWebviewStatus(panel.webview, {
+                success: false,
+                message: `❗ 保存失败: ${toErrorMessage(error)}`,
+              });
+            }
           }
           return;
         case "test":
           {
-            const db = await Datasource.createInstance(
-              provider.getConnections(),
-              provider.context,
-              message.payload
-            );
-            const res = await db.test();
-            if (res.success) {
-              panel.webview.postMessage({
-                command: "status",
-                success: res.success,
-                message: "✔️连接成功",
-              });
-            } else {
-              panel.webview.postMessage({
-                command: "status",
-                success: res.success,
-                message: `❗${res.message}`,
+            try {
+              const db = await Datasource.createInstance(
+                provider.getConnections(),
+                provider.context,
+                message.payload
+              );
+              const res = await db.test();
+              if (res.success) {
+                postWebviewStatus(panel.webview, {
+                  success: res.success,
+                  message: "✔️连接成功",
+                });
+              } else {
+                postWebviewStatus(panel.webview, {
+                  success: res.success,
+                  message: `❗${res.message}`,
+                });
+              }
+            } catch (error) {
+              postWebviewStatus(panel.webview, {
+                success: false,
+                message: `❗ 测试失败: ${toErrorMessage(error)}`,
               });
             }
           }
@@ -304,248 +538,555 @@ export function registerDatasourceCommands(
   treeView: vscode.TreeView<Datasource>
 ): vscode.Disposable[] {
   const disposables: vscode.Disposable[] = [];
-  
+
   // 注册刷新命令，支持完整加载
-  disposables.push(vscode.commands.registerCommand("cadb.datasource.refresh", async (item?: Datasource) => {
-    if (item && item.type === 'datasource') {
-      // 如果指定了数据源，则完整加载该数据源
-      await vscode.window.withProgress(
-        {
-          location: vscode.ProgressLocation.Notification,
-          title: `正在刷新 ${item.label}...`,
-          cancellable: false
-        },
-        async (progress) => {
-          // 清除缓存
-          provider.clearCachedTreeData(item.label?.toString() || '');
-          // 清空子节点，强制重新加载
-          item.children = [];
-          // 完整加载
-          await provider.loadAllChildren(item, progress);
-          // 刷新视图
+  disposables.push(
+    vscode.commands.registerCommand(
+      "cadb.datasource.refresh",
+      async (item?: Datasource) => {
+        console.log(item?.type);
+        if (item && item.type === "datasource") {
+          // 如果指定了数据源，则完整加载该数据源
+          await vscode.window.withProgress(
+            {
+              location: vscode.ProgressLocation.Notification,
+              title: `正在刷新 ${item.label}...`,
+              cancellable: false,
+            },
+            async (progress) => {
+              // 清除缓存
+              provider.clearCachedTreeData(item.label?.toString() || "");
+              // 清空子节点，强制重新加载
+              item.children = [];
+              // 完整加载
+              await provider.loadAllChildren(item, progress);
+              // 刷新视图
+              provider.refresh();
+            }
+          );
+        } else {
+          // 否则执行普通刷新
           provider.refresh();
         }
+      }
+    )
+  );
+
+  disposables.push(
+    vscode.commands.registerCommand("cadb.datasource.add", async (item) => {
+      try {
+        await addEntry(item, provider);
+      } catch (error) {
+        console.error("addEntry 执行失败:", error);
+        vscode.window.showErrorMessage(
+          `添加数据源失败: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+    })
+  );
+
+  disposables.push(
+    vscode.commands.registerCommand("cadb.datasource.edit", (item) =>
+      editEntry(provider, item)
+    )
+  );
+
+  // 注册通用删除命令
+  disposables.push(
+    vscode.commands.registerCommand("cadb.delete", async (item: Datasource) => {
+      if (!item) {
+        return;
+      }
+
+      const confirm = await vscode.window.showWarningMessage(
+        `确定要删除 "${item.label}" 吗？此操作无法撤销。`,
+        { modal: true },
+        "删除",
+        "取消"
       );
-    } else {
-      // 否则执行普通刷新
-      provider.refresh();
-    }
-  }));
-  
-  disposables.push(vscode.commands.registerCommand("cadb.datasource.add", async (item) => {
-    try {
-      await addEntry(item, provider);
-    } catch (error) {
-      console.error("addEntry 执行失败:", error);
-      vscode.window.showErrorMessage(`添加数据源失败: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }));
-  
-  disposables.push(vscode.commands.registerCommand("cadb.datasource.edit", (item) =>
-    editEntry(provider, item)
-  ));
-  
-  disposables.push(vscode.commands.registerCommand("cadb.datasource.expand", async (item) => {
-    const children = await (item as Datasource).expand(provider.context);
-    provider.createChildren(item as Datasource, children);
-    treeView.reveal(item as Datasource, { expand: true });
-  }));
-  
+
+      if (confirm === "删除") {
+        // TODO: 实现具体的删除逻辑
+        vscode.window.showInformationMessage(
+          `TODO: 删除 "${item.label}" 的逻辑待实现`
+        );
+      }
+    })
+  );
+
+  disposables.push(
+    vscode.commands.registerCommand("cadb.datasource.expand", async (item) => {
+      const children = await (item as Datasource).expand(provider.context);
+      provider.createChildren(item as Datasource, children);
+      treeView.reveal(item as Datasource, { expand: true });
+    })
+  );
+
   // 注册选择数据库命令
-  disposables.push(vscode.commands.registerCommand("cadb.datasource.selectDatabases", async (item: Datasource) => {
-    try {
-      // 确保 item 是 datasourceType 节点
-      if (item.type !== 'datasourceType') {
-        vscode.window.showWarningMessage('请在数据库列表节点上执行此操作');
-        return;
-      }
-      
-      // 获取父节点（连接节点）
-      const connectionNode = item.parent;
-      if (!connectionNode || !connectionNode.label) {
-        vscode.window.showWarningMessage('无法找到连接信息');
-        return;
-      }
-      
-      const connectionName = connectionNode.label.toString();
-      // 显示加载提示
-      await vscode.window.withProgress(
-        {
-          location: vscode.ProgressLocation.Notification,
-          title: "正在加载数据库列表...",
-          cancellable: false
-        },
-        async () => {
-          // 获取所有数据库
-          const allDatabases = await item.expand(provider.context);
-          
-          if (allDatabases.length === 0) {
-            vscode.window.showWarningMessage('该连接没有可用的数据库');
+  disposables.push(
+    vscode.commands.registerCommand(
+      "cadb.datasource.selectDatabases",
+      async (item: Datasource) => {
+        try {
+          // 确保 item 是 datasourceType 节点
+          if (item.type !== "datasourceType") {
+            vscode.window.showWarningMessage("请在数据库列表节点上执行此操作");
             return;
           }
-          // 获取当前已选择的数据库
-          const currentSelected = provider.getSelectedDatabases(connectionName);
-          // 创建 QuickPick 项
-          interface DatabaseQuickPickItem extends vscode.QuickPickItem {
-            database: string;
+
+          // 获取父节点（连接节点）
+          const connectionNode = item.parent;
+          if (!connectionNode || !connectionNode.label) {
+            vscode.window.showWarningMessage("无法找到连接信息");
+            return;
           }
-          
-          const quickPickItems: DatabaseQuickPickItem[] = allDatabases.map(db => ({
-            label: db.label?.toString() || '',
-            description: db.description ? (typeof db.description === 'string' ? db.description : db.description.toString()) : undefined,
-            database: db.label?.toString() || '',
-            picked: currentSelected.includes(db.label?.toString() || '')
-          }));
-          
-          // 显示多选 QuickPick
-          const selected = await vscode.window.showQuickPick(quickPickItems, {
-            placeHolder: `选择要显示的数据库（当前连接: ${connectionName}）`,
-            canPickMany: true,
-            matchOnDescription: true
-          });
-          
-          if (selected) {
-            const selectedDbs = selected.map(item => item.database);
-            // 保存选择
-            provider.setSelectedDatabases(connectionName, selectedDbs);
-            
-            // 清空 datasourceType 节点的子节点缓存，强制重新加载
-            item.children = [];
-            
-            // 刷新 TreeView
-            provider.refresh();
-            
-            vscode.window.showInformationMessage(
-              `已选择 ${selectedDbs.length} 个数据库${selectedDbs.length === 0 ? '（将显示全部）' : ''}`
-            );
-          }
+
+          const connectionName = connectionNode.label.toString();
+          // 显示加载提示
+          await vscode.window.withProgress(
+            {
+              location: vscode.ProgressLocation.Notification,
+              title: "正在加载数据库列表...",
+              cancellable: false,
+            },
+            async () => {
+              // 获取所有数据库
+              const allDatabases = await item.expand(provider.context);
+
+              if (allDatabases.length === 0) {
+                vscode.window.showWarningMessage("该连接没有可用的数据库");
+                return;
+              }
+              // 获取当前已选择的数据库
+              const currentSelected =
+                provider.getSelectedDatabases(connectionName);
+              // 创建 QuickPick 项
+              interface DatabaseQuickPickItem extends vscode.QuickPickItem {
+                database: string;
+              }
+
+              const quickPickItems: DatabaseQuickPickItem[] = allDatabases.map(
+                (db) => ({
+                  label: db.label?.toString() || "",
+                  description: db.description
+                    ? typeof db.description === "string"
+                      ? db.description
+                      : db.description.toString()
+                    : undefined,
+                  database: db.label?.toString() || "",
+                  picked: currentSelected.includes(db.label?.toString() || ""),
+                })
+              );
+
+              // 显示多选 QuickPick
+              const selected = await vscode.window.showQuickPick(
+                quickPickItems,
+                {
+                  placeHolder: `选择要显示的数据库（当前连接: ${connectionName}）`,
+                  canPickMany: true,
+                  matchOnDescription: true,
+                }
+              );
+
+              if (selected) {
+                const selectedDbs = selected.map((item) => item.database);
+                // 保存选择
+                provider.setSelectedDatabases(connectionName, selectedDbs);
+
+                // 清空 datasourceType 节点的子节点缓存，强制重新加载
+                item.children = [];
+
+                // 刷新 TreeView
+                provider.refresh();
+
+                vscode.window.showInformationMessage(
+                  `已选择 ${selectedDbs.length} 个数据库${
+                    selectedDbs.length === 0 ? "（将显示全部）" : ""
+                  }`
+                );
+              }
+            }
+          );
+        } catch (error) {
+          console.error("[SelectDatabases] 错误:", error);
+          vscode.window.showErrorMessage(
+            `选择数据库失败: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
         }
-      );
-    } catch (error) {
-      console.error('[SelectDatabases] 错误:', error);
-      vscode.window.showErrorMessage(
-        `选择数据库失败: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }));
+      }
+    )
+  );
 
   // 注册使用数据库命令（从 TreeView collection 节点）
-  disposables.push(vscode.commands.registerCommand("cadb.collection.useDatabase", (item: Datasource) => {
-    try {
-      // 确保 item 是 collection 节点
-      if (item.type !== 'collection') {
-        vscode.window.showWarningMessage('请在数据库节点上执行此操作');
-        return;
+  disposables.push(
+    vscode.commands.registerCommand(
+      "cadb.collection.useDatabase",
+      (item: Datasource) => {
+        try {
+          // 确保 item 是 collection 节点
+          if (item.type !== "collection") {
+            vscode.window.showWarningMessage("请在数据库节点上执行此操作");
+            return;
+          }
+
+          // 通过 databaseManager 设置当前数据库
+          if (provider.databaseManager) {
+            provider.databaseManager.setCurrentDatabase(item);
+          } else {
+            vscode.window.showErrorMessage("数据库管理器未初始化");
+          }
+        } catch (error) {
+          console.error("[UseDatabase] 错误:", error);
+          vscode.window.showErrorMessage(
+            `切换数据库失败: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+        }
       }
-      
-      // 通过 databaseManager 设置当前数据库
-      if (provider.databaseManager) {
-        provider.databaseManager.setCurrentDatabase(item);
-      } else {
-        vscode.window.showErrorMessage('数据库管理器未初始化');
-      }
-    } catch (error) {
-      console.error('[UseDatabase] 错误:', error);
-      vscode.window.showErrorMessage(
-        `切换数据库失败: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }));
+    )
+  );
 
   // 注册复制连接地址命令（仅连接地址：host:port）
-  disposables.push(vscode.commands.registerCommand("cadb.datasource.copyConnectionAddress", async (item: Datasource) => {
-    try {
-      if (item.type !== 'datasource' || !item.data) {
-        vscode.window.showWarningMessage('请在数据源节点上执行此操作');
-        return;
-}
+  disposables.push(
+    vscode.commands.registerCommand(
+      "cadb.datasource.copyConnectionAddress",
+      async (item: Datasource) => {
+        try {
+          if (item.type !== "datasource" || !item.data) {
+            vscode.window.showWarningMessage("请在数据源节点上执行此操作");
+            return;
+          }
 
-      const host = item.data.host || 'localhost';
-      const port = item.data.port || 3306;
-      const address = `${host}:${port}`;
-      
-      await vscode.env.clipboard.writeText(address);
-      vscode.window.showInformationMessage(`已复制连接地址: ${address}`);
-    } catch (error) {
-      vscode.window.showErrorMessage(
-        `复制失败: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }));
+          const host = item.data.host || "localhost";
+          const port = item.data.port || 3306;
+          const address = `${host}:${port}`;
+
+          await vscode.env.clipboard.writeText(address);
+          vscode.window.showInformationMessage(`已复制连接地址: ${address}`);
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `复制失败: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+        }
+      }
+    )
+  );
 
   // 注册复制用户名密码命令（仅用户名密码：username@password）
-  disposables.push(vscode.commands.registerCommand("cadb.datasource.copyCredentials", async (item: Datasource) => {
-    try {
-      if (item.type !== 'datasource' || !item.data) {
-        vscode.window.showWarningMessage('请在数据源节点上执行此操作');
-        return;
-      }
+  disposables.push(
+    vscode.commands.registerCommand(
+      "cadb.datasource.copyCredentials",
+      async (item: Datasource) => {
+        try {
+          if (item.type !== "datasource" || !item.data) {
+            vscode.window.showWarningMessage("请在数据源节点上执行此操作");
+            return;
+          }
 
-      const username = item.data.username || '';
-      const password = item.data.password || '';
-      const credentials = `${username}@${password}`;
-      
-      await vscode.env.clipboard.writeText(credentials);
-      vscode.window.showInformationMessage('已复制用户名密码');
-    } catch (error) {
-      vscode.window.showErrorMessage(
-        `复制失败: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }));
+          const username = item.data.username || "";
+          const password = item.data.password || "";
+          const credentials = `${username}@${password}`;
+
+          await vscode.env.clipboard.writeText(credentials);
+          vscode.window.showInformationMessage("已复制用户名密码");
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `复制失败: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+        }
+      }
+    )
+  );
 
   // 注册复制完整连接命令（JDBC URL）
-  disposables.push(vscode.commands.registerCommand("cadb.datasource.copyFullConnection", async (item: Datasource) => {
-    try {
-      if (item.type !== 'datasource' || !item.data) {
-        vscode.window.showWarningMessage('请在数据源节点上执行此操作');
-        return;
-      }
+  disposables.push(
+    vscode.commands.registerCommand(
+      "cadb.datasource.copyFullConnection",
+      async (item: Datasource) => {
+        try {
+          if (item.type !== "datasource" || !item.data) {
+            vscode.window.showWarningMessage("请在数据源节点上执行此操作");
+            return;
+          }
 
-      const dbType = item.data.dbType || 'mysql';
-      const host = item.data.host || 'localhost';
-      const port = item.data.port || 3306;
-      const username = item.data.username || '';
-      const password = item.data.password || '';
-      const database = item.data.database || '';
+          const dbType = item.data.dbType || "mysql";
+          const host = item.data.host || "localhost";
+          const port = item.data.port || 3306;
+          const username = item.data.username || "";
+          const password = item.data.password || "";
+          const database = item.data.database || "";
 
-      let jdbcUrl = '';
-      
-      if (dbType === 'mysql') {
-        // MySQL JDBC URL: jdbc:mysql://host:port/database?user=username&password=password
-        const params = new URLSearchParams();
-        if (username) {
-					params.append('user', username);
-				}
-        if (password) {
-					params.append('password', password);
-				}
-        const queryString = params.toString();
-        jdbcUrl = `jdbc:mysql://${host}:${port}${database ? `/${database}` : ''}${queryString ? `?${queryString}` : ''}`;
-      } else if (dbType === 'redis') {
-        // Redis URL: redis://username:password@host:port
-        if (username && password) {
-          jdbcUrl = `redis://${username}:${password}@${host}:${port}`;
-        } else if (password) {
-          jdbcUrl = `redis://:${password}@${host}:${port}`;
-        } else {
-          jdbcUrl = `redis://${host}:${port}`;
+          let jdbcUrl = "";
+
+          if (dbType === "mysql") {
+            // MySQL JDBC URL: jdbc:mysql://host:port/database?user=username&password=password
+            const params = new URLSearchParams();
+            if (username) {
+              params.append("user", username);
+            }
+            if (password) {
+              params.append("password", password);
+            }
+            const queryString = params.toString();
+            jdbcUrl = `jdbc:mysql://${host}:${port}${
+              database ? `/${database}` : ""
+            }${queryString ? `?${queryString}` : ""}`;
+          } else if (dbType === "redis") {
+            // Redis URL: redis://username:password@host:port
+            if (username && password) {
+              jdbcUrl = `redis://${username}:${password}@${host}:${port}`;
+            } else if (password) {
+              jdbcUrl = `redis://:${password}@${host}:${port}`;
+            } else {
+              jdbcUrl = `redis://${host}:${port}`;
+            }
+          } else {
+            // 其他数据库类型，使用通用格式
+            jdbcUrl = `${dbType}://${host}:${port}${
+              database ? `/${database}` : ""
+            }`;
+          }
+
+          await vscode.env.clipboard.writeText(jdbcUrl);
+          vscode.window.showInformationMessage("已复制完整连接地址");
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `复制失败: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
         }
-      } else {
-        // 其他数据库类型，使用通用格式
-        jdbcUrl = `${dbType}://${host}:${port}${database ? `/${database}` : ''}`;
       }
-      
-      await vscode.env.clipboard.writeText(jdbcUrl);
-      vscode.window.showInformationMessage('已复制完整连接地址');
-    } catch (error) {
-      vscode.window.showErrorMessage(
-        `复制失败: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-  }));
-  
+    )
+  );
+
   return disposables;
+}
+
+async function sqlResultView(
+  datasource: Datasource,
+  provider: DataSourceProvider
+) {
+  const data = await datasource.listData();
+  const tableName = datasource.label?.toString() || "";
+  const databaseName = datasource.parent?.parent?.label?.toString() || "";
+  const connectionName =
+    datasource.dataloader?.rootNode().label?.toString() || "";
+
+  const panel = createWebview(
+    provider,
+    "datasourceTable",
+    data?.title || "未命名页"
+  );
+  panel.webview.postMessage({
+    command: "load",
+    data: data,
+  });
+  panel.webview.onDidReceiveMessage(async (message) => {
+    switch (message.command) {
+      case "save":
+        try {
+          if (
+            !message.data ||
+            !Array.isArray(message.data) ||
+            message.data.length === 0
+          ) {
+            panel.webview.postMessage({
+              command: "status",
+              success: false,
+              message: "没有需要保存的数据",
+            });
+            return;
+          }
+
+          // 获取数据源配置
+          const connectionData = provider
+            .getConnections()
+            .find((ds) => ds.name === connectionName);
+          if (!connectionData) {
+            panel.webview.postMessage({
+              command: "status",
+              success: false,
+              message: "数据源不存在",
+            });
+            return;
+          }
+
+          // 创建数据源实例
+          const dsInstance = await Datasource.createInstance(
+            provider.getConnections(),
+            provider.context,
+            connectionData,
+            false
+          );
+
+          if (!dsInstance.dataloader) {
+            panel.webview.postMessage({
+              command: "status",
+              success: false,
+              message: "无法创建数据库连接",
+            });
+            return;
+          }
+
+          // 获取主键字段名
+          const primaryKeyField =
+            data?.columnDefs?.find((col: any) => col.key === "PRI")?.field ||
+            "id";
+
+          // 使用 dataloader 的 saveData 方法
+          const saveResult = await dsInstance.dataloader.saveData({
+            tableName: tableName,
+            databaseName: databaseName,
+            primaryKeyField: primaryKeyField,
+            rows: message.data,
+          });
+
+          // 发送结果
+          if (saveResult.errorCount === 0) {
+            panel.webview.postMessage({
+              command: "status",
+              success: true,
+              message: `成功更新 ${saveResult.successCount} 行`,
+            });
+            // 刷新表格数据
+            const refreshedData = await datasource.listData();
+            panel.webview.postMessage({
+              command: "load",
+              data: refreshedData,
+            });
+          } else {
+            panel.webview.postMessage({
+              command: "status",
+              success: false,
+              message: `更新完成：成功 ${saveResult.successCount} 行，失败 ${
+                saveResult.errorCount
+              } 行。${
+                saveResult.errors.length > 0 ? saveResult.errors[0] : ""
+              }`,
+            });
+          }
+        } catch (error) {
+          console.error("保存失败:", error);
+          panel.webview.postMessage({
+            command: "status",
+            success: false,
+            message: `保存失败: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          });
+        }
+        break;
+      case "refresh": {
+        const data = await datasource.listData();
+        panel.webview.postMessage({
+          command: "load",
+          data: data,
+        });
+        break;
+      }
+    }
+  });
+}
+
+async function keyValueResultView(
+  datasource: Datasource,
+  provider: DataSourceProvider
+) {
+  try {
+    const key = datasource.label?.toString() || "";
+    const typeLabel = datasource.parent?.tooltip || "";
+    const dbNode = datasource.parent?.parent; // DBx
+    const connectionNode = datasource.dataloader?.rootNode();
+
+    // 获取 Redis 客户端
+    const loader: any = datasource.dataloader;
+    const client: any = loader?.client;
+    if (!client) {
+      vscode.window.showErrorMessage("Redis 客户端未初始化");
+      return;
+    }
+    if (!client.isOpen) {
+      await client.connect();
+    }
+
+    // 选择数据库（DB0/DB1...）
+    if (dbNode?.label) {
+      const dbLabel = dbNode.label.toString(); // e.g. "DB0"
+      const match = dbLabel.match(/^DB(\d+)$/i);
+      if (match) {
+        await client.select(parseInt(match[1], 10));
+      }
+    }
+
+    const t0 = Date.now();
+    let columnDefs: Array<{ field: string; key?: string }> = [];
+    let rowData: any[] = [];
+    let title = key;
+
+    if (/^List$/i.test(String(typeLabel))) {
+      const values: string[] = await client.lRange(key, 0, -1);
+      columnDefs = [{ field: "index" }, { field: "value" }];
+      rowData = values.map((v, i) => ({ index: i, value: v }));
+      title = `List: ${key}`;
+    } else if (/^Set$/i.test(String(typeLabel))) {
+      const values: string[] = await client.sMembers(key);
+      columnDefs = [{ field: "value" }];
+      rowData = values.map((v) => ({ value: v }));
+      title = `Set: ${key}`;
+    } else if (/^Sorted Set$/i.test(String(typeLabel)) || /^zset$/i.test(String(typeLabel))) {
+      let entries: Array<{ value: string; score: number }> = [];
+      if (typeof client.zRangeWithScores === "function") {
+        entries = await client.zRangeWithScores(key, 0, -1);
+      } else {
+        const arr: string[] = await client.zRange(key, 0, -1, { WITHSCORES: true });
+        for (let i = 0; i < arr.length; i += 2) {
+          entries.push({ value: arr[i], score: Number(arr[i + 1]) });
+        }
+      }
+      columnDefs = [{ field: "score" }, { field: "value" }];
+      rowData = entries.map((e) => ({ score: e.score, value: e.value }));
+      title = `ZSet: ${key}`;
+    } else {
+      vscode.window.showWarningMessage(`暂不支持查看类型: ${typeLabel}`);
+      return;
+    }
+
+    const queryTime = (Date.now() - t0) / 1000;
+
+    const panel = createWebview(provider, "items", title || "键值数据");
+    panel.webview.postMessage({
+      command: "load",
+      data: {
+        title,
+        columnDefs,
+        rowData,
+        queryTime,
+      },
+    });
+    panel.webview.onDidReceiveMessage(async (message) => {
+      switch (message.command) {
+        case "refresh": {
+          // 简单复用上面逻辑重新加载
+          await keyValueResultView(datasource, provider);
+          break;
+        }
+      }
+    });
+  } catch (error) {
+    vscode.window.showErrorMessage(
+      `加载键值数据失败: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
 }
 
 export function registerDatasourceItemCommands(
@@ -555,105 +1096,14 @@ export function registerDatasourceItemCommands(
 ) {
   vscode.commands.registerCommand("cadb.item.showData", async (args) => {
     const datasource = args as Datasource;
-    const data = await datasource.listData();
-    const tableName = datasource.label?.toString() || "";
-    const databaseName = datasource.parent?.parent?.label?.toString() || "";
-    const connectionName = datasource.parent?.parent?.parent?.label?.toString() || "";
-    
-    const panel = createWebview(
-      provider,
-      "datasourceTable",
-      data?.title || "未命名页"
-    );
-    panel.webview.postMessage({
-      command: "load",
-      data: data,
-    });
-    panel.webview.onDidReceiveMessage(async (message) => {
-      switch (message.command) {
-        case "save":
-          try {
-            if (!message.data || !Array.isArray(message.data) || message.data.length === 0) {
-              panel.webview.postMessage({
-                command: "status",
-                success: false,
-                message: "没有需要保存的数据",
-              });
-              return;
-            }
-
-            // 获取数据源配置
-            const connectionData = provider.getConnections().find(
-              (ds) => ds.name === connectionName
-            );
-            if (!connectionData) {
-              panel.webview.postMessage({
-                command: "status",
-                success: false,
-                message: "数据源不存在",
-              });
-              return;
-            }
-
-            // 创建数据源实例
-            const dsInstance = await Datasource.createInstance(
-              provider.getConnections(),
-              provider.context,
-              connectionData,
-              false
-            );
-
-            if (!dsInstance.dataloader) {
-              panel.webview.postMessage({
-                command: "status",
-                success: false,
-                message: "无法创建数据库连接",
-              });
-              return;
-            }
-
-            // 获取主键字段名
-            const primaryKeyField = data?.columnDefs?.find((col: any) => col.key === 'PRI')?.field || 'id';
-            
-            // 使用 dataloader 的 saveData 方法
-            const saveResult = await dsInstance.dataloader.saveData({
-              tableName: tableName,
-              databaseName: databaseName,
-              primaryKeyField: primaryKeyField,
-              rows: message.data,
-            });
-
-            // 发送结果
-            if (saveResult.errorCount === 0) {
-              panel.webview.postMessage({
-                command: "status",
-                success: true,
-                message: `成功更新 ${saveResult.successCount} 行`,
-              });
-              // 刷新表格数据
-              const refreshedData = await datasource.listData();
-              panel.webview.postMessage({
-                command: "load",
-                data: refreshedData,
-              });
-            } else {
-              panel.webview.postMessage({
-                command: "status",
-                success: false,
-                message: `更新完成：成功 ${saveResult.successCount} 行，失败 ${saveResult.errorCount} 行。${saveResult.errors.length > 0 ? saveResult.errors[0] : ""}`,
-              });
-            }
-          } catch (error) {
-            console.error("保存失败:", error);
-            panel.webview.postMessage({
-              command: "status",
-              success: false,
-              message: `保存失败: ${error instanceof Error ? error.message : String(error)}`,
-            });
-          }
-          break;
-      }
-    });
+    const dbType = datasource.dataloader?.dbType() || "";
+    if (dbType === "mysql") {
+      await sqlResultView(datasource, provider);
+    } else if (dbType === "redis") {
+      await keyValueResultView(datasource, provider);
+    } else {
+      vscode.window.showWarningMessage(`${dbType} 数据源查看数据功能待实现`);
+    }
   });
 
   // 注册打开 SQL 文件命令
@@ -674,23 +1124,17 @@ export function registerDatasourceItemCommands(
 
     try {
       // 判断文件扩展名是否为 .jsql
-      if (fileName.toLowerCase().endsWith('.jsql')) {
+      if (fileName.toLowerCase().endsWith(".jsql")) {
         // 查找文件所属的数据库节点
         // 文件结构: datasource -> datasourceType -> collection -> collectionType -> fileType -> file
         // 或: datasource -> datasourceType -> collection -> fileType -> file
-        let databaseNode: Datasource | undefined = undefined;
-        let current: Datasource | undefined = fileItem.parent; // fileType
-        
-        while (current) {
-          if (current.type === 'collection') {
-            databaseNode = current;
-            break;
-          }
-          current = current.parent;
-        }
+        const databaseNode =
+          fileItem.parent && findAncestorByType(fileItem.parent, "collection");
 
         // 使用 SQL Notebook 方式打开
-        const notebookDocument = await vscode.workspace.openNotebookDocument(dsPath);
+        const notebookDocument = await vscode.workspace.openNotebookDocument(
+          dsPath
+        );
         await vscode.window.showNotebookDocument(notebookDocument, {
           preview: false,
           viewColumn: vscode.ViewColumn.Active,
@@ -703,11 +1147,11 @@ export function registerDatasourceItemCommands(
         }
       } else {
         // 使用普通文本编辑器打开
-      const doc = await vscode.workspace.openTextDocument(dsPath);
-      await vscode.window.showTextDocument(doc, {
-        preview: false,
-        viewColumn: vscode.ViewColumn.Active,
-      });
+        const doc = await vscode.workspace.openTextDocument(dsPath);
+        await vscode.window.showTextDocument(doc, {
+          preview: false,
+          viewColumn: vscode.ViewColumn.Active,
+        });
       }
     } catch (error) {
       vscode.window.showErrorMessage(`打开文件失败: ${error}`);
@@ -716,21 +1160,11 @@ export function registerDatasourceItemCommands(
 
   // 注册重命名 SQL 文件命令
   vscode.commands.registerCommand("cadb.file.rename", async (args) => {
-    const fileItem = args as Datasource;
-    if (!fileItem || fileItem.type !== "file") {
-      vscode.window.showErrorMessage("无法重命名：不是有效的文件项");
-      return;
-    }
-
-    // 获取文件路径（从 tooltip 获取完整路径）
-    const filePath =
-      typeof fileItem.tooltip === "string"
-        ? fileItem.tooltip
-        : fileItem.tooltip?.value || "";
+    const filePath = validateAndGetFilePath(args, "重命名");
     if (!filePath) {
-      vscode.window.showErrorMessage("无法获取文件路径");
       return;
     }
+    const fileItem = args as Datasource;
 
     try {
       const currentName = fileItem.label?.toString() || "";
@@ -766,7 +1200,9 @@ export function registerDatasourceItemCommands(
       }
 
       // 重命名文件
-      await vscode.workspace.fs.rename(fileUri, newFileUri, { overwrite: false });
+      await vscode.workspace.fs.rename(fileUri, newFileUri, {
+        overwrite: false,
+      });
 
       vscode.window.showInformationMessage(`文件已重命名为 "${newName}"`);
 
@@ -776,28 +1212,20 @@ export function registerDatasourceItemCommands(
       }
     } catch (error) {
       vscode.window.showErrorMessage(
-        `重命名文件失败: ${error instanceof Error ? error.message : String(error)}`
+        `重命名文件失败: ${
+          error instanceof Error ? error.message : String(error)
+        }`
       );
     }
   });
 
   // 注册删除 SQL 文件命令
   vscode.commands.registerCommand("cadb.file.delete", async (args) => {
-    const fileItem = args as Datasource;
-    if (!fileItem || fileItem.type !== "file") {
-      vscode.window.showErrorMessage("无法删除：不是有效的文件项");
-      return;
-    }
-
-    // 获取文件路径（从 tooltip 获取完整路径）
-    const filePath =
-      typeof fileItem.tooltip === "string"
-        ? fileItem.tooltip
-        : fileItem.tooltip?.value || "";
+    const filePath = validateAndGetFilePath(args, "删除");
     if (!filePath) {
-      vscode.window.showErrorMessage("无法获取文件路径");
       return;
     }
+    const fileItem = args as Datasource;
 
     const fileName = fileItem.label?.toString() || "";
     const confirm = await vscode.window.showWarningMessage(
@@ -813,7 +1241,10 @@ export function registerDatasourceItemCommands(
 
     try {
       const fileUri = vscode.Uri.file(filePath);
-      await vscode.workspace.fs.delete(fileUri, { recursive: false, useTrash: true });
+      await vscode.workspace.fs.delete(fileUri, {
+        recursive: false,
+        useTrash: true,
+      });
 
       vscode.window.showInformationMessage(`文件 "${fileName}" 已删除`);
 
@@ -823,28 +1254,20 @@ export function registerDatasourceItemCommands(
       }
     } catch (error) {
       vscode.window.showErrorMessage(
-        `删除文件失败: ${error instanceof Error ? error.message : String(error)}`
+        `删除文件失败: ${
+          error instanceof Error ? error.message : String(error)
+        }`
       );
     }
   });
 
   // 注册执行 SQL 文件命令
   vscode.commands.registerCommand("cadb.file.execute", async (args) => {
-    const fileItem = args as Datasource;
-    if (!fileItem || fileItem.type !== "file") {
-      vscode.window.showErrorMessage("无法执行：不是有效的文件项");
-      return;
-    }
-
-    // 获取文件路径（从 tooltip 获取完整路径）
-    const filePath =
-      typeof fileItem.tooltip === "string"
-        ? fileItem.tooltip
-        : fileItem.tooltip?.value || "";
+    const filePath = validateAndGetFilePath(args, "执行");
     if (!filePath) {
-      vscode.window.showErrorMessage("无法获取文件路径");
       return;
     }
+    const fileItem = args as Datasource;
 
     try {
       // 步骤 1: 读取 SQL 文件内容
@@ -863,9 +1286,8 @@ export function registerDatasourceItemCommands(
         return; // 用户取消
       }
 
-      const selectedDatabase = await databaseManager.selectDatabaseFromConnection(
-        selectedConnection
-      );
+      const selectedDatabase =
+        await databaseManager.selectDatabaseFromConnection(selectedConnection);
       if (!selectedDatabase) {
         return; // 用户取消
       }
@@ -906,9 +1328,9 @@ async function executeSqlFileWithTransaction(
     },
     async () => {
       // 创建数据源实例
-      const connectionData = provider.getConnections().find(
-        (ds) => ds.name === connection.label?.toString()
-      );
+      const connectionData = provider
+        .getConnections()
+        .find((ds) => ds.name === connection.label?.toString());
       if (!connectionData) {
         throw new Error("数据源不存在");
       }
@@ -954,9 +1376,7 @@ async function executeSqlFileWithTransaction(
       const sqlStatements = splitSqlStatements(sqlContent);
 
       // 开始事务
-      outputChannel.appendLine(
-        `[${timestamp} ${databaseName}] 开始事务`
-      );
+      outputChannel.appendLine(`[${timestamp} ${databaseName}] 开始事务`);
       outputChannel.show(true);
 
       await new Promise<void>((resolve, reject) => {
@@ -1144,7 +1564,6 @@ function formatTimestamp(date: Date): string {
   const seconds = String(date.getSeconds()).padStart(2, "0");
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
-
 
 export function registerDatabaseCommands(databaseManager: DatabaseManager) {
   // 创建数据库选择器（不再显示状态栏）

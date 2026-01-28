@@ -12,20 +12,23 @@
     // 隐藏字段
     type: {
       type: "hidden",
-			value: "datasource"
+      value: "datasource",
     },
-		extra: {
-			type: "hidden",
-		},
+    extra: {
+      type: "hidden",
+    },
     // 基础字段
     dbType: {
       type: "select",
       label: "数据库类型",
       category: "base",
       required: true,
+      colspan: 2,
+      fullRow: true,
       options: [
         { value: "mysql", label: "MySQL" },
         { value: "redis", label: "Redis" },
+        { value: "oss", label: "OSS" },
       ],
     },
     name: {
@@ -33,45 +36,105 @@
       label: "连接名称",
       category: "base",
       required: true,
+      colspan: 2,
       placeholder: "例如：生产数据库",
       hint: "给此连接起一个易于识别的名称",
+    },
+    endpoint: {
+      type: "text",
+      label: "Endpoint",
+      category: "base",
+      required: true,
+      colspan: 2,
+      placeholder: "例如：https://oss-cn-hangzhou.aliyuncs.com",
+      show: "dbType == 'oss'",
+      fullRow: true,
+    },
+    accessKeyId: {
+      type: "text",
+      label: "AccessKey",
+      category: "base",
+      required: true,
+      colspan: 2,
+      placeholder: "AccessKey ID",
+      show: "dbType == 'oss'",
+      fullRow: true,
+    },
+    accessSecretKey: {
+      type: "password",
+      label: "SecretKey",
+      category: "base",
+      required: true,
+      colspan: 2,
+      placeholder: "AccessKey Secret",
+      show: "dbType == 'oss'",
+      fullRow: true,
+    },
+    bucket: {
+      type: "text",
+      label: "Bucket",
+      category: "base",
+      required: true,
+      colspan: 2,
+      placeholder: "Bucket 名称",
+      show: "dbType == 'oss'",
+      fullRow: true,
+    },
+    region: {
+      type: "text",
+      label: "Region ID",
+      category: "base",
+      required: true,
+      colspan: 2,
+      placeholder: "例如：cn-hangzhou",
+      show: "dbType == 'oss'",
+      fullRow: true,
     },
     host: {
       type: "text",
       label: "主机地址",
       category: "base",
+      colspan: 2,
       placeholder: "localhost 或 IP 地址",
+      hidden: "dbType == 'oss'",
     },
     port: {
       type: "number",
       label: "端口",
       category: "base",
+      colspan: 2,
       placeholder: "3306",
       default: "dbType == 'mysql' ? 3306 : (dbType == 'redis' ? 6379 : 5432)",
       min: 1,
       max: 65535,
-      hidden: "dbType == 'sqlite'", // 当数据库类型是 sqlite 时隐藏（hidden 优先级高于 show）
+      hidden: "dbType == 'sqlite' || dbType == 'oss'", // 当数据库类型是 sqlite 时隐藏（hidden 优先级高于 show）
     },
     username: {
       type: "text",
       label: "用户名",
       category: "base",
+      colspan: 2,
       placeholder: "数据库用户名",
       show: "dbType != 'redis'", // 当数据库类型不是 redis 时显示
+      hidden: "dbType == 'oss'",
     },
     password: {
       type: "password",
       label: "密码",
       category: "base",
+      colspan: 2,
       placeholder: "数据库密码",
+      hidden: "dbType == 'oss'",
     },
     database: {
       type: "text",
       label: "数据库名",
       category: "base",
+      colspan: 2,
       placeholder: "数据库名称",
       hint: "要连接的数据库名称（可选）",
       show: "dbType != 'redis'", // 当数据库类型不是 redis 时显示
+      hidden: "dbType == 'oss'",
     },
 
     // SQLite 专用字段
@@ -79,6 +142,7 @@
       type: "text",
       label: "文件路径",
       category: "base",
+      colspan: 2,
       placeholder: "/path/to/database.db",
       hint: "SQLite 数据库文件的完整路径",
       show: "dbType == 'sqlite'", // 当数据库类型是 sqlite 时显示
@@ -90,25 +154,31 @@
       type: "select",
       label: "字符集",
       category: "advance",
+      colspan: 2,
       options: [
         { value: "utf8mb4", label: "utf8mb4" },
         { value: "utf8", label: "utf8" },
         { value: "latin1", label: "latin1" },
         { value: "gbk", label: "gbk" },
       ],
+      hidden: "dbType == 'oss'",
     },
     timezone: {
       type: "text",
       label: "时区",
       category: "advance",
+      colspan: 2,
       placeholder: "+08:00",
+      hidden: "dbType == 'oss'",
     },
     connectTimeout: {
       type: "number",
       label: "连接超时(ms)",
       category: "advance",
+      colspan: 2,
       placeholder: "10000",
       min: 0,
+      hidden: "dbType == 'oss'",
     },
   };
 
@@ -151,37 +221,37 @@
 
   // 权限字段的中文名称映射
   const privilegeLabels = {
-    Select_priv: "SELECT",
-    Insert_priv: "INSERT",
-    Update_priv: "UPDATE",
-    Delete_priv: "DELETE",
-    Create_priv: "CREATE",
-    Drop_priv: "DROP",
-    Index_priv: "INDEX",
-    Alter_priv: "ALTER",
-    Reload_priv: "RELOAD",
-    Shutdown_priv: "SHUTDOWN",
-    Process_priv: "PROCESS",
-    File_priv: "FILE",
-    Grant_priv: "GRANT",
-    References_priv: "REFERENCES",
-    Show_db_priv: "SHOW DATABASES",
-    Super_priv: "SUPER",
-    Create_tmp_table_priv: "CREATE TEMP TABLES",
-    Lock_tables_priv: "LOCK TABLES",
-    Execute_priv: "EXECUTE",
-    Repl_slave_priv: "REPLICATION SLAVE",
-    Repl_client_priv: "REPLICATION CLIENT",
-    Create_view_priv: "CREATE VIEW",
-    Show_view_priv: "SHOW VIEW",
-    Create_routine_priv: "CREATE ROUTINE",
-    Alter_routine_priv: "ALTER ROUTINE",
-    Create_user_priv: "CREATE USER",
-    Event_priv: "EVENT",
-    Trigger_priv: "TRIGGER",
-    Create_tablespace_priv: "CREATE TABLESPACE",
-    Create_role_priv: "CREATE ROLE",
-    Drop_role_priv: "DROP ROLE",
+    Select_priv: { label: "查询", title: "SELECT" },
+    Insert_priv: { label: "插入", title: "INSERT" },
+    Update_priv: { label: "更新", title: "UPDATE" },
+    Delete_priv: { label: "删除", title: "DELETE" },
+    Create_priv: { label: "创建表", title: "CREATE" },
+    Drop_priv: { label: "删除表", title: "DROP" },
+    Index_priv: { label: "索引", title: "INDEX" },
+    Alter_priv: { label: "修改表", title: "ALTER" },
+    Reload_priv: { label: "重载", title: "RELOAD" },
+    Shutdown_priv: { label: "关闭", title: "SHUTDOWN" },
+    Process_priv: { label: "进程", title: "PROCESS" },
+    File_priv: { label: "文件", title: "FILE" },
+    Grant_priv: { label: "授权", title: "GRANT" },
+    References_priv: { label: "外键", title: "REFERENCES" },
+    Show_db_priv: { label: "看数据库", title: "SHOW DATABASES" },
+    Super_priv: { label: "超级权限", title: "SUPER" },
+    Create_tmp_table_priv: { label: "临时表", title: "CREATE TEMP TABLES" },
+    Lock_tables_priv: { label: "锁表", title: "LOCK TABLES" },
+    Execute_priv: { label: "执行", title: "EXECUTE" },
+    Repl_slave_priv: { label: "复制从机", title: "REPLICATION SLAVE" },
+    Repl_client_priv: { label: "复制客户端", title: "REPLICATION CLIENT" },
+    Create_view_priv: { label: "建视图", title: "CREATE VIEW" },
+    Show_view_priv: { label: "看视图", title: "SHOW VIEW" },
+    Create_routine_priv: { label: "建过程", title: "CREATE ROUTINE" },
+    Alter_routine_priv: { label: "改过程", title: "ALTER ROUTINE" },
+    Create_user_priv: { label: "建用户", title: "CREATE USER" },
+    Event_priv: { label: "事件", title: "EVENT" },
+    Trigger_priv: { label: "触发器", title: "TRIGGER" },
+    Create_tablespace_priv: { label: "表空间", title: "CREATE TABLESPACE" },
+    Create_role_priv: { label: "建角色", title: "CREATE ROLE" },
+    Drop_role_priv: { label: "删角色", title: "DROP ROLE" },
   };
 
   // 常用权限（显示在基础设置中）
@@ -206,12 +276,31 @@
     authentication_string: {
       type: "hidden",
     },
+    password_last_changed: {
+      type: "hidden",
+    },
+    password_lifetime: {
+      type: "hidden",
+    },
+    Password_reuse_history: {
+      type: "hidden",
+    },
+    Password_reuse_time: {
+      type: "hidden",
+    },
+    Password_require_current: {
+      type: "hidden",
+    },
+    User_attributes: {
+      type: "hidden",
+    },
     // 基础字段
     User: {
       type: "text",
       label: "用户名",
       category: "base",
       required: true,
+      colspan: 2,
       placeholder: "数据库用户名",
     },
     Host: {
@@ -219,12 +308,14 @@
       label: "主机",
       category: "base",
       required: true,
+      colspan: 2,
       placeholder: "% 表示任意主机",
     },
     plugin: {
       type: "select",
       label: "认证插件",
       category: "base",
+      colspan: 2,
       options: [
         { value: "caching_sha2_password", label: "caching_sha2_password" },
         { value: "mysql_native_password", label: "mysql_native_password" },
@@ -235,6 +326,7 @@
       type: "password",
       label: "密码",
       category: "base",
+      colspan: 2,
       placeholder: "留空则不修改密码",
       hint: "提示：编辑模式下留空密码字段将不会修改密码",
     },
@@ -243,6 +335,7 @@
       type: "number",
       label: "最大连接数",
       category: "advance",
+      colspan: 2,
       placeholder: "0",
       min: 0,
       hint: "0 表示不限制",
@@ -251,6 +344,7 @@
       type: "number",
       label: "最大问题数",
       category: "advance",
+      colspan: 2,
       placeholder: "0",
       min: 0,
     },
@@ -258,6 +352,7 @@
       type: "number",
       label: "最大更新数",
       category: "advance",
+      colspan: 2,
       placeholder: "0",
       min: 0,
     },
@@ -265,6 +360,7 @@
       type: "number",
       label: "最大用户连接数",
       category: "advance",
+      colspan: 2,
       placeholder: "0",
       min: 0,
     },
@@ -274,6 +370,7 @@
       type: "select",
       label: "SSL 类型",
       category: "advance",
+      colspan: 2,
       options: [
         { value: "", label: "NONE" },
         { value: "ANY", label: "ANY" },
@@ -285,18 +382,21 @@
       type: "text",
       label: "SSL 密码",
       category: "advance",
+      colspan: 2,
       placeholder: "SSL 密码套件",
     },
     x509_issuer: {
       type: "text",
       label: "X509 颁发者",
       category: "advance",
+      colspan: 2,
       placeholder: "X509 证书颁发者",
     },
     x509_subject: {
       type: "text",
       label: "X509 使用者",
       category: "advance",
+      colspan: 2,
       placeholder: "X509 证书使用者",
     },
 
@@ -305,12 +405,14 @@
       type: "switch",
       label: "账户锁定",
       category: "advance",
+      colspan: 2,
       text: "是|否",
     },
     password_expired: {
       type: "switch",
       label: "密码过期",
       category: "advance",
+      colspan: 2,
       text: "是|否",
     },
   };
@@ -319,7 +421,8 @@
   commonPrivileges.forEach((priv) => {
     userFieldMapping[priv] = {
       type: "checkbox",
-      title: privilegeLabels[priv],
+      label: privilegeLabels[priv].label,
+      title: privilegeLabels[priv].title,
       category: "base",
     };
   });
@@ -327,7 +430,8 @@
   advancePrivileges.forEach((priv) => {
     userFieldMapping[priv] = {
       type: "checkbox",
-      title: privilegeLabels[priv],
+      label: privilegeLabels[priv].label,
+      title: privilegeLabels[priv].title,
       category: "advance",
     };
   });
@@ -335,11 +439,18 @@
   // ==================== 表字段编辑配置 ====================
 
   const tableFieldMapping = {
+    id: {
+      type: "hidden",
+    },
+    extra: {
+      type: "hidden",
+    },
     name: {
       type: "text",
       label: "字段名",
       category: "base",
       required: true,
+      colspan: 2,
       placeholder: "字段名",
     },
     type: {
@@ -347,6 +458,7 @@
       label: "数据类型",
       category: "base",
       required: true,
+      colspan: 2,
       options: [
         { value: "varchar", label: "VARCHAR" },
         { value: "int", label: "INT" },
@@ -365,6 +477,7 @@
       type: "number",
       label: "长度",
       category: "base",
+      colspan: 2,
       placeholder: "字段长度（可选）",
       hint: "部分类型需要指定长度，如 VARCHAR(255)",
     },
@@ -372,30 +485,35 @@
       type: "text",
       label: "默认值",
       category: "base",
+      colspan: 2,
       placeholder: "默认值（可选）",
     },
     nullable: {
       type: "switch",
       label: "允许为空",
       category: "base",
+      colspan: 2,
       text: "是|否",
     },
     autoIncrement: {
       type: "switch",
       label: "自动增长",
       category: "base",
+      colspan: 2,
       text: "是|否",
     },
     primaryKey: {
       type: "switch",
       label: "主键",
       category: "base",
+      colspan: 2,
       text: "是|否",
     },
     comment: {
       type: "text",
       label: "注释",
       category: "base",
+      colspan: 2,
       placeholder: "字段说明",
     },
   };
@@ -403,11 +521,15 @@
   // ==================== 索引编辑配置 ====================
 
   const indexFieldMapping = {
+    id: {
+      type: "hidden",
+    },
     name: {
       type: "text",
       label: "索引名",
       category: "base",
       required: true,
+      colspan: 2,
       placeholder: "索引名",
     },
     type: {
@@ -415,6 +537,7 @@
       label: "索引类型",
       category: "base",
       required: true,
+      colspan: 2,
       options: [
         { value: "primary", label: "主键索引" },
         { value: "unique", label: "唯一索引" },
@@ -423,23 +546,28 @@
       ],
     },
     fields: {
-      type: "text",
+      type: "ordered-multi-select",
       label: "涉及字段",
       category: "base",
       required: true,
-      placeholder: "字段名，多个用逗号分隔",
-      hint: "例如: id, name 或单个字段 email",
+      colspan: 4,
+      options: [], // 运行时动态填充
+    },
+    fieldsArray: {
+      type: "hidden",
     },
     unique: {
       type: "switch",
       label: "唯一约束",
       category: "base",
+      colspan: 2,
       text: "是|否",
     },
     comment: {
       type: "text",
       label: "注释",
       category: "base",
+      colspan: 2,
       placeholder: "索引说明",
     },
   };
@@ -451,15 +579,17 @@
       label: "数据库名",
       category: "base",
       required: true,
-      placeholder: "请输入数据库名称"
+      colspan: 2,
+      placeholder: "请输入数据库名称",
     },
     collation: {
       type: "select",
       label: "排序规则",
       category: "base",
       required: true,
-      options: [] // 将在运行时动态填充
-    }
+      colspan: 2,
+      options: [], // 将在运行时动态填充
+    },
   };
 
   // ==================== 导出配置 ====================
