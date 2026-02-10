@@ -17,6 +17,7 @@ export interface TableResult {
   rowData: Record<string, any>[];
   columnDefs: ColDef[];
   queryTime?: number; // 查询时间（秒）
+  totalCount?: number; // 总行数，用于远程分页
 }
 
 export interface FormResult {

@@ -52,20 +52,37 @@
   display: block;
 }
 
-/* 过滤输入行固定在工具栏下方 */
-.filter-row {
+/* 筛选与排序同一行：左筛选，右排序，固定在工具栏下方 */
+.filter-sort-row {
   position: fixed;
   top: var(--toolbar-height);
   left: var(--panel-padding);
   right: var(--panel-padding);
-  height: var(--filter-height);
+  height: var(--filter-sort-row-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px;
+  background-color: var(--vscode-editor-background, rgba(0, 0, 0, 0.05));
+  border-bottom: 1px solid var(--vscode-border);
+  z-index: 35;
+}
+
+.filter-sort-row-left,
+.filter-sort-row-right {
   display: flex;
   gap: 8px;
   align-items: center;
-  padding: 8px;
-  background-color: rgba(0, 0, 0, 0.1);
-  border-bottom: 1px solid var(--vscode-border);
-  z-index: 35;
+}
+
+.filter-sort-row-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.filter-sort-row-right {
+  flex-shrink: 0;
 }
 
 .filter-group {
@@ -103,6 +120,39 @@
 .filter-input::placeholder {
   color: #888;
   font-style: italic;
+}
+
+.filter-select {
+  min-width: 100px;
+  background-color: var(--vscode-input-bg);
+  color: var(--vscode-input-fg);
+  border: 1px solid var(--vscode-border);
+  padding: 6px 8px;
+  border-radius: 2px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.filter-select:focus {
+  outline: none;
+  border-color: var(--vscode-focus);
+}
+
+.filter-clear-btn {
+  background-color: var(--vscode-button-bg);
+  color: var(--vscode-button-fg);
+  border: 1px solid var(--vscode-button-border);
+  padding: 6px 12px;
+  border-radius: 2px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.filter-clear-btn:hover {
+  background-color: var(--vscode-button-hoverBackground);
 }
 
 /* Accessibility helper */

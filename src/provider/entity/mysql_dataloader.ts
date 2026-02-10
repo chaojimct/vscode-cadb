@@ -739,36 +739,56 @@ ORDER BY
         );
       });
     });
-    const dataTable = await new Promise<Record<string, any>[]>((resolve) => {
-      const table = ds.label;
-      const database = ds.parent?.parent?.label;
-      if (!table || !database) {
-        return resolve([]);
-      }
-      this.conn.query(
-        `
-		SELECT * FROM \`${database}\`.\`${table}\` LIMIT ${(page - 1) * pageSize}, ${pageSize}
-		`,
-        (err, results) => {
-          if (err) {
-            vscode.window.showErrorMessage(err.message);
-            return resolve([]);
+    const tableName = ds.label;
+    const databaseName = ds.parent?.parent?.label;
+    const baseTable = tableName && databaseName ? `\`${databaseName}\`.\`${tableName}\`` : null;
+
+    const [dataTable, totalCount] = await Promise.all([
+      new Promise<Record<string, any>[]>((resolve) => {
+        if (!baseTable) return resolve([]);
+        this.conn.query(
+          `SELECT * FROM ${baseTable} LIMIT ${(page - 1) * pageSize}, ${pageSize}`,
+          (err, results) => {
+            if (err) {
+              vscode.window.showErrorMessage(err.message);
+              return resolve([]);
+            }
+            return resolve(
+              (results as any[]).map((e) => e as Record<string, any>)
+            );
           }
-          return resolve(
-            (results as any[]).map((e) => e as Record<string, any>)
-          );
-        }
-      );
-    });
-    
-    // 计算查询时间（秒）
+        );
+      }),
+      new Promise<number>((resolve) => {
+        if (!baseTable || !databaseName || !tableName) return resolve(0);
+        // 使用 information_schema 获取行数估计，避免大表 COUNT(*) 全表扫描导致卡顿
+        // InnoDB 下 TABLE_ROWS 为估计值，可能偏差约 20%~50%，仅用于分页展示
+        this.conn.query(
+          "SELECT TABLE_ROWS AS cnt FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?",
+          [databaseName, tableName],
+          (err, results) => {
+            if (err) {
+              vscode.window.showErrorMessage(err.message);
+              return resolve(0);
+            }
+            const row = (results as any[])[0];
+            const cnt = row?.cnt ?? row?.TABLE_ROWS;
+            const num = cnt != null && cnt !== "" ? Number(cnt) : 0;
+            const value = Number.isFinite(num) && num >= 0 ? Math.floor(num) : 0;
+            return resolve(value);
+          }
+        );
+      }),
+    ]);
+
     const queryTime = (Date.now() - startTime) / 1000;
-    
+
     return Promise.resolve({
       title: ds.label,
       columnDefs: descTable,
       rowData: dataTable,
-      queryTime: queryTime,
+      queryTime,
+      totalCount,
     } as TableResult);
   }
 

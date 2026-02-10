@@ -30,8 +30,11 @@
       rel="stylesheet"
       href="{{node-resources-uri}}/@vscode/codicons/dist/codicon.css"
     />
+    <script
+      nonce="{{resource-nonce}}"
+      src="{{resources-uri}}/common/luxon.min.js"
+    ></script>
     <link rel="stylesheet" href="{{resources-uri}}/common/table.css" />
-    <link rel="stylesheet" href="{{resources-uri}}/common/sql-input.css" />
     <link rel="stylesheet" href="{{resources-uri}}/grid/grid.css" />
   </head>
 
@@ -53,41 +56,63 @@
         <i class="codicon codicon-trash" aria-hidden="true"></i>
         <span class="sr-only">删除</span>
       </button>
+      <button id="history-undo" title="撤销">
+        <i class="codicon codicon-history" aria-hidden="true"></i>
+        <span class="sr-only">撤销</span>
+      </button>
+      <button id="history-redo" title="重做">
+        <i class="codicon codicon-redo" aria-hidden="true"></i>
+        <span class="sr-only">重做</span>
+      </button>
       <div style="flex: 1"></div>
-      <button id="btn-export-csv" title="导出为 CSV 文件">
-        <i class="codicon codicon-archive" aria-hidden="true"></i>
+      <button id="btn-upload" title="同步到...">
+        <i class="codicon codicon-cloud-upload" aria-hidden="true"></i>
+        <span class="sr-only">同步到...</span>
+      </button>
+      <button id="btn-download" title="导出为SQL">
+        <i class="codicon codicon-cloud-download" aria-hidden="true"></i>
+        <span class="sr-only">导出为SQL</span>
+      </button>
+      <button id="btn-export-csv" title="导出 CSV">
+        <i class="codicon codicon-file" aria-hidden="true"></i>
         <span class="sr-only">CSV</span>
       </button>
-      <button id="btn-export-json" title="导出为 JSON 文件">
-        <i class="codicon codicon-file" aria-hidden="true"></i>
-        <span class="sr-only">JSON</span>
+      <button id="btn-export-xlsx" title="导出 XLSX">
+        <i class="codicon codicon-table" aria-hidden="true"></i>
+        <span class="sr-only">XLSX</span>
       </button>
-      <button id="btn-export-sql" title="导出为 SQL 语句">
-        <i class="codicon codicon-database" aria-hidden="true"></i>
-        <span class="sr-only">SQL</span>
+      <button id="btn-export-json" title="导出 JSON">
+        <i class="codicon codicon-braces" aria-hidden="true"></i>
+        <span class="sr-only">JSON</span>
       </button>
     </div>
 
-    <div class="filter-row">
-      <div class="filter-group">
-        <label for="input-where" class="filter-label">WHERE</label>
-        <input
-          type="text"
-          id="input-where"
-          class="filter-input"
-          placeholder="条件 (例如: status = 'Active')"
-        />
-        <span class="sql-input-hint">按回车执行</span>
+    <div class="filter-sort-row">
+      <div class="filter-sort-row-left">
+        <select id="filter-field" class="filter-select" title="筛选字段">
+          <option value="">选择字段</option>
+        </select>
+        <select id="filter-type" class="filter-select" title="比较类型">
+          <option value="=">=</option>
+          <option value="<">&lt;</option>
+          <option value="<=">&lt;=</option>
+          <option value=">">&gt;</option>
+          <option value=">=">&gt;=</option>
+          <option value="!=">!=</option>
+          <option value="like">like</option>
+        </select>
+        <input id="filter-value" type="text" class="filter-input" placeholder="筛选值" />
+        <button id="filter-clear" type="button" class="filter-clear-btn">清除筛选</button>
       </div>
-      <div class="filter-group">
-        <label for="input-orderby" class="filter-label">ORDER BY</label>
-        <input
-          type="text"
-          id="input-orderby"
-          class="filter-input"
-          placeholder="排序字段 (例如: id ASC, name DESC)"
-        />
-        <span class="sql-input-hint">按回车执行</span>
+      <div class="filter-sort-row-right">
+        <select id="sort-field" class="filter-select" title="排序字段">
+          <option value="">选择字段</option>
+        </select>
+        <select id="sort-direction" class="filter-select" title="排序方向">
+          <option value="asc" selected>asc</option>
+          <option value="desc">desc</option>
+        </select>
+        <button id="sort-trigger" type="button" class="filter-clear-btn">执行排序</button>
       </div>
     </div>
 
@@ -95,10 +120,6 @@
       <div id="grid"></div>
     </div>
 
-    <script
-      nonce="{{resource-nonce}}"
-      src="{{resources-uri}}/common/sql-input.js"
-    ></script>
     <script
       nonce="{{resource-nonce}}"
       src="{{resources-uri}}/common/table.js"

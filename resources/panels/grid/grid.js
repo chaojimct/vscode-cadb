@@ -8,109 +8,74 @@ $(function () {
     vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : null;
   }
 
-  // 初始化数据表格
+  // 初始化数据表格（筛选与排序使用 Tabulator 内置 Filtering/Sorting）
   const dbTable = new DatabaseTableData({
     tableSelector: "#grid",
     vscode: vscode,
   });
 
-  // 初始化 SQL 输入增强
-  let whereInput, orderByInput;
+  // 筛选栏：字段 / 类型 / 值 / 清除（参考 Tabulator setFilter）
+  const filterFieldEl = document.getElementById("filter-field");
+  const filterTypeEl = document.getElementById("filter-type");
+  const filterValueEl = document.getElementById("filter-value");
 
-  const initSQLInputs = (fields = []) => {
-    // WHERE 输入框
-    whereInput = new SQLInput("#input-where", {
-      onEnter: applyFilter,
-      fields: fields,
-      keywords: [
-        "AND",
-        "OR",
-        "NOT",
-        "IN",
-        "BETWEEN",
-        "LIKE",
-        "IS",
-        "NULL",
-        "TRUE",
-        "FALSE",
-        "EXISTS",
-        "ANY",
-        "ALL",
-        "=",
-        "!=",
-        "<>",
-        "<",
-        ">",
-        "<=",
-        ">=",
-        "COUNT",
-        "SUM",
-        "AVG",
-        "MAX",
-        "MIN",
-        "UPPER",
-        "LOWER",
-        "LENGTH",
-        "TRIM",
-      ],
-    });
-
-    // ORDER BY 输入框
-    orderByInput = new SQLInput("#input-orderby", {
-      onEnter: applyFilter,
-      fields: fields,
-      keywords: ["ASC", "DESC", "NULLS", "FIRST", "LAST"],
-    });
-  };
-
-  // 更新字段列表
-  const updateSQLInputFields = (fields) => {
-    if (whereInput) {
-      whereInput.options.fields = fields;
+  function updateFilter() {
+    const field = filterFieldEl.value;
+    const type = filterTypeEl.value;
+    const value = filterValueEl.value.trim();
+    if (field) {
+      dbTable.setFilter(field, type, value);
+    } else {
+      dbTable.clearFilter();
     }
-    if (orderByInput) {
-      orderByInput.options.fields = fields;
+  }
+
+  function clearFilterInputs() {
+    filterFieldEl.value = "";
+    filterTypeEl.value = "=";
+    filterValueEl.value = "";
+    dbTable.clearFilter();
+  }
+
+  if (filterFieldEl) filterFieldEl.addEventListener("change", updateFilter);
+  if (filterTypeEl) filterTypeEl.addEventListener("change", updateFilter);
+  if (filterValueEl) filterValueEl.addEventListener("keyup", updateFilter);
+  document.getElementById("filter-clear").addEventListener("click", clearFilterInputs);
+
+  // 排序栏：字段 / 方向 / 执行排序（参考 Tabulator setSort）
+  const sortFieldEl = document.getElementById("sort-field");
+  const sortDirEl = document.getElementById("sort-direction");
+  document.getElementById("sort-trigger").addEventListener("click", function () {
+    const field = sortFieldEl.options[sortFieldEl.selectedIndex].value;
+    const dir = sortDirEl.options[sortDirEl.selectedIndex].value;
+    if (field) {
+      dbTable.setSort(field, dir);
     }
-  };
-
-  // 应用过滤
-  const applyFilter = () => {
-    if (!whereInput || !orderByInput) {
-      console.warn("请等待数据加载完成");
-      return;
-    }
-
-    const whereClause = whereInput.getValue();
-    const orderByClause = orderByInput.getValue();
-
-    // 应用过滤到表格
-    dbTable.applyFilter(whereClause, orderByClause);
-  };
-
-  // 注意：SQL 输入会在数据加载时自动初始化（见 message 监听器）
+  });
 
   // 绑定按钮事件
   $("#btn-add").on("click", dbTable.addRow);
   $("#btn-refresh").on("click", () => {
-    // 重新查询数据
     if (vscode) {
-      vscode.postMessage({
-        command: "refresh",
-      });
-    }
-
-    // 清空过滤条件
-    if (whereInput) {
-      whereInput.clear();
-    }
-    if (orderByInput) {
-      orderByInput.clear();
+      vscode.postMessage({ command: "refresh" });
     }
   });
   $("#btn-delete").on("click", dbTable.deleteRow);
+  $("#history-undo").on("click", function () {
+    dbTable.undo();
+  });
+  $("#history-redo").on("click", function () {
+    dbTable.redo();
+  });
+  $("#btn-upload").on("click", function () {
+    // 上传功能暂未实现
+  });
+  $("#btn-download").on("click", function () {
+    // 下载功能暂未实现
+  });
   $("#btn-export-csv").on("click", dbTable.exportCSV);
+  $("#btn-export-xlsx").on("click", dbTable.exportXLSX);
   $("#btn-export-json").on("click", dbTable.exportJSON);
-  $("#btn-export-sql").on("click", dbTable.exportSQL);
 
   // 保存按钮
   $("#btn-save").on("click", () => {
@@ -139,17 +104,40 @@ $(function () {
     const { command, data } = event.data;
 
     if (command === "load") {
-      dbTable.init(data.columnDefs, data.rowData, data.queryTime);
-
-      // 提取字段名称并更新到 SQL 输入组件
-      const fields = data.columnDefs.map((col) => col.field);
-
-      // 如果 SQL 输入还未初始化，先初始化
-      if (!whereInput || !orderByInput) {
-        initSQLInputs(fields);
-      } else {
-        // 否则更新字段列表
-        updateSQLInputFields(fields);
+      if (!data || !data.columnDefs) {
+        return;
+      }
+      dbTable.init(data.columnDefs, data.rowData, data.queryTime, data.totalCount);
+      // 填充筛选字段下拉
+      const fieldSelect = document.getElementById("filter-field");
+      if (fieldSelect && data.columnDefs.length) {
+        const emptyOpt = fieldSelect.querySelector('option[value=""]');
+        fieldSelect.innerHTML = "";
+        if (emptyOpt) fieldSelect.appendChild(emptyOpt);
+        data.columnDefs.forEach((col) => {
+          const opt = document.createElement("option");
+          opt.value = col.field;
+          opt.textContent = col.field;
+          fieldSelect.appendChild(opt);
+        });
+      }
+      // 填充排序字段下拉
+      const sortFieldSelect = document.getElementById("sort-field");
+      if (sortFieldSelect && data.columnDefs.length) {
+        const emptyOpt = sortFieldSelect.querySelector('option[value=""]');
+        sortFieldSelect.innerHTML = "";
+        if (emptyOpt) sortFieldSelect.appendChild(emptyOpt);
+        data.columnDefs.forEach((col, i) => {
+          const opt = document.createElement("option");
+          opt.value = col.field;
+          opt.textContent = col.field;
+          sortFieldSelect.appendChild(opt);
+          if (i === 0) opt.selected = true;
+        });
+      }
+    } else if (command === "loadPage") {
+      if (data) {
+        dbTable.setPageData(data);
       }
     } else if (command === "status") {
       const message = data.message || (data.success ? "操作完成" : "操作失败");
@@ -171,6 +159,18 @@ $(function () {
       if (data.success && command === "status") {
         dbTable.refreshTable();
       }
+    }
+  });
+
+  // 通知扩展：页面已就绪，可发送初始数据（避免 postMessage 早于脚本执行导致第二次打开无数据）
+  if (vscode) {
+    vscode.postMessage({ command: "ready" });
+  }
+
+  // 面板再次被切回可见时也发送 ready，让扩展重新下发数据（解决第二次打开/切回该表时无数据的问题）
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible" && vscode) {
+      vscode.postMessage({ command: "ready" });
     }
   });
 

@@ -517,7 +517,7 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
   public getNodePath(element: Datasource): string {
     const path: string[] = [];
     let current: Datasource | undefined = element;
-    
+
     while (current) {
       const label = current.label?.toString() || '';
       const type = current.type || '';
@@ -525,8 +525,43 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
       path.unshift(`${type}:${label}`);
       current = current.parent;
     }
-    
+
     return path.join('/');
+  }
+
+  /**
+   * 获取节点可读路径（用于搜索框展示），如：连接名 > 数据库名 > 表名
+   */
+  public getReadablePath(element: Datasource): string {
+    const segments: string[] = [];
+    let current: Datasource | undefined = element;
+    while (current) {
+      const label = current.label?.toString()?.trim();
+      if (label) {
+        segments.unshift(label);
+      }
+      current = current.parent;
+    }
+    return segments.join(' > ');
+  }
+
+  /**
+   * 递归收集已加载的树节点（DFS），用于搜索
+   */
+  public getFlattenedNodes(): Datasource[] {
+    const result: Datasource[] = [];
+    const visit = (node: Datasource) => {
+      result.push(node);
+      if (node.children && node.children.length > 0) {
+        for (const child of node.children) {
+          visit(child);
+        }
+      }
+    };
+    for (const root of this.rootNodes) {
+      visit(root);
+    }
+    return result;
   }
 
   /**

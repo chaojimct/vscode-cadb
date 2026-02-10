@@ -16,6 +16,20 @@ function toErrorMessage(error: unknown): string {
 }
 
 /**
+ * 模糊匹配：pattern 的字符按顺序出现在 text 中即视为匹配（忽略大小写）
+ */
+function fuzzyMatch(pattern: string, text: string): boolean {
+  if (!pattern.trim()) return true;
+  const p = pattern.toLowerCase().trim();
+  const t = text.toLowerCase();
+  let i = 0;
+  for (let j = 0; j < t.length && i < p.length; j++) {
+    if (t[j] === p[i]) i++;
+  }
+  return i === p.length;
+}
+
+/**
  * 向 settings webview 回传统一的状态消息
  */
 function postWebviewStatus(
@@ -624,6 +638,53 @@ export function registerDatasourceCommands(
     })
   );
 
+  // 搜索数据源：Ctrl+F / Cmd+F 弹出 QuickPick，模糊匹配并定位到节点
+  disposables.push(
+    vscode.commands.registerCommand("cadb.datasource.search", async () => {
+      const allNodes = provider.getFlattenedNodes();
+      if (allNodes.length === 0) {
+        vscode.window.showInformationMessage("暂无数据源节点可搜索，请先添加连接并刷新。");
+        return;
+      }
+      interface SearchItem extends vscode.QuickPickItem {
+        element: Datasource;
+      }
+      const allItems: SearchItem[] = allNodes.map((el) => {
+        const label = el.label?.toString()?.trim() || "未命名";
+        const description = provider.getReadablePath(el);
+        return { label, description, element: el };
+      });
+
+      const qp = vscode.window.createQuickPick<SearchItem>();
+      qp.placeholder = "输入关键词模糊搜索（连接 / 数据库 / 表…）";
+      qp.matchOnDescription = true;
+      qp.matchOnDetail = true;
+      qp.items = allItems;
+
+      qp.onDidChangeValue((value) => {
+        if (!value.trim()) {
+          qp.items = allItems;
+          return;
+        }
+        const filtered = allItems.filter(
+          (item) =>
+            fuzzyMatch(value, item.label) || fuzzyMatch(value, item.description ?? "")
+        );
+        qp.items = filtered.length > 0 ? filtered : [{ label: "(无匹配)", element: allNodes[0] } as SearchItem];
+      });
+
+      qp.onDidAccept(() => {
+        const picked = qp.selectedItems[0];
+        qp.hide();
+        if (picked && "element" in picked && picked.element && picked.label !== "(无匹配)") {
+          treeView.reveal(picked.element, { expand: true, select: true, focus: true });
+        }
+      });
+
+      qp.show();
+    })
+  );
+
   // 注册选择数据库/表命令
   disposables.push(
     vscode.commands.registerCommand(
@@ -926,26 +987,66 @@ export function registerDatasourceCommands(
   return disposables;
 }
 
+/** 已打开的表格数据面板：key = connectionName|databaseName|tableName，同一表只保留一个 */
+const openTablePanels = new Map<string, vscode.WebviewPanel>();
+
+const TABLE_PAGE_SIZE = 50;
+
 async function sqlResultView(
   datasource: Datasource,
   provider: DataSourceProvider
 ) {
-  const data = await datasource.listData();
+  const data = await datasource.listData(1, TABLE_PAGE_SIZE);
   const tableName = datasource.label?.toString() || "";
   const databaseName = datasource.parent?.parent?.label?.toString() || "";
   const connectionName =
     datasource.dataloader?.rootNode().label?.toString() || "";
+  const panelKey = `${connectionName}|${databaseName}|${tableName}`;
+
+  const existing = openTablePanels.get(panelKey);
+  if (existing) {
+    existing.reveal();
+    // 优先由 webview 在 visibilitychange 时发 ready 触发加载；延迟再发一次 load 作为兜底（部分环境下 visibility 可能不触发）
+    setTimeout(() => {
+      existing.webview.postMessage({ command: "load", data: data });
+    }, 150);
+    return;
+  }
 
   const panel = createWebview(
     provider,
     "datasourceTable",
     data?.title || "未命名页"
   );
-  panel.webview.postMessage({
-    command: "load",
-    data: data,
-  });
+  openTablePanels.set(panelKey, panel);
+  panel.onDidDispose(() => openTablePanels.delete(panelKey));
+
   panel.webview.onDidReceiveMessage(async (message) => {
+    if (message.command === "ready") {
+      // 每次 ready 都拉取最新数据，保证首次打开与再次切回该面板时都能正确加载
+      const freshData = await datasource.listData(1, TABLE_PAGE_SIZE);
+      panel.webview.postMessage({
+        command: "load",
+        data: freshData,
+      });
+      return;
+    }
+    if (message.command === "loadPage") {
+      const page = Math.max(1, parseInt(message.page, 10) || 1);
+      const pageSize = Math.max(1, Math.min(500, parseInt(message.pageSize, 10) || TABLE_PAGE_SIZE));
+      const pageData = await datasource.listData(page, pageSize);
+      panel.webview.postMessage({
+        command: "loadPage",
+        data: {
+          rowData: pageData?.rowData ?? [],
+          totalCount: pageData?.totalCount ?? 0,
+          queryTime: pageData?.queryTime,
+          page,
+          pageSize,
+        },
+      });
+      return;
+    }
     switch (message.command) {
       case "save":
         try {
@@ -1012,8 +1113,8 @@ async function sqlResultView(
               success: true,
               message: `成功更新 ${saveResult.successCount} 行`,
             });
-            // 刷新表格数据
-            const refreshedData = await datasource.listData();
+            // 刷新表格数据（第一页）
+            const refreshedData = await datasource.listData(1, TABLE_PAGE_SIZE);
             panel.webview.postMessage({
               command: "load",
               data: refreshedData,
@@ -1041,7 +1142,7 @@ async function sqlResultView(
         }
         break;
       case "refresh": {
-        const data = await datasource.listData();
+        const data = await datasource.listData(1, TABLE_PAGE_SIZE);
         panel.webview.postMessage({
           command: "load",
           data: data,

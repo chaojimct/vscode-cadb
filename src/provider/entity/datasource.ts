@@ -206,11 +206,11 @@ export class Datasource extends vscode.TreeItem {
     }
   };
 
-  public listData(): Promise<TableResult | null> {
+  public listData(page?: number, pageSize?: number): Promise<TableResult | null> {
     if (!this.dataloader) {
       return Promise.resolve(null);
     }
-    return this.dataloader.listData(this);
+    return this.dataloader.listData(this, page, pageSize);
   }
 
   public constructor(

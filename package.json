@@ -61,6 +61,10 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "cadb.datasource.search",
+        "title": "搜索数据源"
+      },
+      {
         "command": "cadb.datasource.edit",
         "title": "编辑",
         "icon": "$(edit)"
@@ -308,7 +312,19 @@
           "description": "SQL Notebook 编辑器行高"
         }
       }
-    }
+    },
+    "keybindings": [
+      {
+        "command": "cadb.datasource.search",
+        "key": "ctrl+f",
+        "when": "view == datasource"
+      },
+      {
+        "command": "cadb.datasource.search",
+        "key": "cmd+f",
+        "when": "view == datasource"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run package",

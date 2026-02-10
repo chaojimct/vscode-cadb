@@ -14,13 +14,17 @@
   --vscode-focus: var(--vscode-focusBorder, #007acc);
   --panel-padding: 16px;
   --toolbar-height: 48px;
-  --filter-height: 40px;
+  --filter-sort-row-height: 40px;
 }
 
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+}
+
+html {
+  background-color: var(--vscode-bg);
 }
 
 body {
@@ -33,15 +37,16 @@ body {
   line-height: 1.5;
 }
 
-/* 表格容器放在工具栏和过滤栏之间并可滚动 */
+/* 表格容器放在工具栏和过滤栏之间并可滚动；背景与主题一致，避免快速滚动时露出白底 */
 .table-wrapper {
   position: absolute;
   left: var(--panel-padding);
   right: var(--panel-padding);
-  top: calc(var(--toolbar-height) + var(--filter-height) + 8px);
+  top: calc(var(--toolbar-height) + var(--filter-sort-row-height) + 8px);
   bottom: var(--panel-padding);
   overflow: auto;
   -webkit-overflow-scrolling: touch;
+  background-color: var(--vscode-bg);
 }
 
 /* ========== Tabulator 主题完全适配 VSCode ========== */
@@ -124,23 +129,33 @@ body {
 
 /* 选中的单元格 */
 .tabulator .tabulator-cell.tabulator-range-selected {
-  background: var(--vscode-list-activeSelectionBackground, rgba(9, 71, 113, 0.3)) !important;
+  background: var(--vscode-list-activeSelectionBackground, rgba(9, 71, 113)) !important;
   color: var(--vscode-list-activeSelectionForeground, var(--vscode-fg)) !important;
 }
 
 /* 选中的行头 */
 .tabulator .tabulator-cell.range-header-col.tabulator-range-selected {
-  background: var(--vscode-list-activeSelectionBackground, rgba(9, 71, 113, 0.5)) !important;
+  background: var(--vscode-list-activeSelectionBackground, rgba(9, 71, 113)) !important;
 }
 
 /* 选中的列头 */
 .tabulator .tabulator-header .tabulator-col.tabulator-range-selected {
-  background: var(--vscode-list-activeSelectionBackground, rgba(9, 71, 113, 0.5)) !important;
+  background: var(--vscode-list-activeSelectionBackground, rgba(9, 71, 113)) !important;
   color: var(--vscode-list-activeSelectionForeground, var(--vscode-fg)) !important;
 }
 
-/* 表格主体 */
+/* 表格主体：tableholder 及内部表格、虚拟滚动占位区统一使用主题背景，避免快速滚动时白屏闪现 */
 .tabulator .tabulator-tableholder {
+  background: var(--vscode-bg) !important;
+}
+
+.tabulator .tabulator-tableholder > *,
+.tabulator .tabulator-tableholder .tabulator-table {
+  background: var(--vscode-bg) !important;
+}
+
+.tabulator .tabulator-tableholder .tabulator-table tbody,
+.tabulator .tabulator-tableholder .tabulator-table tr {
   background: var(--vscode-bg) !important;
 }
 
@@ -193,6 +208,17 @@ body {
 
 .tabulator .tabulator-cell:last-child {
   border-right: none !important;
+}
+
+/* link 类型字段（Tabulator link formatter 渲染的 <a>）适配主题 */
+.tabulator .tabulator-cell a {
+  color: var(--vscode-textLink-foreground, var(--vscode-focus)) !important;
+  text-decoration: none;
+}
+
+.tabulator .tabulator-cell a:hover {
+  color: var(--vscode-textLink-activeForeground, var(--vscode-focus)) !important;
+  text-decoration: underline;
 }
 
 /* 编辑后的单元格高亮 - 优先级高于行背景色 */
@@ -336,20 +362,87 @@ body {
   border-left: 2px solid var(--vscode-border) !important;
 }
 
+/* ========== 弹出层/菜单 适配 VSCode 主题 ========== */
+
+/* 弹出层容器（行详情、列头筛选等） */
+.tabulator-popup-container {
+  background: var(--vscode-editorWidget-background, var(--vscode-input-bg)) !important;
+  border: 1px solid var(--vscode-widget-border, var(--vscode-border)) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35) !important;
+  color: var(--vscode-fg) !important;
+  font-size: 13px;
+}
+
+.tabulator-popup {
+  padding: 8px 10px;
+  border-radius: 4px;
+  color: var(--vscode-fg) !important;
+  background: var(--vscode-editorWidget-background, var(--vscode-input-bg)) !important;
+}
+
+.tabulator-popup label {
+  color: var(--vscode-descriptionForeground, var(--vscode-fg)) !important;
+}
+
+.tabulator-popup input {
+  background: var(--vscode-input-bg) !important;
+  color: var(--vscode-input-fg) !important;
+  border: 1px solid var(--vscode-input-border, var(--vscode-border)) !important;
+}
+
+.tabulator-popup input:focus {
+  outline: none;
+  border-color: var(--vscode-focusBorder, var(--vscode-focus)) !important;
+}
+
+/* 列头筛选弹出内容（与 formatter 内联样式一致，兜底） */
+.tabulator-header-filter-popup {
+  background: var(--vscode-editorWidget-background, var(--vscode-input-bg)) !important;
+  color: var(--vscode-editorWidget-foreground, var(--vscode-fg)) !important;
+}
+
+.tabulator-header-filter-popup input {
+  background: var(--vscode-input-background) !important;
+  color: var(--vscode-input-foreground) !important;
+  border: 1px solid var(--vscode-input-border, var(--vscode-border)) !important;
+}
+
+/* 列头弹出内的列表 */
+.tabulator-popup ul {
+  color: var(--vscode-fg) !important;
+}
+
+.tabulator-tooltip {
+  background: var(--vscode-editorWidget-background, var(--vscode-input-bg)) !important;
+  border: 1px solid var(--vscode-widget-border, var(--vscode-border)) !important;
+  color: var(--vscode-fg) !important;
+}
+
+/* 列头弹出按钮（筛选图标） */
+.tabulator .tabulator-header .tabulator-col .tabulator-col-content .tabulator-header-popup-button {
+  color: var(--vscode-fg) !important;
+}
+
+.tabulator .tabulator-header .tabulator-col .tabulator-col-content .tabulator-header-popup-button:hover {
+  color: var(--vscode-focus) !important;
+  background: var(--vscode-hover) !important;
+  opacity: 1;
+}
+
 /* 列菜单 */
 .tabulator-menu {
-  background: var(--vscode-input-bg) !important;
-  border: 1px solid var(--vscode-border) !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
+  background: var(--vscode-editorWidget-background, var(--vscode-input-bg)) !important;
+  border: 1px solid var(--vscode-widget-border, var(--vscode-border)) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35) !important;
 }
 
 .tabulator-menu .tabulator-menu-item {
-  color: var(--vscode-input-fg) !important;
-  background: var(--vscode-input-bg) !important;
+  color: var(--vscode-list-foreground, var(--vscode-fg)) !important;
+  background: transparent !important;
 }
 
 .tabulator-menu .tabulator-menu-item:hover {
-  background: var(--vscode-hover) !important;
+  background: var(--vscode-list-hoverBackground, var(--vscode-hover)) !important;
 }
 
 .tabulator-menu .tabulator-menu-separator {
@@ -358,24 +451,33 @@ body {
 
 /* 编辑器列表（下拉选择） */
 .tabulator-edit-select-list {
-  background: var(--vscode-input-bg) !important;
-  border: 1px solid var(--vscode-border) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+  background: var(--vscode-editorWidget-background, var(--vscode-input-bg)) !important;
+  border: 1px solid var(--vscode-widget-border, var(--vscode-border)) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35) !important;
 }
 
 .tabulator-edit-select-list .tabulator-edit-select-list-item {
-  color: var(--vscode-input-fg) !important;
-  background: var(--vscode-input-bg) !important;
+  color: var(--vscode-list-foreground, var(--vscode-fg)) !important;
+  background: transparent !important;
 }
 
 .tabulator-edit-select-list .tabulator-edit-select-list-item:hover,
 .tabulator-edit-select-list .tabulator-edit-select-list-item.active {
-  background: var(--vscode-hover) !important;
+  background: var(--vscode-list-hoverBackground, var(--vscode-hover)) !important;
 }
 
 .tabulator-edit-select-list .tabulator-edit-select-list-item.focused {
-  background: var(--vscode-select-bg) !important;
-  color: var(--vscode-select-fg) !important;
+  background: var(--vscode-list-activeSelectionBackground, var(--vscode-select-bg)) !important;
+  color: var(--vscode-list-activeSelectionForeground, var(--vscode-select-fg)) !important;
+}
+
+.tabulator-edit-list .tabulator-edit-list-item {
+  color: var(--vscode-fg) !important;
+}
+
+.tabulator-edit-list .tabulator-edit-list-item.active {
+  background: var(--vscode-list-activeSelectionBackground, var(--vscode-select-bg)) !important;
+  color: var(--vscode-list-activeSelectionForeground, var(--vscode-select-fg)) !important;
 }
 
 /* 分组行 */

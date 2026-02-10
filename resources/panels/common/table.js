@@ -15,22 +15,43 @@ class DatabaseTableData {
     this.changedRows = new Set();
     this.originalData = new Map(); // 保存原始数据，key 为行索引
     this.queryTime = 0; // 查询时间（秒）
+    this.totalCount = 0; // 远程分页总行数
+    this.pendingPageResolve = null; // 远程分页请求的 resolve
   }
 
   /**
-   * 初始化表格
+   * 初始化表格（data 为第一页数据，totalCount 为总行数，用于远程分页）
    */
-  init(columns, data, queryTime) {
+  init(columns, data, queryTime, totalCount) {
+    this.pendingPageResolve = null;
     this.columns = columns;
-    this.tableData = data;
+    this.tableData = data || [];
     this.queryTime = queryTime || 0;
+    this.totalCount = totalCount ?? 0;
     this.changedRows.clear();
     this.originalData.clear();
-    // 保存原始数据的深拷贝
-    data.forEach((row, index) => {
+    // 保存第一页原始数据的深拷贝
+    (this.tableData || []).forEach((row, index) => {
       this.originalData.set(index, JSON.parse(JSON.stringify(row)));
     });
     this._initDataTable();
+  }
+
+  /**
+   * 远程分页：扩展返回某一页数据时调用，用于 resolve ajaxRequestFunc 的 Promise
+   */
+  setPageData(payload) {
+    if (typeof this.pendingPageResolve !== "function") return;
+    const totalCount = payload.totalCount ?? 0;
+    const pageSize = Math.max(1, payload.pageSize || 50);
+    const lastPage = Math.max(1, Math.ceil(totalCount / pageSize));
+    if (payload.queryTime != null) this.queryTime = payload.queryTime;
+    this.pendingPageResolve({
+      last_page: lastPage,
+      last_row: totalCount,
+      data: Array.isArray(payload.rowData) ? payload.rowData : [],
+    });
+    this.pendingPageResolve = null;
   }
 
   /**
@@ -38,25 +59,50 @@ class DatabaseTableData {
    */
   _initDataTable() {
     const self = this;
+    const DateTime = typeof window !== "undefined" && (window.luxon?.DateTime || window.DateTime);
+    const pageSize = 50;
     this.table = new Tabulator(this.tableSelector, {
+      dependencies: DateTime ? { DateTime } : undefined,
       height: "100%",
       layout: "fitDataStretch",
-      pagination: "local",
-      paginationSize: 50,
+      pagination: true,
+      paginationMode: "remote",
+      paginationSize: pageSize,
       paginationCounter: function (
-        pageSize,
+        size,
         currentRow,
         currentPage,
         totalRows,
         totalPages
       ) {
-        // 自定义显示查询时间
         const timeDisplay =
           self.queryTime < 0.001 ? "<0.001s" : `${self.queryTime.toFixed(3)}s`;
         return `查询时间: ${timeDisplay} | ${totalRows} 行`;
       },
       columns: this._buildColumns(),
       data: [],
+
+      // 远程分页：通过 postMessage 向扩展请求当前页数据
+      ajaxRequestFunc: function (url, config, params) {
+        const page = params.page != null ? params.page : 1;
+        const size = params.size != null ? params.size : pageSize;
+        if (page === 1 && self.tableData && self.tableData.length >= 0 && typeof self.totalCount === "number" && self.totalCount >= 0) {
+          const total = self.totalCount;
+          const lastPage = Math.max(1, Math.ceil(total / size));
+          return Promise.resolve({
+            last_page: lastPage,
+            last_row: total,
+            data: self.tableData,
+          });
+        }
+        if (self.vscode && self.vscode.postMessage) {
+          self.vscode.postMessage({ command: "loadPage", page: page, pageSize: size });
+          return new Promise(function (resolve) {
+            self.pendingPageResolve = resolve;
+          });
+        }
+        return Promise.resolve({ last_page: 1, last_row: 0, data: [] });
+      },
 
       // 启用范围选择
       selectableRange: 1,
@@ -66,6 +112,9 @@ class DatabaseTableData {
 
       // 双击编辑单元格
       editTriggerEvent: "dblclick",
+
+      // 启用编辑历史，支持撤销/重做（参考 Tabulator history）
+      history: true,
 
       // 配置剪贴板支持范围格式
       clipboard: true,
@@ -90,43 +139,194 @@ class DatabaseTableData {
         editor: false,
       },
 
-      // 禁用列排序
-      headerSort: false,
+      // 启用列头排序（参考 https://tabulator.info/docs/6.3/sort）
+      headerSort: true,
       // 启用列调整大小
       resizableColumns: true,
       // 占位符文本
       placeholder: "暂无数据",
-      // 渲染模式：basic (禁用虚拟 DOM，解决 hidden 容器报错问题)
-      renderVertical: "basic",
+      // 使用 Virtual DOM 渲染，仅渲染可见行及上下缓冲，支持大量行数（参考 https://tabulator.info/docs/6.3/virtual-dom）
+      renderVertical: "virtual",
+      // 增大上下缓冲，减少快速滚动时未渲染区域露出白底
+      renderVerticalBuffer: 400,
       // 响应式列
       responsiveLayout: false,
-    });
 
-    // 异步加载数据
-    requestAnimationFrame(() => {
-      this.table.setData(this.tableData);
     });
   }
 
   /**
-   * 构建列定义
+   * 根据表字段类型返回 Tabulator 列配置（formatter / editor）
+   * 仅使用 Tabulator 内置：plaintext、datetime(luxon)、link、adaptable
+   * @param {Object} col - 列定义，含 field、type（MySQL Type）
+   */
+  _getFormatterConfig(col) {
+    const type = (col.type != null ? String(col.type) : "").toLowerCase();
+
+    if (/json/i.test(type)) {
+      return {
+        formatter: "plaintext",
+        variableHeight: false,
+        editor: "input",
+      };
+    }
+    if (/tinyint\s*\(\s*1\s*\)|bit\s*\(\s*1\s*\)/.test(type)) {
+      return {
+        formatter: "tickCross",
+        formatterParams: { allowEmpty: true },
+        variableHeight: false,
+        editor: "input",
+      };
+    }
+    if (/^(longtext|mediumtext|text)(\s|$)/i.test(type) || type === "text") {
+      return {
+        formatter: "plaintext",
+        variableHeight: false,
+        editor: "input",
+      };
+    }
+    if (/^(int|bigint|smallint|mediumint|decimal|float|double|numeric)(\s|\(|$)/i.test(type)) {
+      return {
+        formatter: "plaintext",
+        variableHeight: false,
+        editor: "input",
+      };
+    }
+    if (/^(date|datetime|timestamp|time)(\s|$)/i.test(type)) {
+      const isTime = /^time(\s|$)/i.test(type);
+      const isDateOnly = /^date(\s|$)/i.test(type) && !/datetime|timestamp/i.test(type);
+      const inputFormat = isTime ? "HH:mm:ss" : isDateOnly ? "yyyy-MM-dd" : "yyyy-MM-dd HH:mm:ss";
+      const outputFormat = isTime ? "HH:mm:ss" : isDateOnly ? "yyyy-MM-dd" : "yyyy-MM-dd HH:mm:ss";
+      return {
+        formatter: "datetime",
+        formatterParams: {
+          inputFormat: inputFormat,
+          outputFormat: outputFormat,
+          invalidPlaceholder: "",
+        },
+        variableHeight: false,
+        editor: "input",
+      };
+    }
+    if (/^(varchar|char)(\s|\(|$)/i.test(type)) {
+      return {
+        formatter: "adaptable",
+        formatterParams: {
+          formatterLookup: function (cell) {
+            const v = cell.getValue();
+            if (typeof v === "string" && (v.startsWith("http://") || v.startsWith("https://"))) {
+              return "link";
+            }
+            return "plaintext";
+          },
+        },
+        variableHeight: false,
+        editor: "input",
+      };
+    }
+    // 其他未识别类型使用 adaptable
+    return {
+      formatter: "adaptable",
+      variableHeight: false,
+      editor: "input",
+    };
+  }
+
+  /**
+   * 根据列类型返回 Tabulator 排序配置（sorter / sorterParams）
+   * 参考 https://tabulator.info/docs/6.3/sort
+   */
+  _getSorterConfig(col) {
+    const type = (col.type != null ? String(col.type) : "").toLowerCase();
+    if (/^(int|bigint|smallint|mediumint|decimal|float|double|numeric)(\s|\(|$)/i.test(type)) {
+      return { sorter: "number" };
+    }
+    if (/^(date|datetime|timestamp|time)(\s|$)/i.test(type)) {
+      const isTime = /^time(\s|$)/i.test(type);
+      const isDateOnly = /^date(\s|$)/i.test(type) && !/datetime|timestamp/i.test(type);
+      const format = isTime ? "HH:mm:ss" : isDateOnly ? "yyyy-MM-dd" : "yyyy-MM-dd HH:mm:ss";
+      const sorter = isTime ? "time" : isDateOnly ? "date" : "datetime";
+      return { sorter, sorterParams: { format } };
+    }
+    if (/tinyint\s*\(\s*1\s*\)|bit\s*\(\s*1\s*\)/.test(type)) {
+      return { sorter: "boolean" };
+    }
+    return { sorter: "string" };
+  }
+
+  /**
+   * 列头筛选弹出框内容：输入框绑定 getHeaderFilterValue / setHeaderFilterValue
+   */
+  _headerFilterPopupFormatter(e, column, onRendered) {
+    const container = document.createElement("div");
+    container.className = "tabulator-header-filter-popup";
+    container.style.background = "var(--vscode-editorWidget-background, var(--vscode-input-bg))";
+    container.style.color = "var(--vscode-editorWidget-foreground, var(--vscode-fg))";
+    container.style.padding = "8px 10px";
+    container.style.borderRadius = "4px";
+
+    const label = document.createElement("label");
+    label.textContent = "筛选该列:";
+    label.style.display = "block";
+    label.style.fontSize = "0.85em";
+    label.style.marginBottom = "6px";
+    label.style.color = "var(--vscode-descriptionForeground, var(--vscode-fg))";
+
+    const input = document.createElement("input");
+    input.placeholder = "输入筛选值...";
+    input.value = column.getHeaderFilterValue() || "";
+    input.style.cssText =
+      "width:100%;padding:6px 8px;box-sizing:border-box;background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border, var(--vscode-border));border-radius:2px;";
+
+    input.addEventListener("keyup", () => {
+      column.setHeaderFilterValue(input.value);
+    });
+
+    container.appendChild(label);
+    container.appendChild(input);
+    return container;
+  }
+
+  /**
+   * 空 headerFilter，仅作占位以支持弹出框内 setHeaderFilterValue
+   */
+  _emptyHeaderFilter() {
+    return document.createElement("div");
+  }
+
+  /**
+   * 构建列定义（formatter / editor / sorter / headerPopup 字段过滤）
    */
   _buildColumns() {
     const cols = [];
+    const self = this;
 
-    // 添加数据列（使用列默认配置）
     this.columns.forEach((c) => {
-      cols.push({
+      const config = this._getFormatterConfig(c);
+      const sorterConfig = this._getSorterConfig(c);
+      const colDef = {
         title: c.field.toUpperCase(),
         field: c.field,
         headerHozAlign: "center",
-        editor: "input",
         resizable: true,
         width: 100,
-        headerSort: false,
+        formatter: config.formatter,
+        formatterParams: config.formatterParams,
+        variableHeight: config.variableHeight !== false,
+        editor: config.editor,
+        sorter: sorterConfig.sorter,
+        sorterParams: sorterConfig.sorterParams,
         cellEdited: this._cellEdited.bind(this),
         rawData: c,
-      });
+        headerPopup: (e, column, onRendered) =>
+          self._headerFilterPopupFormatter(e, column, onRendered),
+        headerPopupIcon:
+          "<i class=\"codicon codicon-filter\" title=\"筛选列\"></i>",
+        headerFilter: () => self._emptyHeaderFilter(),
+        headerFilterFunc: "like",
+      };
+      if (config.contextMenu) colDef.contextMenu = config.contextMenu;
+      cols.push(colDef);
       this.newRow[c.field] = c.defaultValue || "";
     });
     return cols;
@@ -247,17 +447,17 @@ class DatabaseTableData {
   };
 
   /**
-   * 导出为 CSV
+   * 导出为 CSV（参考 https://tabulator.info/docs/6.3/download）
    */
   exportCSV = () => {
     if (!this.table) {
       return;
     }
-    this.table.download("csv", "data.csv");
+    this.table.download("csv", "data.csv", { bom: true });
   };
 
   /**
-   * 导出为 JSON
+   * 导出为 JSON（参考 https://tabulator.info/docs/6.3/download）
    */
   exportJSON = () => {
     if (!this.table) {
@@ -267,10 +467,13 @@ class DatabaseTableData {
   };
 
   /**
-   * 导出为 SQL
+   * 导出为 XLSX（参考 https://tabulator.info/docs/6.3/download，需 SheetJS 库）
    */
-  exportSQL = () => {
-    console.log("SQL 导出功能开发中...");
+  exportXLSX = () => {
+    if (!this.table) {
+      return;
+    }
+    this.table.download("xlsx", "data.xlsx", { sheetName: "Data" });
   };
 
   /**
@@ -321,331 +524,48 @@ class DatabaseTableData {
   }
 
   /**
-   * 应用过滤和排序
-   * @param {string} whereClause - WHERE 子句
-   * @param {string} orderByClause - ORDER BY 子句
+   * 设置筛选（委托给 Tabulator setFilter，参考 https://tabulator.info/docs/6.3/filter）
+   * @param {string} field - 字段名
+   * @param {string} type - 比较类型：=, <, <=, >, >=, !=, like
+   * @param {string} value - 筛选值
    */
-  applyFilter(whereClause, orderByClause) {
-    if (!this.table) {
-      return;
-    }
+  setFilter(field, type, value) {
+    if (!this.table) return;
+    this.table.setFilter(field, type, value);
+  }
 
-    // 清除现有的过滤和排序
+  /**
+   * 清除所有筛选
+   */
+  clearFilter() {
+    if (!this.table) return;
     this.table.clearFilter();
-    this.table.clearSort();
-
-    let filteredData = [...this.tableData];
-
-    // 应用 WHERE 过滤
-    if (whereClause && whereClause.trim()) {
-      try {
-        filteredData = this.filterByWhereClause(filteredData, whereClause);
-      } catch (error) {
-        console.error(`✗ WHERE 子句错误: ${error.message}`);
-        return;
-      }
-    }
-
-    // 应用 ORDER BY 排序
-    if (orderByClause && orderByClause.trim()) {
-      try {
-        filteredData = this.sortByOrderByClause(filteredData, orderByClause);
-
-        if (!whereClause) {
-        }
-      } catch (error) {
-        console.error(`✗ ORDER BY 子句错误: ${error.message}`);
-        return;
-      }
-    }
-
-    // 更新表格数据
-    this.table.setData(filteredData);
-
-    // 如果没有过滤和排序，显示提示
-    if (!whereClause && !orderByClause) {
-      console.log("已清除过滤和排序");
-    }
   }
 
   /**
-   * 根据 WHERE 子句过滤数据
-   * @param {Array} data - 原始数据
-   * @param {string} whereClause - WHERE 子句
-   * @returns {Array} 过滤后的数据
+   * 设置排序（委托给 Tabulator setSort，参考 https://tabulator.info/docs/6.3/sort）
+   * @param {string} field - 字段名
+   * @param {string} dir - 方向 "asc" | "desc"
    */
-  filterByWhereClause(data, whereClause) {
-    try {
-      // 解析 WHERE 条件（不使用 eval 或 new Function）
-      const condition = this.parseWhereCondition(whereClause);
-
-      const filteredData = data.filter((row) => {
-        try {
-          return this.evaluateCondition(condition, row);
-        } catch (error) {
-          console.error("✗ 评估行时出错:", error.message);
-          return false;
-        }
-      });
-      return filteredData;
-    } catch (error) {
-      console.error("✗ WHERE 解析错误:", error.message);
-      throw error;
-    }
+  setSort(field, dir) {
+    if (!this.table) return;
+    this.table.setSort(field, dir);
   }
 
   /**
-   * 解析 WHERE 条件为抽象语法树
-   * @param {string} whereClause - WHERE 子句
-   * @returns {Object} 条件对象
+   * 撤销上一次编辑（需启用 history: true）
    */
-  parseWhereCondition(whereClause) {
-    const clause = whereClause.trim();
-
-    // 处理 AND/OR 逻辑运算符（优先级：OR < AND）
-    // 先处理 OR
-    const orParts = this.splitByOperator(clause, "OR");
-    if (orParts.length > 1) {
-      return {
-        type: "OR",
-        conditions: orParts.map((part) => this.parseWhereCondition(part)),
-      };
-    }
-
-    // 再处理 AND
-    const andParts = this.splitByOperator(clause, "AND");
-    if (andParts.length > 1) {
-      return {
-        type: "AND",
-        conditions: andParts.map((part) => this.parseWhereCondition(part)),
-      };
-    }
-
-    // 处理单个比较条件
-    return this.parseComparison(clause);
+  undo() {
+    if (!this.table) return;
+    this.table.undo();
   }
 
   /**
-   * 按运算符分割字符串（忽略引号内的内容）
+   * 重做上一次撤销的编辑（需启用 history: true）
    */
-  splitByOperator(str, operator) {
-    const parts = [];
-    let current = "";
-    let inQuote = false;
-    let quoteChar = "";
-    let i = 0;
-
-    while (i < str.length) {
-      const char = str[i];
-
-      if ((char === '"' || char === "'") && (i === 0 || str[i - 1] !== "\\")) {
-        if (!inQuote) {
-          inQuote = true;
-          quoteChar = char;
-        } else if (char === quoteChar) {
-          inQuote = false;
-        }
-        current += char;
-        i++;
-      } else if (
-        !inQuote &&
-        str.substr(i, operator.length + 2).toUpperCase() === ` ${operator} `
-      ) {
-        parts.push(current.trim());
-        current = "";
-        i += operator.length + 2;
-      } else {
-        current += char;
-        i++;
-      }
-    }
-
-    if (current.trim()) {
-      parts.push(current.trim());
-    }
-
-    return parts.length > 1 ? parts : [str];
+  redo() {
+    if (!this.table) return;
+    this.table.redo();
   }
 
-  /**
-   * 解析比较表达式
-   */
-  parseComparison(expr) {
-    expr = expr.trim();
-
-    // 处理 IS NULL / IS NOT NULL
-    const isNullMatch = expr.match(/^(\w+)\s+IS\s+NULL$/i);
-    if (isNullMatch) {
-      return { type: "IS_NULL", field: isNullMatch[1] };
-    }
-
-    const isNotNullMatch = expr.match(/^(\w+)\s+IS\s+NOT\s+NULL$/i);
-    if (isNotNullMatch) {
-      return { type: "IS_NOT_NULL", field: isNotNullMatch[1] };
-    }
-
-    // 处理 LIKE
-    const likeMatch = expr.match(/^(\w+)\s+LIKE\s+['"]([^'"]+)['"]$/i);
-    if (likeMatch) {
-      return { type: "LIKE", field: likeMatch[1], value: likeMatch[2] };
-    }
-
-    // 处理比较运算符: =, !=, <>, <, >, <=, >=
-    const comparisonMatch = expr.match(/^(\w+)\s*(=|!=|<>|<=|>=|<|>)\s*(.+)$/);
-    if (comparisonMatch) {
-      let value = comparisonMatch[3].trim();
-
-      // 移除引号
-      if (
-        (value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))
-      ) {
-        value = value.slice(1, -1);
-      }
-
-      return {
-        type: "COMPARISON",
-        field: comparisonMatch[1],
-        operator: comparisonMatch[2] === "<>" ? "!=" : comparisonMatch[2],
-        value: value,
-      };
-    }
-
-    throw new Error(`无法解析条件: ${expr}`);
-  }
-
-  /**
-   * 评估条件
-   */
-  evaluateCondition(condition, row) {
-    switch (condition.type) {
-      case "AND":
-        return condition.conditions.every((c) =>
-          this.evaluateCondition(c, row)
-        );
-
-      case "OR":
-        return condition.conditions.some((c) => this.evaluateCondition(c, row));
-
-      case "IS_NULL":
-        const nullValue = row[condition.field];
-        return (
-          nullValue === null || nullValue === undefined || nullValue === ""
-        );
-
-      case "IS_NOT_NULL":
-        const notNullValue = row[condition.field];
-        return (
-          notNullValue !== null &&
-          notNullValue !== undefined &&
-          notNullValue !== ""
-        );
-
-      case "LIKE":
-        const likeValue = row[condition.field];
-        if (likeValue === null || likeValue === undefined) {
-          return false;
-        }
-        return likeValue.toString().includes(condition.value);
-
-      case "COMPARISON":
-        return this.compareValues(
-          row[condition.field],
-          condition.operator,
-          condition.value
-        );
-
-      default:
-        throw new Error(`未知的条件类型: ${condition.type}`);
-    }
-  }
-
-  /**
-   * 比较两个值
-   */
-  compareValues(fieldValue, operator, compareValue) {
-    // 处理 null/undefined
-    if (fieldValue === null || fieldValue === undefined) {
-      return operator === "!=" && compareValue !== "";
-    }
-
-    // 转换为字符串进行比较
-    const fieldStr = fieldValue.toString();
-    const compareStr = compareValue.toString();
-
-    // 尝试数值比较
-    const fieldNum = parseFloat(fieldStr);
-    const compareNum = parseFloat(compareStr);
-    const isNumeric = !isNaN(fieldNum) && !isNaN(compareNum);
-
-    switch (operator) {
-      case "=":
-        return isNumeric ? fieldNum === compareNum : fieldStr === compareStr;
-      case "!=":
-        return isNumeric ? fieldNum !== compareNum : fieldStr !== compareStr;
-      case "<":
-        return isNumeric ? fieldNum < compareNum : fieldStr < compareStr;
-      case ">":
-        return isNumeric ? fieldNum > compareNum : fieldStr > compareStr;
-      case "<=":
-        return isNumeric ? fieldNum <= compareNum : fieldStr <= compareStr;
-      case ">=":
-        return isNumeric ? fieldNum >= compareNum : fieldStr >= compareStr;
-      default:
-        throw new Error(`未知的运算符: ${operator}`);
-    }
-  }
-
-  /**
-   * 根据 ORDER BY 子句排序数据
-   * @param {Array} data - 原始数据
-   * @param {string} orderByClause - ORDER BY 子句
-   * @returns {Array} 排序后的数据
-   */
-  sortByOrderByClause(data, orderByClause) {
-    // 解析 ORDER BY 子句：field1 ASC, field2 DESC
-    const sortRules = orderByClause.split(",").map((rule) => {
-      const parts = rule.trim().split(/\s+/);
-      const field = parts[0];
-      const direction = (parts[1] || "ASC").toUpperCase();
-      return { field, direction };
-    });
-
-    // 复制数据以避免修改原数组
-    const sortedData = [...data];
-
-    // 多字段排序
-    sortedData.sort((a, b) => {
-      for (const rule of sortRules) {
-        const aVal = a[rule.field];
-        const bVal = b[rule.field];
-
-        // 处理 null 和 undefined
-        if (aVal === null && bVal === null) {
-          continue;
-        }
-        if (aVal === null) {
-          return rule.direction === "ASC" ? 1 : -1;
-        }
-        if (bVal === null) {
-          return rule.direction === "ASC" ? -1 : 1;
-        }
-
-        // 比较值
-        let comparison = 0;
-        if (typeof aVal === "string" && typeof bVal === "string") {
-          comparison = aVal.localeCompare(bVal);
-        } else {
-          comparison = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
-        }
-
-        if (comparison !== 0) {
-          return rule.direction === "DESC" ? -comparison : comparison;
-        }
-      }
-      return 0;
-    });
-
-    return sortedData;
-  }
 }
