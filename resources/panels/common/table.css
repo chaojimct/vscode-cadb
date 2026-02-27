@@ -28,8 +28,11 @@ html {
 }
 
 body {
-  position: relative;
-  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  height: 100vh;
+  overflow: hidden;
   background-color: var(--vscode-bg);
   color: var(--vscode-fg);
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
@@ -37,16 +40,17 @@ body {
   line-height: 1.5;
 }
 
-/* 表格容器放在工具栏和过滤栏之间并可滚动；背景与主题一致，避免快速滚动时露出白底 */
+/* 表格容器：占据剩余空间（Grid / Items 用） */
 .table-wrapper {
-  position: absolute;
-  left: var(--panel-padding);
-  right: var(--panel-padding);
-  top: calc(var(--toolbar-height) + var(--filter-sort-row-height) + 8px);
-  bottom: var(--panel-padding);
-  overflow: auto;
-  -webkit-overflow-scrolling: touch;
+  flex: 1;
+  min-height: 0;
+  padding: 0 var(--panel-padding) var(--panel-padding);
+  overflow: hidden;
   background-color: var(--vscode-bg);
+}
+
+.table-wrapper > #grid {
+  height: 100%;
 }
 
 /* ========== Tabulator 主题完全适配 VSCode ========== */
@@ -268,13 +272,13 @@ body {
 }
 
 /* 表格底部分页器 */
+/* 隐藏 Tabulator 默认分页栏，使用工具栏内的自定义分页控件 */
 .tabulator .tabulator-footer {
-  background: var(--vscode-bg) !important;
-  color: var(--vscode-fg) !important;
-  border-top: 1px solid var(--vscode-border) !important;
-  padding: 8px;
+  display: none !important;
 }
-
+.tabulator .tabulator-footer.tabulator-footer-visible {
+  display: none !important;
+}
 .tabulator .tabulator-footer .tabulator-paginator {
   color: var(--vscode-fg) !important;
 }
@@ -318,9 +322,10 @@ body {
   border-radius: 2px;
 }
 
-/* 加载遮罩 */
+/* 加载遮罩：完全隐藏，避免首屏闪烁（数据为同步加载，无需显示） */
 .tabulator .tabulator-loader {
-  background: rgba(0, 0, 0, 0.6) !important;
+  display: none !important;
+  visibility: hidden !important;
 }
 
 .tabulator .tabulator-loader-msg {
@@ -545,4 +550,23 @@ body {
 
 .tabulator .tabulator-tableholder::-webkit-scrollbar-corner {
   background: var(--vscode-bg);
+}
+
+/* ========== AG Grid 主题适配 VSCode ========== */
+#grid.ag-theme-quartz,
+#grid.ag-theme-alpine,
+#grid.ag-theme-balham,
+#grid[class*="ag-theme-"] {
+  --ag-background-color: var(--vscode-editor-background, #1e1e1e);
+  --ag-foreground-color: var(--vscode-editor-foreground, #d4d4d4);
+  --ag-header-background-color: var(--vscode-editor-background, #1e1e1e);
+  --ag-header-foreground-color: var(--vscode-editor-foreground, #d4d4d4);
+  --ag-border-color: var(--vscode-panel-border, #3e3e42);
+  --ag-row-hover-color: var(--vscode-list-hoverBackground, #2d2d30);
+  --ag-selected-row-background-color: var(--vscode-list-activeSelectionBackground, #094771);
+  --ag-range-selection-background-color: rgba(9, 71, 113, 0.3);
+  --ag-input-focus-border-color: var(--vscode-focusBorder, #007acc);
+  --ag-input-border-color: var(--vscode-input-border, #3e3e42);
+  --ag-checkbox-checked-color: var(--vscode-button-background, #0e639c);
+  --ag-font-size: 13px;
 }

@@ -222,11 +222,7 @@ export class RedisDataloader implements Dataloader {
     }
     return Promise.resolve(ds.children);
   }
-  listData(
-    ds: Datasource,
-    page?: number,
-    pageSize?: number
-  ): Promise<TableResult> {
+  listData(ds: Datasource): Promise<TableResult> {
     throw new Error("Method not implemented.");
   }
   descDatasource(ds: Datasource): Promise<FormResult | undefined> {

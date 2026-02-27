@@ -101,11 +101,7 @@ export class OssDataLoader implements Dataloader {
   listFolders(ds: Datasource): Promise<Datasource[]> {
     throw new Error("Method not implemented.");
   }
-  listData(
-    ds: Datasource,
-    page?: number,
-    pageSize?: number
-  ): Promise<TableResult> {
+  listData(ds: Datasource): Promise<TableResult> {
     throw new Error("Method not implemented.");
   }
   descDatasource(ds: Datasource): Promise<FormResult | undefined> {

@@ -28,7 +28,7 @@
 
 #### 3. **grid.html** - 数据表格页面 📊
 - **用途**: 显示和编辑数据库表数据
-- **特点**: 使用 Tabulator.js 实现高性能数据表格
+- **特点**: 使用 AG Grid Community 实现高性能数据表格
 - **相关文件**:
   - `grid/grid.js` - 表格逻辑
   - `grid/grid.css` - 表格样式
@@ -66,7 +66,7 @@
   - 响应式设计
 
 - **table.js** - 表格工具类
-  - Tabulator.js 封装
+  - AG Grid Community 封装（Grid / Items 面板）
 
 - **table.css** - 表格样式
 
@@ -93,7 +93,7 @@
 ## 🔧 技术栈
 
 - **UI 框架**: Layui
-- **表格**: Tabulator.js
+- **表格**: AG Grid Community（Grid/Items）、Tabulator.js（Result 查询结果）
 - **样式**: VSCode 主题变量
 - **脚本**: jQuery + 原生 JavaScript
 
@@ -134,5 +134,6 @@
 - [动态表单使用说明](common/README.md)
 - [VSCode 扩展开发文档](https://code.visualstudio.com/api)
 - [Layui 官方文档](https://layui.dev)
+- [AG Grid 官方文档](https://ag-grid.com)
 - [Tabulator 官方文档](http://tabulator.info)
 

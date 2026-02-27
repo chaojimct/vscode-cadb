@@ -19,12 +19,8 @@
     />
     <script
       nonce="{{resource-nonce}}"
-      src="{{node-resources-uri}}/tabulator-tables/dist/js/tabulator.min.js"
+      src="{{resources-uri}}/common/ag-grid-community.min.js"
     ></script>
-    <link
-      rel="stylesheet"
-      href="{{node-resources-uri}}/tabulator-tables/dist/css/tabulator.min.css"
-    />
     <link rel="stylesheet" href="{{resources-uri}}/common/layui-theme.css" />
     <link rel="stylesheet" href="{{resources-uri}}/common/table.css" />
     <link rel="stylesheet" href="{{resources-uri}}/items/items.css" />
@@ -32,7 +28,7 @@
 
   <body>
     <div class="table-wrapper">
-      <div id="grid"></div>
+      <div id="grid" class="ag-theme-quartz" role="grid"></div>
     </div>
 
     <script

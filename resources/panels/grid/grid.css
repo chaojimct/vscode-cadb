@@ -1,20 +1,49 @@
-/* 固定在页面顶部的工具栏 */
-.toolbar {
-  position: fixed;
-  top: 0;
-  left: var(--panel-padding);
-  right: var(--panel-padding);
-  height: var(--toolbar-height);
-  z-index: 40;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: transparent;
+/* ========== Grid 页面布局 - 适配 VSCode 主题 ========== */
+/* 依赖 table.css 的 :root 变量，或使用以下 VSCode 主题变量直连 */
+
+:root {
+  --grid-toolbar-height: 48px;
+  --grid-control-gap: 8px;
+  /* 确保有 table.css 未定义时的回退 */
+  --grid-bg: var(--vscode-editor-background, var(--vscode-bg, #1e1e1e));
+  --grid-fg: var(--vscode-editor-foreground, var(--vscode-fg, #d4d4d4));
+  --grid-border: var(--vscode-panel-border, var(--vscode-border, #3e3e42));
+  --grid-desc-fg: var(--vscode-descriptionForeground, #888888);
+  --grid-hover: var(--vscode-list-hoverBackground, var(--vscode-hover, #2d2d30));
+  --grid-select-bg: var(--vscode-list-activeSelectionBackground, var(--vscode-select-bg, #094771));
 }
 
-.toolbar button {
-  background-color: transparent;
-  color: var(--vscode-fg);
+/* ---------- 工具栏 ---------- */
+.grid-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--grid-control-gap);
+  height: var(--grid-toolbar-height);
+  padding: 0 var(--panel-padding);
+  background-color: var(--grid-bg);
+  border-bottom: 1px solid var(--grid-border);
+}
+
+.grid-toolbar__actions,
+.grid-toolbar__export {
+  display: flex;
+  align-items: center;
+  gap: var(--grid-control-gap);
+}
+
+.grid-toolbar__pagination {
+  display: flex;
+  align-items: center;
+  gap: var(--grid-control-gap);
+  flex: 1;
+  justify-content: center;
+  min-width: 0;
+}
+
+.grid-toolbar button {
+  background: transparent;
+  color: var(--grid-fg);
   border: 1px solid transparent;
   padding: 0;
   width: 32px;
@@ -24,138 +53,58 @@
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s, border-color 0.15s;
   border-radius: 4px;
-  font-family: inherit;
+  font: inherit;
 }
 
-.toolbar button:hover {
-  background-color: var(--vscode-hover);
-  border-color: var(--vscode-border);
+.grid-toolbar button:hover:not(:disabled) {
+  background-color: var(--grid-hover);
+  border-color: var(--grid-border);
 }
 
-.toolbar button:active {
-  background-color: var(--vscode-select-bg);
-  transform: scale(0.95);
+.grid-toolbar button:active:not(:disabled) {
+  background-color: var(--grid-select-bg);
 }
 
-.toolbar button:disabled {
+.grid-toolbar button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
-.toolbar button .codicon,
-.toolbar button i {
+.grid-toolbar .codicon {
   font-size: 16px;
   line-height: 1;
-  margin: 0;
-  display: block;
 }
 
-/* 筛选与排序同一行：左筛选，右排序，固定在工具栏下方 */
-.filter-sort-row {
-  position: fixed;
-  top: var(--toolbar-height);
-  left: var(--panel-padding);
-  right: var(--panel-padding);
-  height: var(--filter-sort-row-height);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 8px;
-  background-color: var(--vscode-editor-background, rgba(0, 0, 0, 0.05));
-  border-bottom: 1px solid var(--vscode-border);
-  z-index: 35;
+/* 分页按钮略小 */
+.grid-toolbar__pagination button {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  padding: 4px;
 }
 
-.filter-sort-row-left,
-.filter-sort-row-right {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.filter-sort-row-left {
-  flex: 1;
-  min-width: 0;
-}
-
-.filter-sort-row-right {
-  flex-shrink: 0;
-}
-
-.filter-group {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 8px;
-}
-
-.filter-label {
+.grid-toolbar__pagination [data-pagination-range] {
   font-size: 12px;
-  color: var(--vscode-fg);
-  font-weight: 500;
+  color: var(--grid-desc-fg);
   white-space: nowrap;
 }
 
-.filter-input {
+/* ---------- 表格容器 ---------- */
+.grid-table-wrapper {
   flex: 1;
-  min-width: 150px;
-  background-color: var(--vscode-input-bg);
-  color: var(--vscode-input-fg);
-  border: 1px solid var(--vscode-border);
-  padding: 6px 8px;
-  border-radius: 2px;
-  font-size: 12px;
-  font-family: inherit;
+  min-height: 0;
+  padding: 0 var(--panel-padding) var(--panel-padding);
+  overflow: hidden;
+  background-color: var(--grid-bg);
 }
 
-.filter-input:focus {
-  outline: none;
-  border-color: var(--vscode-focus);
-  box-shadow: 0 0 0 1px var(--vscode-focus);
+.grid-table-wrapper > #grid {
+  height: 100%;
 }
 
-.filter-input::placeholder {
-  color: #888;
-  font-style: italic;
-}
-
-.filter-select {
-  min-width: 100px;
-  background-color: var(--vscode-input-bg);
-  color: var(--vscode-input-fg);
-  border: 1px solid var(--vscode-border);
-  padding: 6px 8px;
-  border-radius: 2px;
-  font-size: 12px;
-  font-family: inherit;
-  cursor: pointer;
-}
-
-.filter-select:focus {
-  outline: none;
-  border-color: var(--vscode-focus);
-}
-
-.filter-clear-btn {
-  background-color: var(--vscode-button-bg);
-  color: var(--vscode-button-fg);
-  border: 1px solid var(--vscode-button-border);
-  padding: 6px 12px;
-  border-radius: 2px;
-  font-size: 12px;
-  font-family: inherit;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.filter-clear-btn:hover {
-  background-color: var(--vscode-button-hoverBackground);
-}
-
-/* Accessibility helper */
+/* ---------- 无障碍 ---------- */
 .sr-only {
   position: absolute !important;
   width: 1px;
@@ -167,4 +116,3 @@
   white-space: nowrap;
   border: 0;
 }
-

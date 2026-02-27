@@ -990,13 +990,11 @@ export function registerDatasourceCommands(
 /** 已打开的表格数据面板：key = connectionName|databaseName|tableName，同一表只保留一个 */
 const openTablePanels = new Map<string, vscode.WebviewPanel>();
 
-const TABLE_PAGE_SIZE = 50;
-
 async function sqlResultView(
   datasource: Datasource,
   provider: DataSourceProvider
 ) {
-  const data = await datasource.listData(1, TABLE_PAGE_SIZE);
+  const data = await datasource.listData();
   const tableName = datasource.label?.toString() || "";
   const databaseName = datasource.parent?.parent?.label?.toString() || "";
   const connectionName =
@@ -1024,26 +1022,10 @@ async function sqlResultView(
   panel.webview.onDidReceiveMessage(async (message) => {
     if (message.command === "ready") {
       // 每次 ready 都拉取最新数据，保证首次打开与再次切回该面板时都能正确加载
-      const freshData = await datasource.listData(1, TABLE_PAGE_SIZE);
+      const freshData = await datasource.listData();
       panel.webview.postMessage({
         command: "load",
         data: freshData,
-      });
-      return;
-    }
-    if (message.command === "loadPage") {
-      const page = Math.max(1, parseInt(message.page, 10) || 1);
-      const pageSize = Math.max(1, Math.min(500, parseInt(message.pageSize, 10) || TABLE_PAGE_SIZE));
-      const pageData = await datasource.listData(page, pageSize);
-      panel.webview.postMessage({
-        command: "loadPage",
-        data: {
-          rowData: pageData?.rowData ?? [],
-          totalCount: pageData?.totalCount ?? 0,
-          queryTime: pageData?.queryTime,
-          page,
-          pageSize,
-        },
       });
       return;
     }
@@ -1114,7 +1096,7 @@ async function sqlResultView(
               message: `成功更新 ${saveResult.successCount} 行`,
             });
             // 刷新表格数据（第一页）
-            const refreshedData = await datasource.listData(1, TABLE_PAGE_SIZE);
+            const refreshedData = await datasource.listData();
             panel.webview.postMessage({
               command: "load",
               data: refreshedData,
@@ -1142,7 +1124,7 @@ async function sqlResultView(
         }
         break;
       case "refresh": {
-        const data = await datasource.listData(1, TABLE_PAGE_SIZE);
+        const data = await datasource.listData();
         panel.webview.postMessage({
           command: "load",
           data: data,

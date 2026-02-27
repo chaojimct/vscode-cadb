@@ -5,128 +5,81 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>数据表格编辑器</title>
     <meta http-equiv="Content-Security-Policy" content="{{csp}}" />
-    <script
-      nonce="{{resource-nonce}}"
-      src="{{node-resources-uri}}/jquery/dist/jquery.min.js"
-    ></script>
-    <script
-      nonce="{{resource-nonce}}"
-      src="{{node-resources-uri}}/layui/dist/layui.js"
-    ></script>
-    <link
-      rel="stylesheet"
-      href="{{node-resources-uri}}/layui/dist/css/layui.css"
-    />
+    <link rel="stylesheet" href="{{node-resources-uri}}/layui/dist/css/layui.css" />
     <link rel="stylesheet" href="{{resources-uri}}/common/layui-theme.css" />
-    <script
-      nonce="{{resource-nonce}}"
-      src="{{node-resources-uri}}/tabulator-tables/dist/js/tabulator.min.js"
-    ></script>
-    <link
-      rel="stylesheet"
-      href="{{node-resources-uri}}/tabulator-tables/dist/css/tabulator.min.css"
-    />
-    <link
-      rel="stylesheet"
-      href="{{node-resources-uri}}/@vscode/codicons/dist/codicon.css"
-    />
-    <script
-      nonce="{{resource-nonce}}"
-      src="{{resources-uri}}/common/luxon.min.js"
-    ></script>
+    <link rel="stylesheet" href="{{node-resources-uri}}/@vscode/codicons/dist/codicon.css" />
     <link rel="stylesheet" href="{{resources-uri}}/common/table.css" />
     <link rel="stylesheet" href="{{resources-uri}}/grid/grid.css" />
   </head>
-
   <body>
-    <div class="toolbar">
-      <button id="btn-save" title="保存修改到数据库">
-        <i class="codicon codicon-save" aria-hidden="true"></i>
-        <span class="sr-only">保存</span>
-      </button>
-      <button id="btn-refresh" title="刷新表格数据">
-        <i class="codicon codicon-refresh" aria-hidden="true"></i>
-        <span class="sr-only">刷新</span>
-      </button>
-      <button id="btn-add" title="添加新行">
-        <i class="codicon codicon-add" aria-hidden="true"></i>
-        <span class="sr-only">新增</span>
-      </button>
-      <button id="btn-delete" title="删除选中行">
-        <i class="codicon codicon-trash" aria-hidden="true"></i>
-        <span class="sr-only">删除</span>
-      </button>
-      <button id="history-undo" title="撤销">
-        <i class="codicon codicon-history" aria-hidden="true"></i>
-        <span class="sr-only">撤销</span>
-      </button>
-      <button id="history-redo" title="重做">
-        <i class="codicon codicon-redo" aria-hidden="true"></i>
-        <span class="sr-only">重做</span>
-      </button>
-      <div style="flex: 1"></div>
-      <button id="btn-upload" title="同步到...">
-        <i class="codicon codicon-cloud-upload" aria-hidden="true"></i>
-        <span class="sr-only">同步到...</span>
-      </button>
-      <button id="btn-download" title="导出为SQL">
-        <i class="codicon codicon-cloud-download" aria-hidden="true"></i>
-        <span class="sr-only">导出为SQL</span>
-      </button>
-      <button id="btn-export-csv" title="导出 CSV">
-        <i class="codicon codicon-file" aria-hidden="true"></i>
-        <span class="sr-only">CSV</span>
-      </button>
-      <button id="btn-export-xlsx" title="导出 XLSX">
-        <i class="codicon codicon-table" aria-hidden="true"></i>
-        <span class="sr-only">XLSX</span>
-      </button>
-      <button id="btn-export-json" title="导出 JSON">
-        <i class="codicon codicon-braces" aria-hidden="true"></i>
-        <span class="sr-only">JSON</span>
-      </button>
-    </div>
-
-    <div class="filter-sort-row">
-      <div class="filter-sort-row-left">
-        <select id="filter-field" class="filter-select" title="筛选字段">
-          <option value="">选择字段</option>
-        </select>
-        <select id="filter-type" class="filter-select" title="比较类型">
-          <option value="=">=</option>
-          <option value="<">&lt;</option>
-          <option value="<=">&lt;=</option>
-          <option value=">">&gt;</option>
-          <option value=">=">&gt;=</option>
-          <option value="!=">!=</option>
-          <option value="like">like</option>
-        </select>
-        <input id="filter-value" type="text" class="filter-input" placeholder="筛选值" />
-        <button id="filter-clear" type="button" class="filter-clear-btn">清除筛选</button>
+    <header class="grid-toolbar">
+      <div class="grid-toolbar__actions">
+        <button data-action="save" title="保存修改到数据库">
+          <i class="codicon codicon-save" aria-hidden="true"></i>
+          <span class="sr-only">保存</span>
+        </button>
+        <button data-action="refresh" title="刷新表格数据">
+          <i class="codicon codicon-refresh" aria-hidden="true"></i>
+          <span class="sr-only">刷新</span>
+        </button>
+        <button data-action="add" title="添加新行">
+          <i class="codicon codicon-add" aria-hidden="true"></i>
+          <span class="sr-only">新增</span>
+        </button>
+        <button data-action="delete" title="删除选中行">
+          <i class="codicon codicon-trash" aria-hidden="true"></i>
+          <span class="sr-only">删除</span>
+        </button>
+        <button data-action="undo" title="撤销">
+          <i class="codicon codicon-history" aria-hidden="true"></i>
+          <span class="sr-only">撤销</span>
+        </button>
+        <button data-action="redo" title="重做">
+          <i class="codicon codicon-redo" aria-hidden="true"></i>
+          <span class="sr-only">重做</span>
+        </button>
       </div>
-      <div class="filter-sort-row-right">
-        <select id="sort-field" class="filter-select" title="排序字段">
-          <option value="">选择字段</option>
-        </select>
-        <select id="sort-direction" class="filter-select" title="排序方向">
-          <option value="asc" selected>asc</option>
-          <option value="desc">desc</option>
-        </select>
-        <button id="sort-trigger" type="button" class="filter-clear-btn">执行排序</button>
+      <div class="grid-toolbar__pagination" data-pagination>
+        <button id="btn-prev-page" data-action="prev-page" title="上一页" disabled>
+          <i class="codicon codicon-chevron-left" aria-hidden="true"></i>
+        </button>
+        <span id="pagination-range" data-pagination-range>0 - 0 / 0</span>
+        <button id="btn-next-page" data-action="next-page" title="下一页" disabled>
+          <i class="codicon codicon-chevron-right" aria-hidden="true"></i>
+        </button>
       </div>
-    </div>
+      <div class="grid-toolbar__export">
+        <button data-action="upload" title="同步到...">
+          <i class="codicon codicon-cloud-upload" aria-hidden="true"></i>
+          <span class="sr-only">同步到...</span>
+        </button>
+        <button data-action="download" title="导出为SQL">
+          <i class="codicon codicon-cloud-download" aria-hidden="true"></i>
+          <span class="sr-only">导出为SQL</span>
+        </button>
+        <button data-action="export-csv" title="导出 CSV">
+          <i class="codicon codicon-file" aria-hidden="true"></i>
+          <span class="sr-only">CSV</span>
+        </button>
+        <button data-action="export-xlsx" title="导出 XLSX">
+          <i class="codicon codicon-table" aria-hidden="true"></i>
+          <span class="sr-only">XLSX</span>
+        </button>
+        <button data-action="export-json" title="导出 JSON">
+          <i class="codicon codicon-braces" aria-hidden="true"></i>
+          <span class="sr-only">JSON</span>
+        </button>
+      </div>
+    </header>
 
-    <div class="table-wrapper">
-      <div id="grid"></div>
-    </div>
+    <main class="grid-table-wrapper">
+      <div id="grid" class="ag-theme-quartz" role="grid"></div>
+    </main>
 
-    <script
-      nonce="{{resource-nonce}}"
-      src="{{resources-uri}}/common/table.js"
-    ></script>
-    <script
-      nonce="{{resource-nonce}}"
-      src="{{resources-uri}}/grid/grid.js"
-    ></script>
+    <script nonce="{{resource-nonce}}" src="{{node-resources-uri}}/jquery/dist/jquery.min.js"></script>
+    <script nonce="{{resource-nonce}}" src="{{node-resources-uri}}/layui/dist/layui.js"></script>
+    <script nonce="{{resource-nonce}}" src="{{resources-uri}}/common/ag-grid-community.min.js"></script>
+    <script nonce="{{resource-nonce}}" src="{{resources-uri}}/common/table.js"></script>
+    <script nonce="{{resource-nonce}}" src="{{resources-uri}}/grid/grid.js"></script>
   </body>
 </html>
