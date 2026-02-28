@@ -35,7 +35,11 @@ export function activate(context: vscode.ExtensionContext) {
   const treeView = vscode.window.createTreeView("datasource", {
     treeDataProvider: provider,
   });
-  const datasourceCommands = registerDatasourceCommands(provider, treeView);
+  const datasourceCommands = registerDatasourceCommands(
+    provider,
+    treeView,
+    outputChannel
+  );
   datasourceCommands.forEach(cmd => context.subscriptions.push(cmd));
   
   // 监听 TreeView 展开/收起事件，保存状态

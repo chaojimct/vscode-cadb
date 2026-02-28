@@ -12,6 +12,7 @@ class DynamicForm {
    * @param {Function} options.onCancel 取消回调
    * @param {Function} options.onTest 测试连接回调
    * @param {Object} options.testButton 测试按钮配置 { show?: string, hidden?: string, label?: string }
+   * @param {boolean} options.flatLayout 若为 true，不显示「基础设置」「高级设置」标题，所有字段扁平展示
    */
   constructor(options) {
     this.container = $(options.container);
@@ -21,6 +22,7 @@ class DynamicForm {
     this.onCancel = options.onCancel;
     this.onTest = options.onTest;
     this.testButton = options.testButton || null;
+    this.flatLayout = options.flatLayout || false;
     this.form = null;
     this.layer = null;
     this.element = null;
@@ -64,10 +66,10 @@ class DynamicForm {
         hiddenFields.push({ name: fieldName, config });
         return;
       }
-      if (config.category === "advance") {
-        advanceFields.push({ name: fieldName, config });
-      } else {
+      if (this.flatLayout || config.category !== "advance") {
         baseFields.push({ name: fieldName, config });
+      } else {
+        advanceFields.push({ name: fieldName, config });
       }
     });
 
@@ -93,10 +95,10 @@ class DynamicForm {
       } else {
         // 处理普通字段（非隐藏字段）：即使数据中不存在，也要根据配置生成表单字段
         // 这对于新建表单很重要（如创建数据库时，数据是空对象，但需要显示配置的字段）
-        if (config.category === "advance") {
-          advanceFields.push({ name: fieldName, config });
-        } else {
+        if (this.flatLayout || config.category !== "advance") {
           baseFields.push({ name: fieldName, config });
+        } else {
+          advanceFields.push({ name: fieldName, config });
         }
         // 如果数据中没有这个字段，初始化为空值
         if (!this.currentData[fieldName]) {
@@ -185,20 +187,26 @@ class DynamicForm {
       });
     }
 
-    // 基础字段（折叠面板，默认展开）
+    // 基础字段
     if (baseFields.length > 0) {
-      html += '<div class="layui-collapse" lay-accordion="">';
-      html += '<div class="layui-colla-item layui-show">';
-      html += '<h2 class="layui-colla-title">基础设置</h2>';
-      html += '<div class="layui-colla-content layui-show">';
-      html += this.generateFieldsHtml(baseFields);
-      html += "</div>";
-      html += "</div>";
-      html += "</div>";
+      if (this.flatLayout) {
+        html += '<div class="form-fields">';
+        html += this.generateFieldsHtml(baseFields);
+        html += "</div>";
+      } else {
+        html += '<div class="layui-collapse" lay-accordion="">';
+        html += '<div class="layui-colla-item layui-show">';
+        html += '<h2 class="layui-colla-title">基础设置</h2>';
+        html += '<div class="layui-colla-content layui-show">';
+        html += this.generateFieldsHtml(baseFields);
+        html += "</div>";
+        html += "</div>";
+        html += "</div>";
+      }
     }
 
-    // 高级字段（折叠面板）- 只有当存在高级字段时才显示
-    if (advanceFields && advanceFields.length > 0) {
+    // 高级字段（仅非 flatLayout 时显示）
+    if (!this.flatLayout && advanceFields && advanceFields.length > 0) {
       html += '<div class="form-divider"></div>';
       html += '<div class="layui-collapse" lay-accordion="">';
       html += '<div class="layui-colla-item">';

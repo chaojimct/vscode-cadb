@@ -202,19 +202,88 @@ export class MySQLDataloader implements Dataloader {
     if (!ds.dataloader || !ds.parent || !ds.parent.parent) {
       return Promise.resolve(undefined);
     }
-    const table = ds.label || "";
-    const database = ds.parent.parent.label || "";
+    const table = (ds.label?.toString() ?? "").trim();
+    const database = (ds.parent.parent.label?.toString() ?? "").trim();
     return new Promise<FormResult | undefined>((resolve) => {
       // 使用 SHOW FULL COLUMNS 而不是 DESC，可以获取字段注释
-      this.conn.query(`SHOW FULL COLUMNS FROM ${database}.${table}`, (err, results) => {
-        if (err) {
-          vscode.window.showErrorMessage(err.message);
-          return resolve(undefined);
+      this.conn.query(
+        `SHOW FULL COLUMNS FROM \`${database}\`.\`${table}\``,
+        async (err, results) => {
+          if (err) {
+            vscode.window.showErrorMessage(err.message);
+            return resolve(undefined);
+          }
+          const rowData = results as Record<string, any>[];
+          let indexes: Array<{ id: string; name: string; type: string; fields: string[]; unique: boolean }> = [];
+          try {
+            indexes = await this.getTableIndexesForEdit(database, table);
+          } catch {
+            // 降级：从 rowData 的 Key 列推导索引（可能不准确）
+          }
+          return resolve({
+            rowData,
+            indexes: indexes.length > 0 ? indexes : undefined,
+          } as FormResult & { indexes?: typeof indexes });
         }
-        return resolve({
-          rowData: results as Record<string, any>[],
-        });
-      });
+      );
+    });
+  }
+
+  /**
+   * 获取表索引列表（供编辑面板使用，使用真实索引名）
+   */
+  private getTableIndexesForEdit(
+    databaseName: string,
+    tableName: string
+  ): Promise<
+    Array<{ id: string; name: string; type: string; fields: string[]; unique: boolean }>
+  > {
+    return new Promise((resolve, reject) => {
+      this.conn.query(
+        `
+SELECT INDEX_NAME, COLUMN_NAME, SEQ_IN_INDEX, NON_UNIQUE, INDEX_TYPE
+FROM information_schema.STATISTICS
+WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
+ORDER BY INDEX_NAME, SEQ_IN_INDEX
+`,
+        [databaseName, tableName],
+        (err, results) => {
+          if (err) return reject(err);
+          const rows = results as any[];
+          const byName = new Map<
+            string,
+            { type: string; unique: boolean; fields: string[] }
+          >();
+          for (const r of rows) {
+            const name = r.INDEX_NAME;
+            if (!byName.has(name)) {
+              const isUnique = r.NON_UNIQUE === 0;
+              const t =
+                name === "PRIMARY"
+                  ? "primary"
+                  : r.INDEX_TYPE === "FULLTEXT"
+                    ? "fulltext"
+                    : isUnique
+                      ? "unique"
+                      : "index";
+              byName.set(name, {
+                type: t,
+                unique: isUnique,
+                fields: [],
+              });
+            }
+            byName.get(name)!.fields.push(r.COLUMN_NAME);
+          }
+          const list = Array.from(byName.entries()).map(([name, v]) => ({
+            id: `index-${name}`,
+            name,
+            type: v.type,
+            fields: v.fields,
+            unique: v.unique,
+          }));
+          resolve(list);
+        }
+      );
     });
   }
   descColumn(ds: Datasource): Promise<FormResult | undefined> {
@@ -842,5 +911,197 @@ ORDER BY
       errorCount,
       errors,
     };
+  }
+
+  /**
+   * 修改表结构（添加/修改/删除字段）
+   * @returns 实际执行的 SQL 语句
+   */
+  async alterColumn(params: {
+    databaseName: string;
+    tableName: string;
+    operation: "add" | "modify" | "drop";
+    originalName?: string;
+    field?: {
+      name: string;
+      type: string;
+      length?: number | null;
+      defaultValue?: string | null;
+      nullable?: boolean;
+      autoIncrement?: boolean;
+      primaryKey?: boolean;
+      comment?: string;
+    };
+  }): Promise<string> {
+    const { databaseName, tableName, operation, originalName, field } = params;
+    const table = `\`${databaseName}\`.\`${tableName}\``;
+
+    await this.ensureConnection();
+
+    if (operation === "drop" && originalName) {
+      const sql = `ALTER TABLE ${table} DROP COLUMN \`${this.escapeId(originalName)}\``;
+      return new Promise((resolve, reject) => {
+        this.conn.query(sql, (err) => {
+          if (err) reject(err);
+          else resolve(sql);
+        });
+      });
+    }
+
+    if (operation === "add" || operation === "modify") {
+      if (!field) throw new Error("field 参数必填");
+      const colDef = this.buildColumnDefinition(field);
+      let sql: string;
+      if (operation === "add") {
+        sql = `ALTER TABLE ${table} ADD COLUMN \`${this.escapeId(field.name)}\` ${colDef}`;
+      } else {
+        const oldName = originalName || field.name;
+        if (oldName === field.name) {
+          sql = `ALTER TABLE ${table} MODIFY COLUMN \`${this.escapeId(field.name)}\` ${colDef}`;
+        } else {
+          sql = `ALTER TABLE ${table} CHANGE COLUMN \`${this.escapeId(oldName)}\` \`${this.escapeId(field.name)}\` ${colDef}`;
+        }
+      }
+      return new Promise((resolve, reject) => {
+        this.conn.query(sql, (err) => {
+          if (err) reject(err);
+          else resolve(sql);
+        });
+      });
+    }
+
+    throw new Error(`不支持的 operation: ${operation}`);
+  }
+
+  private escapeId(id: string): string {
+    return id.replace(/`/g, "``");
+  }
+
+  private buildColumnDefinition(field: {
+    type: string;
+    length?: number | null;
+    defaultValue?: string | null;
+    nullable?: boolean;
+    autoIncrement?: boolean;
+    comment?: string;
+  }): string {
+    const parts: string[] = [];
+    const typeMap: Record<string, string> = {
+      varchar: "VARCHAR",
+      int: "INT",
+      bigint: "BIGINT",
+      text: "TEXT",
+      datetime: "DATETIME",
+      date: "DATE",
+      decimal: "DECIMAL",
+      float: "FLOAT",
+      double: "DOUBLE",
+      json: "JSON",
+      blob: "BLOB",
+    };
+    const baseType = typeMap[field.type.toLowerCase()] || field.type.toUpperCase();
+    if (field.length != null && field.length > 0 && ["VARCHAR", "CHAR", "DECIMAL", "NUMERIC"].includes(baseType)) {
+      parts.push(`${baseType}(${field.length})`);
+    } else {
+      parts.push(baseType);
+    }
+    const nullable = field.nullable !== false;
+    parts.push(nullable ? "NULL" : "NOT NULL");
+    if (field.defaultValue !== undefined && field.defaultValue !== null && field.defaultValue !== "") {
+      const v = String(field.defaultValue).trim();
+      if (v.toLowerCase() === "null") {
+        parts.push("DEFAULT NULL");
+      } else if (["CURRENT_TIMESTAMP", "CURRENT_DATE"].includes(v.toUpperCase())) {
+        parts.push(`DEFAULT ${v.toUpperCase()}`);
+      } else {
+        parts.push(`DEFAULT ${this.conn.escape(v)}`);
+      }
+    }
+    if (field.autoIncrement === true || String(field.autoIncrement) === "true") {
+      parts.push("AUTO_INCREMENT");
+    }
+    if (field.comment) {
+      parts.push(`COMMENT ${this.conn.escape(field.comment)}`);
+    }
+    return parts.join(" ");
+  }
+
+  /**
+   * 修改表索引（添加/修改/删除）
+   * @returns 实际执行的 SQL 语句（多条用换行分隔）
+   */
+  async alterIndex(params: {
+    databaseName: string;
+    tableName: string;
+    operation: "add" | "modify" | "drop";
+    originalName?: string;
+    index?: {
+      name: string;
+      type: string;
+      fields: string[];
+      unique?: boolean;
+      comment?: string;
+    };
+  }): Promise<string> {
+    const { databaseName, tableName, operation, originalName, index } = params;
+    const table = `\`${databaseName}\`.\`${tableName}\``;
+
+    await this.ensureConnection();
+
+    const runSql = (sql: string): Promise<void> =>
+      new Promise((resolve, reject) => {
+        this.conn.query(sql, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+
+    if (operation === "drop" && originalName) {
+      const sql =
+        originalName === "PRIMARY"
+          ? `ALTER TABLE ${table} DROP PRIMARY KEY`
+          : `ALTER TABLE ${table} DROP INDEX \`${this.escapeId(originalName)}\``;
+      await runSql(sql);
+      return sql;
+    }
+
+    if (operation === "add" || operation === "modify") {
+      if (!index || !index.fields || index.fields.length === 0) {
+        throw new Error("索引数据不完整，需至少包含字段列表");
+      }
+      const cols = index.fields.map((c) => `\`${this.escapeId(c)}\``).join(", ");
+      let addSql: string;
+
+      if (index.type === "primary") {
+        addSql = `ALTER TABLE ${table} ADD PRIMARY KEY (${cols})`;
+      } else if (index.type === "fulltext") {
+        addSql = `ALTER TABLE ${table} ADD FULLTEXT INDEX \`${this.escapeId(index.name)}\` (${cols})`;
+      } else {
+        const unique =
+          index.type === "unique" ||
+          index.unique === true ||
+          String(index.unique) === "true";
+        const uniqueKw = unique ? "UNIQUE " : "";
+        addSql = `ALTER TABLE ${table} ADD ${uniqueKw}INDEX \`${this.escapeId(index.name)}\` (${cols})`;
+      }
+      if (index.comment && index.type !== "primary") {
+        addSql += ` COMMENT ${this.conn.escape(index.comment)}`;
+      }
+
+      if (operation === "modify" && originalName) {
+        const dropSql =
+          originalName === "PRIMARY"
+            ? `ALTER TABLE ${table} DROP PRIMARY KEY`
+            : `ALTER TABLE ${table} DROP INDEX \`${this.escapeId(originalName)}\``;
+        await runSql(dropSql);
+        await runSql(addSql);
+        return `${dropSql}\n${addSql}`;
+      }
+
+      await runSql(addSql);
+      return addSql;
+    }
+
+    throw new Error(`不支持的 operation: ${operation}`);
   }
 }

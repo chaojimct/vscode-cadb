@@ -5,52 +5,12 @@
  */
 
 // VSCode API
-const vscode = acquireVsCodeApi();
+const vscode = window.vscode || (typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : null);
 
-// 模拟数据
+// 数据容器，初始为空，由 VSCode 通过 load 事件填充
 const mockData = {
-  fields: [
-    {
-      id: "field-name",
-      name: "name",
-      type: "varchar",
-      length: 255,
-      defaultValue: "",
-      nullable: false,
-    },
-    {
-      id: "field-email",
-      name: "email",
-      type: "varchar",
-      length: 255,
-      defaultValue: "",
-      nullable: false,
-    },
-    {
-      id: "field-age",
-      name: "age",
-      type: "int",
-      length: null,
-      defaultValue: "0",
-      nullable: true,
-    },
-  ],
-  indexes: [
-    {
-      id: "index-primary",
-      name: "PRIMARY",
-      type: "primary",
-      fields: "id",
-      unique: true,
-    },
-    {
-      id: "index-unique-email",
-      name: "unique_email",
-      type: "unique",
-      fields: "email",
-      unique: true,
-    },
-  ],
+  fields: [],
+  indexes: [],
 };
 
 // 当前编辑的项
@@ -65,10 +25,35 @@ const FieldConfig = window.FieldConfig;
 const fieldMapping = FieldConfig.tableField;
 const indexMapping = FieldConfig.index;
 
-// Layui 初始化
-layui.use(["element", "form", "layer"], function () {
+  layui.use(["element", "form", "layer"], function () {
   const element = layui.element;
   const layer = layui.layer;
+
+  // 设置左侧列表滚动区高度，确保纵向滚动可用
+  function updateListScrollHeight() {
+    const panel = document.querySelector(".left-panel");
+    const tabs = document.querySelector(".layui-tab-title");
+    const addBtn = document.querySelector(".tab-pane-inner .layui-btn");
+    const scrollEls = document.querySelectorAll(".list-scroll");
+    if (!panel || !scrollEls.length) return;
+    const panelH = panel.getBoundingClientRect().height;
+    const tabsH = tabs ? tabs.getBoundingClientRect().height : 40;
+    const addBtnH = addBtn ? addBtn.getBoundingClientRect().height + 16 : 48;
+    const scrollH = Math.max(80, panelH - tabsH - addBtnH);
+    scrollEls.forEach(function (el) {
+      el.style.height = scrollH + "px";
+    });
+  }
+  function scheduleUpdateScroll() {
+    requestAnimationFrame(updateListScrollHeight);
+  }
+  updateListScrollHeight();
+  setTimeout(updateListScrollHeight, 100);
+  window.addEventListener("resize", scheduleUpdateScroll);
+  if (typeof ResizeObserver !== "undefined") {
+    const panel = document.querySelector(".left-panel");
+    if (panel) new ResizeObserver(scheduleUpdateScroll).observe(panel);
+  }
 
   /**
    * 渲染字段列表
@@ -83,12 +68,12 @@ layui.use(["element", "form", "layer"], function () {
       let badge = "";
       
       if (field.key === "PRI") {
-        icon = "layui-icon-key"; // 主键显示钥匙图标
-        badge = '<span style="color: #FFB800; margin-left: 5px; font-size: 11px;">[PK]</span>';
+        icon = "layui-icon-key";
+        badge = '<span class="menu-item-badge" style="color:#FFB800">[PK]</span>';
       } else if (field.key === "UNI") {
-        badge = '<span style="color: #1E9FFF; margin-left: 5px; font-size: 11px;">[UNI]</span>';
+        badge = '<span class="menu-item-badge" style="color:#1E9FFF">[UNI]</span>';
       } else if (field.key === "MUL") {
-        badge = '<span style="color: #5FB878; margin-left: 5px; font-size: 11px;">[IDX]</span>';
+        badge = '<span class="menu-item-badge" style="color:#5FB878">[IDX]</span>';
       }
       
       const isFirst = index === 0;
@@ -122,10 +107,15 @@ layui.use(["element", "form", "layer"], function () {
     const $indexList = $("#index-list");
     $indexList.empty();
 
-    mockData.indexes.forEach((index) => {
+    mockData.indexes.forEach((idx) => {
       $indexList.append(`
-        <li class="menu-item" data-id="${index.id}" data-type="index">
-          <i class="layui-icon layui-icon-template"></i> ${index.name}
+        <li class="menu-item" data-id="${idx.id}" data-type="index">
+          <div class="menu-item-content">
+            <i class="layui-icon layui-icon-template"></i> ${idx.name}
+          </div>
+          <div class="menu-item-actions">
+            <i class="layui-icon layui-icon-delete menu-item-action menu-item-delete" title="删除索引"></i>
+          </div>
         </li>
       `);
     });
@@ -138,19 +128,17 @@ layui.use(["element", "form", "layer"], function () {
     currentEditItem = field;
     currentEditType = "field";
 
-    // 创建动态表单
+    // 创建动态表单（扁平布局，不显示基础/高级设置标题）
     dynamicForm = new DynamicForm({
       container: "#formContainer",
       fieldMapping: fieldMapping,
       formId: "field-form",
       onSubmit: handleSaveField,
-      onCancel: null, // 不需要取消按钮
+      onCancel: null,
+      flatLayout: true,
     });
 
     dynamicForm.load(field);
-
-    // 添加删除按钮
-    addDeleteButton("删除字段", handleDeleteField);
   }
 
   /**
@@ -177,42 +165,17 @@ layui.use(["element", "form", "layer"], function () {
       indexData.fields = indexData.fields.replace(/,\s+/g, ',');
     }
 
-    // 创建动态表单
+    // 创建动态表单（扁平布局，不显示基础/高级设置标题）
     dynamicForm = new DynamicForm({
       container: "#formContainer",
       fieldMapping: indexMapping,
       formId: "index-form",
       onSubmit: handleSaveIndex,
-      onCancel: null, // 不需要取消按钮
+      onCancel: null,
+      flatLayout: true,
     });
 
     dynamicForm.load(indexData);
-
-    // 添加删除按钮
-    addDeleteButton("删除索引", handleDeleteIndex);
-  }
-
-  /**
-   * 添加删除按钮
-   */
-  function addDeleteButton(text, handler) {
-    // 使用 setTimeout 确保 DynamicForm 完全渲染后再添加按钮
-    setTimeout(() => {
-      const $buttonGroup = $("#formContainer .button-group");
-      
-      // 先移除已存在的删除按钮（如果有）
-      $buttonGroup.find("#deleteBtn").remove();
-      
-      // 添加新的删除按钮
-      $buttonGroup.append(`
-        <button type="button" id="deleteBtn" class="layui-btn layui-btn-danger">
-          <i class="layui-icon layui-icon-delete"></i> ${text}
-        </button>
-      `);
-
-      // 绑定点击事件
-      $("#deleteBtn").off("click").on("click", handler);
-    }, 50); // 延迟 50ms 以确保表单已完全渲染
   }
 
   /**
@@ -220,15 +183,19 @@ layui.use(["element", "form", "layer"], function () {
    */
   function handleSaveField(data) {
     if (currentEditItem) {
+      const originalName = currentEditItem.name;
+      const isNew = String(currentEditItem.id || "").startsWith("field-new-");
       Object.assign(currentEditItem, data);
       renderFieldList();
-      dynamicForm.showStatus("字段保存成功！", "success");
+      dynamicForm.showStatus("保存中...", "success");
 
-      // 通知 VSCode
-        vscode.postMessage({
+      // 通知 VSCode 执行数据库 ALTER
+      vscode.postMessage({
         command: "saveField",
         data: data,
-        });
+        originalName: originalName,
+        isNew: isNew,
+      });
     }
   }
 
@@ -299,14 +266,18 @@ layui.use(["element", "form", "layer"], function () {
     // ==================== 校验结束 ====================
 
     if (currentEditItem) {
+      const originalName = currentEditItem.name;
+      const isNew = String(currentEditItem.id || "").startsWith("index-new-");
       Object.assign(currentEditItem, data);
       renderIndexList();
-      dynamicForm.showStatus("索引保存成功！", "success");
+      dynamicForm.showStatus("保存中...", "success");
 
-      // 通知 VSCode
+      // 通知 VSCode 执行数据库 ALTER
       vscode.postMessage({
         command: "saveIndex",
         data: data,
+        originalName: originalName,
+        isNew: isNew,
       });
     }
   }
@@ -319,8 +290,9 @@ layui.use(["element", "form", "layer"], function () {
       return;
     }
 
+    const fieldName = currentEditItem.name;
     layer.confirm(
-      '确定要删除字段 "' + currentEditItem.name + '" 吗？',
+      '确定要删除字段 "' + fieldName + '" 吗？',
       {
         icon: 3,
         title: "确认删除",
@@ -333,10 +305,10 @@ layui.use(["element", "form", "layer"], function () {
           mockData.fields.splice(idx, 1);
           renderFieldList();
 
-          // 通知 VSCode
-        vscode.postMessage({
+          // 通知 VSCode 执行数据库 DROP COLUMN
+          vscode.postMessage({
             command: "deleteField",
-            fieldId: currentEditItem.id,
+            fieldName: fieldName,
           });
         }
         layer.close(index);
@@ -351,14 +323,19 @@ layui.use(["element", "form", "layer"], function () {
     if (!currentEditItem) {
       return;
     }
+    if (!vscode) {
+      layer.msg("无法与编辑器通信", { icon: 5 });
+      return;
+    }
 
+    const indexName = currentEditItem.name;
     layer.confirm(
-      '确定要删除索引 "' + currentEditItem.name + '" 吗？',
+      '确定要删除索引 "' + indexName + '" 吗？',
       {
         icon: 3,
         title: "确认删除",
       },
-      function (index) {
+      function (confirmIdx) {
         const idx = mockData.indexes.findIndex(
           (i) => i.id === currentEditItem.id
         );
@@ -366,13 +343,13 @@ layui.use(["element", "form", "layer"], function () {
           mockData.indexes.splice(idx, 1);
           renderIndexList();
 
-          // 通知 VSCode
+          // 通知 VSCode 执行数据库 DROP INDEX
           vscode.postMessage({
             command: "deleteIndex",
-            indexId: currentEditItem.id,
-        });
-      }
-        layer.close(index);
+            indexName: indexName,
+          });
+        }
+        layer.close(confirmIdx);
       }
     );
   }
@@ -432,8 +409,8 @@ layui.use(["element", "form", "layer"], function () {
     }
   });
 
-  // 添加按钮点击事件
-  $("#add-field-btn").on("click", function () {
+  // 添加按钮
+  $(document).on("click", "#add-field-btn", function () {
     const newField = {
       id: "field-new-" + Date.now(),
       name: "new_column",
@@ -450,11 +427,10 @@ layui.use(["element", "form", "layer"], function () {
     // 选中新添加的字段
     const $newItem = $(`#field-list .menu-item[data-id="${newField.id}"]`);
     $newItem.trigger("click");
-    // 滚动到底部
-    $newItem[0].scrollIntoView({ behavior: "smooth", block: "center" });
+    if ($newItem[0]) $newItem[0].scrollIntoView({ behavior: "smooth", block: "center" });
   });
 
-  $("#add-index-btn").on("click", function () {
+  $(document).on("click", "#add-index-btn", function () {
     const newIndex = {
       id: "index-new-" + Date.now(),
       name: "new_index",
@@ -467,26 +443,30 @@ layui.use(["element", "form", "layer"], function () {
     // 选中新添加的索引
     const $newItem = $(`#index-list .menu-item[data-id="${newIndex.id}"]`);
     $newItem.trigger("click");
-    // 滚动到底部
-    $newItem[0].scrollIntoView({ behavior: "smooth", block: "center" });
+    if ($newItem[0]) $newItem[0].scrollIntoView({ behavior: "smooth", block: "center" });
   });
 
-  // 监听 Tab 切换事件
+  // Layui Tab 切换
   element.on("tab(edit-tabs)", function (data) {
-    if (data.index === 0) {
-      // 切换到字段标签
-      if (mockData.fields.length > 0) {
-        setTimeout(() => {
-          $("#field-list .menu-item").first().trigger("click");
-        }, 100);
-      }
-    } else if (data.index === 1) {
-      // 切换到索引标签
-      if (mockData.indexes.length > 0) {
-        setTimeout(() => {
-          $("#index-list .menu-item").first().trigger("click");
-        }, 100);
-      }
+    scheduleUpdateScroll();
+    if (data.index === 0 && mockData.fields.length > 0) {
+      setTimeout(function () {
+        $("#field-list .menu-item").first().trigger("click");
+      }, 50);
+    } else if (data.index === 1 && mockData.indexes.length > 0) {
+      setTimeout(function () {
+        $("#index-list .menu-item").first().trigger("click");
+      }, 50);
+    }
+  });
+
+  // 页面加载完成时向 VSCode 请求加载表字段和索引数据
+  if (vscode) {
+    vscode.postMessage({ command: "ready" });
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && vscode) {
+      vscode.postMessage({ command: "ready" });
     }
   });
 
@@ -585,6 +565,7 @@ layui.use(["element", "form", "layer"], function () {
 
       renderFieldList();
       renderIndexList();
+      scheduleUpdateScroll();
     } else if (command === "status") {
       const statusMsg = data.message || "操作完成";
       const statusType = data.success ? '成功' : '失败';

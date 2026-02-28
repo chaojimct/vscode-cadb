@@ -3,6 +3,7 @@ import { DataSourceProvider } from "../database_provider";
 import { Datasource } from "../entity/datasource";
 import path from "path";
 import { FormResult } from "../entity/dataloader";
+import { MySQLDataloader } from "../entity/mysql_dataloader";
 import { DatabaseManager } from "./database_manager";
 import { ResultWebviewProvider } from "../result_provider";
 import { DatabaseSelector } from "./database_selector";
@@ -199,8 +200,12 @@ function validateAndGetFilePath(
   return filePath;
 }
 
-async function editEntry(provider: DataSourceProvider, item: Datasource) {
-  let panel = null;
+async function editEntry(
+  provider: DataSourceProvider,
+  item: Datasource,
+  outputChannel: vscode.OutputChannel
+) {
+  let panel: vscode.WebviewPanel | null = null;
   let configType = "";
 
   if (item.type === "datasource") {
@@ -223,7 +228,342 @@ async function editEntry(provider: DataSourceProvider, item: Datasource) {
     item.type === "field" ||
     item.type === "index"
   ) {
-    panel = createWebview(provider, "tableEdit", `【${item.label}】编辑`);
+    const tableEditPanel = createWebview(
+      provider,
+      "tableEdit",
+      `【${item.label}】编辑`
+    );
+    // tableEdit: 先注册消息监听，等 webview 发 ready 后再加载表结构
+    tableEditPanel.webview.onDidReceiveMessage(async (message) => {
+      const tableNode =
+        item.type === "document"
+          ? item
+          : findAncestorByType(item, "document");
+      if (!tableNode?.dataloader) {
+        tableEditPanel.webview.postMessage({
+          command: "status",
+          success: false,
+          message: "无法获取表结构",
+        });
+        return;
+      }
+
+      if (message.command === "ready") {
+        try {
+          const data = await tableNode.dataloader.descTable(tableNode);
+          tableEditPanel.webview.postMessage({
+            command: "load",
+            configType: "",
+            data: data,
+          });
+        } catch (error) {
+          console.error("加载表结构失败:", error);
+          tableEditPanel.webview.postMessage({
+            command: "status",
+            success: false,
+            message: `加载失败: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          });
+        }
+        return;
+      }
+
+      if (message.command === "saveField") {
+        const loader = tableNode.dataloader;
+        if (!(loader instanceof MySQLDataloader)) {
+          tableEditPanel.webview.postMessage({
+            command: "status",
+            success: false,
+            message: "当前数据库类型不支持修改表结构",
+          });
+          return;
+        }
+        const databaseName = tableNode.parent?.parent?.label?.toString();
+        const tableName = tableNode.label?.toString();
+        if (!databaseName || !tableName) {
+          tableEditPanel.webview.postMessage({
+            command: "status",
+            success: false,
+            message: "无法获取数据库或表名",
+          });
+          return;
+        }
+        const { data: fieldData, originalName, isNew } = message;
+        if (!fieldData || !fieldData.name) {
+          tableEditPanel.webview.postMessage({
+            command: "status",
+            success: false,
+            message: "字段数据不完整",
+          });
+          return;
+        }
+        try {
+          const operation = isNew ? "add" : "modify";
+          const startTime = Date.now();
+          const sql = await loader.alterColumn({
+            databaseName,
+            tableName,
+            operation,
+            originalName,
+            field: {
+              name: fieldData.name,
+              type: fieldData.type || "varchar",
+              length: fieldData.length,
+              defaultValue: fieldData.defaultValue ?? null,
+              nullable: fieldData.nullable !== false,
+              autoIncrement: fieldData.autoIncrement,
+              primaryKey: fieldData.primaryKey,
+              comment: fieldData.comment || "",
+            },
+          });
+          const executionTime = (Date.now() - startTime) / 1000;
+          const outputChannel = vscode.window.createOutputChannel("CADB SQL");
+          const ts = new Date();
+          const timestamp = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, "0")}-${String(ts.getDate()).padStart(2, "0")} ${String(ts.getHours()).padStart(2, "0")}:${String(ts.getMinutes()).padStart(2, "0")}`;
+          outputChannel.appendLine(`[${timestamp} ${databaseName}, ${executionTime.toFixed(3)}s] ${sql.replace(/\s+/g, " ").trim()}`);
+          outputChannel.show(true);
+          tableEditPanel.webview.postMessage({
+            command: "status",
+            success: true,
+            message: "字段保存成功",
+          });
+          const freshData = await loader.descTable(tableNode);
+          tableEditPanel.webview.postMessage({
+            command: "load",
+            configType: "",
+            data: freshData,
+          });
+        } catch (error) {
+          console.error("保存字段失败:", error);
+          tableEditPanel.webview.postMessage({
+            command: "status",
+            success: false,
+            message: `保存失败: ${toErrorMessage(error)}`,
+          });
+        }
+        return;
+      }
+
+      if (message.command === "deleteField") {
+        const loader = tableNode.dataloader;
+        if (!(loader instanceof MySQLDataloader)) {
+          tableEditPanel.webview.postMessage({
+            command: "status",
+            success: false,
+            message: "当前数据库类型不支持修改表结构",
+          });
+          return;
+        }
+        const databaseName = tableNode.parent?.parent?.label?.toString();
+        const tableName = tableNode.label?.toString();
+        if (!databaseName || !tableName) {
+          tableEditPanel.webview.postMessage({
+            command: "status",
+            success: false,
+            message: "无法获取数据库或表名",
+          });
+          return;
+        }
+        const { fieldName } = message;
+        if (!fieldName) {
+          tableEditPanel.webview.postMessage({
+            command: "status",
+            success: false,
+            message: "缺少字段名",
+          });
+          return;
+        }
+        try {
+          const startTime = Date.now();
+          const sql = await loader.alterColumn({
+            databaseName,
+            tableName,
+            operation: "drop",
+            originalName: fieldName,
+          });
+          const executionTime = (Date.now() - startTime) / 1000;
+          const outputChannel = vscode.window.createOutputChannel("CADB SQL");
+          const ts = new Date();
+          const timestamp = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, "0")}-${String(ts.getDate()).padStart(2, "0")} ${String(ts.getHours()).padStart(2, "0")}:${String(ts.getMinutes()).padStart(2, "0")}`;
+          outputChannel.appendLine(`[${timestamp} ${databaseName}, ${executionTime.toFixed(3)}s] ${sql.replace(/\s+/g, " ").trim()}`);
+          outputChannel.show(true);
+          tableEditPanel.webview.postMessage({
+            command: "status",
+            success: true,
+            message: "字段删除成功",
+          });
+          const freshData = await loader.descTable(tableNode);
+          tableEditPanel.webview.postMessage({
+            command: "load",
+            configType: "",
+            data: freshData,
+          });
+        } catch (error) {
+          console.error("删除字段失败:", error);
+          tableEditPanel.webview.postMessage({
+            command: "status",
+            success: false,
+            message: `删除失败: ${toErrorMessage(error)}`,
+          });
+        }
+        return;
+      }
+
+      if (message.command === "saveIndex") {
+        const loader = tableNode.dataloader;
+        if (!(loader instanceof MySQLDataloader)) {
+          tableEditPanel.webview.postMessage({
+            command: "status",
+            success: false,
+            message: "当前数据库类型不支持修改表结构",
+          });
+          return;
+        }
+        const databaseName = tableNode.parent?.parent?.label?.toString();
+        const tableName = tableNode.label?.toString();
+        if (!databaseName || !tableName) {
+          tableEditPanel.webview.postMessage({
+            command: "status",
+            success: false,
+            message: "无法获取数据库或表名",
+          });
+          return;
+        }
+        const { data: indexData, originalName, isNew } = message;
+        if (!indexData || !indexData.name || !indexData.fields) {
+          tableEditPanel.webview.postMessage({
+            command: "status",
+            success: false,
+            message: "索引数据不完整",
+          });
+          return;
+        }
+        let fields = indexData.fields;
+        if (typeof fields === "string") {
+          fields = (fields as string).split(",").map((f: string) => f.trim()).filter(Boolean);
+        } else if (!Array.isArray(fields)) {
+          fields = [];
+        }
+        if (fields.length === 0) {
+          tableEditPanel.webview.postMessage({
+            command: "status",
+            success: false,
+            message: "索引至少需要选择一个字段",
+          });
+          return;
+        }
+        try {
+          const operation = isNew ? "add" : "modify";
+          const startTime = Date.now();
+          const sql = await loader.alterIndex({
+            databaseName,
+            tableName,
+            operation,
+            originalName,
+            index: {
+              name: indexData.name,
+              type: indexData.type || "index",
+              fields: fields as string[],
+              unique: indexData.unique,
+              comment: indexData.comment || "",
+            },
+          });
+          const executionTime = (Date.now() - startTime) / 1000;
+          const outputChannel = vscode.window.createOutputChannel("CADB SQL");
+          const ts = new Date();
+          const timestamp = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, "0")}-${String(ts.getDate()).padStart(2, "0")} ${String(ts.getHours()).padStart(2, "0")}:${String(ts.getMinutes()).padStart(2, "0")}`;
+          for (const line of sql.split("\n").filter(Boolean)) {
+            outputChannel.appendLine(`[${timestamp} ${databaseName}, ${executionTime.toFixed(3)}s] ${line.replace(/\s+/g, " ").trim()}`);
+          }
+          outputChannel.show(true);
+          tableEditPanel.webview.postMessage({
+            command: "status",
+            success: true,
+            message: "索引保存成功",
+          });
+          const freshData = await loader.descTable(tableNode);
+          tableEditPanel.webview.postMessage({
+            command: "load",
+            configType: "",
+            data: freshData,
+          });
+        } catch (error) {
+          console.error("保存索引失败:", error);
+          tableEditPanel.webview.postMessage({
+            command: "status",
+            success: false,
+            message: `保存失败: ${toErrorMessage(error)}`,
+          });
+        }
+        return;
+      }
+
+      if (message.command === "deleteIndex") {
+        const loader = tableNode.dataloader;
+        if (!(loader instanceof MySQLDataloader)) {
+          tableEditPanel.webview.postMessage({
+            command: "status",
+            success: false,
+            message: "当前数据库类型不支持修改表结构",
+          });
+          return;
+        }
+        const databaseName = tableNode.parent?.parent?.label?.toString();
+        const tableName = tableNode.label?.toString();
+        if (!databaseName || !tableName) {
+          tableEditPanel.webview.postMessage({
+            command: "status",
+            success: false,
+            message: "无法获取数据库或表名",
+          });
+          return;
+        }
+        const indexName = message.indexName;
+        if (!indexName) {
+          tableEditPanel.webview.postMessage({
+            command: "status",
+            success: false,
+            message: "缺少索引名",
+          });
+          return;
+        }
+        try {
+          const startTime = Date.now();
+          const sql = await loader.alterIndex({
+            databaseName,
+            tableName,
+            operation: "drop",
+            originalName: indexName,
+          });
+          const executionTime = (Date.now() - startTime) / 1000;
+          const ts = new Date();
+          const timestamp = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, "0")}-${String(ts.getDate()).padStart(2, "0")} ${String(ts.getHours()).padStart(2, "0")}:${String(ts.getMinutes()).padStart(2, "0")}`;
+          outputChannel.appendLine(`[${timestamp} ${databaseName}, ${executionTime.toFixed(3)}s] ${sql.replace(/\s+/g, " ").trim()}`);
+          outputChannel.show(true);
+          tableEditPanel.webview.postMessage({
+            command: "status",
+            success: true,
+            message: "索引删除成功",
+          });
+          const freshData = await loader.descTable(tableNode);
+          tableEditPanel.webview.postMessage({
+            command: "load",
+            configType: "",
+            data: freshData,
+          });
+        } catch (error) {
+          console.error("删除索引失败:", error);
+          tableEditPanel.webview.postMessage({
+            command: "status",
+            success: false,
+            message: `删除失败: ${toErrorMessage(error)}`,
+          });
+        }
+        return;
+      }
+    });
+    return;
   } else {
     return;
   }
@@ -240,6 +580,7 @@ async function editEntry(provider: DataSourceProvider, item: Datasource) {
     );
     return;
   }
+  const settingsPanel = panel!;
   if (configType === "database") {
     const databaseData = data?.rowData?.[0] || {};
     let collations: Datasource[] = [];
@@ -255,7 +596,7 @@ async function editEntry(provider: DataSourceProvider, item: Datasource) {
       value: c.label?.toString() || "",
     }));
 
-    panel.webview.postMessage({
+    settingsPanel.webview.postMessage({
       command: "load",
       configType: configType,
       data: {
@@ -266,20 +607,20 @@ async function editEntry(provider: DataSourceProvider, item: Datasource) {
       options: { collation: options },
     });
   } else {
-    panel.webview.postMessage({
+    settingsPanel.webview.postMessage({
       command: "load",
       configType: configType,
       data: data,
     });
   }
 
-  panel.webview.onDidReceiveMessage(async (message) => {
+  settingsPanel.webview.onDidReceiveMessage(async (message) => {
     switch (message.command) {
       case "save":
-        await handleSettingsSaveMessage(provider, item, panel, message.payload);
+        await handleSettingsSaveMessage(provider, item, settingsPanel, message.payload);
         break;
       case "test":
-        await handleSettingsTestMessage(provider, item, panel, message.payload);
+        await handleSettingsTestMessage(provider, item, settingsPanel, message.payload);
         break;
     }
   });
@@ -549,7 +890,8 @@ async function addEntry(item: any, provider: DataSourceProvider) {
 
 export function registerDatasourceCommands(
   provider: DataSourceProvider,
-  treeView: vscode.TreeView<Datasource>
+  treeView: vscode.TreeView<Datasource>,
+  outputChannel: vscode.OutputChannel
 ): vscode.Disposable[] {
   const disposables: vscode.Disposable[] = [];
 
@@ -603,7 +945,7 @@ export function registerDatasourceCommands(
 
   disposables.push(
     vscode.commands.registerCommand("cadb.datasource.edit", (item) =>
-      editEntry(provider, item)
+      editEntry(provider, item, outputChannel)
     )
   );
 
