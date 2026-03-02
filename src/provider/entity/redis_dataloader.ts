@@ -1,6 +1,7 @@
 import { createClient, RedisClientType } from "redis";
 import { Uri } from "vscode";
 import {
+  ColDef,
   Dataloader,
   FormResult,
   PromiseResult,
@@ -222,8 +223,119 @@ export class RedisDataloader implements Dataloader {
     }
     return Promise.resolve(ds.children);
   }
-  listData(ds: Datasource): Promise<TableResult> {
-    throw new Error("Method not implemented.");
+  async listData(ds: Datasource): Promise<TableResult> {
+    const startTime = Date.now();
+
+    if (!this.client.isOpen) {
+      await this.client.connect();
+    }
+
+    const key = ds.label?.toString() || "";
+    const typeLabel = ds.parent?.tooltip?.toString() || "";
+    const dbNode = ds.parent?.parent;
+
+    if (dbNode?.label) {
+      const dbLabel = dbNode.label.toString();
+      const match = dbLabel.match(/^DB(\d+)$/i);
+      if (match) {
+        await this.client.select(parseInt(match[1], 10));
+      }
+    }
+
+    let columnDefs: ColDef[] = [];
+    let rowData: Record<string, any>[] = [];
+    let title = key;
+
+    const valueColDef = {
+      field: "value",
+      cellEditor: "agLargeTextCellEditor",
+      cellEditorPopup: true,
+    };
+    const fieldsColDef = {
+      field: "fields",
+      cellEditor: "agLargeTextCellEditor",
+      cellEditorPopup: true,
+    };
+
+    if (/^string$/i.test(typeLabel)) {
+      const value = await this.client.get(key);
+      columnDefs = [{ field: "key" }, valueColDef];
+      rowData = [{ key, value: value ?? "" }];
+      title = `String: ${key}`;
+    } else if (/^List$/i.test(typeLabel)) {
+      const values: string[] = await this.client.lRange(key, 0, -1);
+      columnDefs = [{ field: "index" }, valueColDef];
+      rowData = values.map((v, i) => ({ index: i, value: v }));
+      title = `List: ${key}`;
+    } else if (/^Set$/i.test(typeLabel)) {
+      const values: string[] = await this.client.sMembers(key);
+      columnDefs = [valueColDef];
+      rowData = values.map((v) => ({ value: v }));
+      title = `Set: ${key}`;
+    } else if (/^Sorted Set$/i.test(typeLabel) || /^zset$/i.test(typeLabel)) {
+      let entries: Array<{ value: string; score: number }> = [];
+      try {
+        const result = await this.client.zRange(key, 0, -1, {
+          WITHSCORES: true,
+        });
+        if (Array.isArray(result)) {
+          for (let i = 0; i < result.length; i += 2) {
+            entries.push({
+              value: String(result[i]),
+              score: Number(result[i + 1]),
+            });
+          }
+        } else if (result && typeof result === "object" && !Array.isArray(result)) {
+          entries = Object.entries(result).map(([v, s]) => ({
+            value: v,
+            score: Number(s),
+          }));
+        }
+      } catch {
+        const arr = (await this.client.sendCommand([
+          "ZRANGE",
+          key,
+          "0",
+          "-1",
+          "WITHSCORES",
+        ])) as string[];
+        for (let i = 0; i < arr.length; i += 2) {
+          entries.push({ value: arr[i], score: Number(arr[i + 1]) });
+        }
+      }
+      columnDefs = [{ field: "score" }, valueColDef];
+      rowData = entries.map((e) => ({ score: e.score, value: e.value }));
+      title = `ZSet: ${key}`;
+    } else if (/^Hash$/i.test(typeLabel) || /^hash$/i.test(typeLabel)) {
+      const obj = await this.client.hGetAll(key);
+      columnDefs = [{ field: "field" }, valueColDef];
+      rowData = Object.entries(obj).map(([f, v]) => ({ field: f, value: v ?? "" }));
+      title = `Hash: ${key}`;
+    } else if (/^Stream$/i.test(typeLabel) || /^stream$/i.test(typeLabel)) {
+      const streamData = await this.client.xRange(key, "-", "+");
+      columnDefs = [{ field: "id" }, fieldsColDef];
+      rowData = streamData.map((e) => ({
+        id: e.id,
+        fields: JSON.stringify(e.message),
+      }));
+      title = `Stream: ${key}`;
+    } else {
+      return {
+        title: key,
+        columnDefs: [{ field: "key" }, valueColDef],
+        rowData: [],
+        queryTime: (Date.now() - startTime) / 1000,
+      };
+    }
+
+    const queryTime = (Date.now() - startTime) / 1000;
+
+    return {
+      title,
+      columnDefs,
+      rowData,
+      queryTime,
+    };
   }
   descDatasource(ds: Datasource): Promise<FormResult | undefined> {
     return Promise.resolve({

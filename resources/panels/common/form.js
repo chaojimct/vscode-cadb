@@ -1038,6 +1038,11 @@ class DynamicForm {
 
     $form.find("[lay-verify]").each((index, element) => {
       const $element = $(element);
+      // 跳过隐藏字段的校验（如 dbType 为 redis 时的 endpoint 等）
+      const $formItem = $element.closest(".layui-form-item");
+      if ($formItem.length && !$formItem.is(":visible")) {
+        return true; // continue
+      }
       const value = $element.val();
       const verify = $element.attr("lay-verify");
 

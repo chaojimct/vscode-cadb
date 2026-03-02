@@ -1481,91 +1481,72 @@ async function keyValueResultView(
   datasource: Datasource,
   provider: DataSourceProvider
 ) {
+  const key = datasource.label?.toString() || "";
+  const dbNode = datasource.parent?.parent;
+  const databaseName = dbNode?.label?.toString() || "";
+  const connectionName = datasource.dataloader?.rootNode().label?.toString() || "";
+  const panelKey = `${connectionName}|${databaseName}|${key}`;
+
+  const existing = openTablePanels.get(panelKey);
+  if (existing) {
+    existing.reveal();
+    const data = await datasource.listData();
+    if (data) {
+      setTimeout(() => {
+        existing.webview.postMessage({ command: "load", data });
+      }, 150);
+    }
+    return;
+  }
+
+  let data: Awaited<ReturnType<Datasource["listData"]>>;
   try {
-    const key = datasource.label?.toString() || "";
-    const typeLabel = datasource.parent?.tooltip || "";
-    const dbNode = datasource.parent?.parent; // DBx
-    const connectionNode = datasource.dataloader?.rootNode();
-
-    // 获取 Redis 客户端
-    const loader: any = datasource.dataloader;
-    const client: any = loader?.client;
-    if (!client) {
-      vscode.window.showErrorMessage("Redis 客户端未初始化");
-      return;
-    }
-    if (!client.isOpen) {
-      await client.connect();
-    }
-
-    // 选择数据库（DB0/DB1...）
-    if (dbNode?.label) {
-      const dbLabel = dbNode.label.toString(); // e.g. "DB0"
-      const match = dbLabel.match(/^DB(\d+)$/i);
-      if (match) {
-        await client.select(parseInt(match[1], 10));
-      }
-    }
-
-    const t0 = Date.now();
-    let columnDefs: Array<{ field: string; key?: string }> = [];
-    let rowData: any[] = [];
-    let title = key;
-
-    if (/^List$/i.test(String(typeLabel))) {
-      const values: string[] = await client.lRange(key, 0, -1);
-      columnDefs = [{ field: "index" }, { field: "value" }];
-      rowData = values.map((v, i) => ({ index: i, value: v }));
-      title = `List: ${key}`;
-    } else if (/^Set$/i.test(String(typeLabel))) {
-      const values: string[] = await client.sMembers(key);
-      columnDefs = [{ field: "value" }];
-      rowData = values.map((v) => ({ value: v }));
-      title = `Set: ${key}`;
-    } else if (/^Sorted Set$/i.test(String(typeLabel)) || /^zset$/i.test(String(typeLabel))) {
-      let entries: Array<{ value: string; score: number }> = [];
-      if (typeof client.zRangeWithScores === "function") {
-        entries = await client.zRangeWithScores(key, 0, -1);
-      } else {
-        const arr: string[] = await client.zRange(key, 0, -1, { WITHSCORES: true });
-        for (let i = 0; i < arr.length; i += 2) {
-          entries.push({ value: arr[i], score: Number(arr[i + 1]) });
-        }
-      }
-      columnDefs = [{ field: "score" }, { field: "value" }];
-      rowData = entries.map((e) => ({ score: e.score, value: e.value }));
-      title = `ZSet: ${key}`;
-    } else {
-      vscode.window.showWarningMessage(`暂不支持查看类型: ${typeLabel}`);
-      return;
-    }
-
-    const queryTime = (Date.now() - t0) / 1000;
-
-    const panel = createWebview(provider, "items", title || "键值数据");
-    panel.webview.postMessage({
-      command: "load",
-      data: {
-        title,
-        columnDefs,
-        rowData,
-        queryTime,
-      },
-    });
-    panel.webview.onDidReceiveMessage(async (message) => {
-      switch (message.command) {
-        case "refresh": {
-          // 简单复用上面逻辑重新加载
-          await keyValueResultView(datasource, provider);
-          break;
-        }
-      }
-    });
+    data = await datasource.listData();
   } catch (error) {
     vscode.window.showErrorMessage(
       `加载键值数据失败: ${error instanceof Error ? error.message : String(error)}`
     );
+    return;
   }
+
+  if (!data?.columnDefs?.length) {
+    vscode.window.showWarningMessage("暂无数据或暂不支持该类型");
+    return;
+  }
+
+  const panel = createWebview(
+    provider,
+    "datasourceTable",
+    data?.title || key || "键值数据"
+  );
+  openTablePanels.set(panelKey, panel);
+  panel.onDidDispose(() => openTablePanels.delete(panelKey));
+
+  panel.webview.onDidReceiveMessage(async (message) => {
+    if (message.command === "ready") {
+      const freshData = await datasource.listData();
+      if (freshData) {
+        panel.webview.postMessage({ command: "load", data: freshData });
+      }
+      return;
+    }
+    switch (message.command) {
+      case "refresh": {
+        const freshData = await datasource.listData();
+        if (freshData) {
+          panel.webview.postMessage({ command: "load", data: freshData });
+        }
+        break;
+      }
+      case "save":
+        panel.webview.postMessage({
+          command: "status",
+          success: false,
+          message: "Redis 键值数据不支持编辑保存",
+        });
+        break;
+    }
+  });
 }
 
 export function registerDatasourceItemCommands(

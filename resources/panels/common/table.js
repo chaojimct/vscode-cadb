@@ -107,11 +107,16 @@ class DatabaseTableData {
       const type = (c.type != null ? String(c.type) : "").toLowerCase();
       const colDef = {
         field: c.field,
-        headerName: c.field.toUpperCase(),
-        width: 120,
-        minWidth: 80,
+        headerName: (c.headerName != null ? c.headerName : c.field.toUpperCase()),
+        width: c.width != null ? c.width : 120,
+        minWidth: c.minWidth != null ? c.minWidth : 80,
         ...this._getFilterConfig(c, type),
         ...this._getComparatorConfig(c, type),
+        // 透传 AG Grid 列扩展配置（如 cellEditor、cellEditorPopup 等）
+        ...(c.cellEditor != null && {
+          cellEditor: c.cellEditor,
+          cellEditorPopup: c.cellEditorPopup != null ? c.cellEditorPopup : true,
+        }),
       };
       defs.push(colDef);
     });
