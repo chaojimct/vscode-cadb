@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Redis Pub/Sub</title>
+    <meta http-equiv="Content-Security-Policy" content="{{csp}}" />
+    <link rel="stylesheet" href="{{node-resources-uri}}/layui/dist/css/layui.css" />
+    <link rel="stylesheet" href="{{resources-uri}}/common/layui-theme.css" />
+    <link rel="stylesheet" href="{{resources-uri}}/redis-pubsub/redis-pubsub.css" />
+  </head>
+  <body>
+    <div class="redis-pubsub">
+      <div class="pubsub-section">
+        <h3>订阅</h3>
+        <div class="layui-form-item">
+          <input type="text" id="sub-channel" class="layui-input" placeholder="输入频道名后点击订阅" />
+          <button type="button" id="btn-subscribe" class="layui-btn layui-btn-sm">订阅</button>
+        </div>
+        <div class="channel-list">
+          <span class="label">已订阅:</span>
+          <ul id="channel-list"></ul>
+        </div>
+      </div>
+      <div class="pubsub-section">
+        <h3>发布</h3>
+        <div class="layui-form-item">
+          <input type="text" id="pub-channel" class="layui-input" placeholder="频道名" />
+        </div>
+        <div class="layui-form-item">
+          <textarea id="pub-message" class="layui-textarea" placeholder="消息内容" rows="3"></textarea>
+        </div>
+        <button type="button" id="btn-publish" class="layui-btn layui-btn-sm">发布</button>
+      </div>
+      <div class="pubsub-section messages-section">
+        <h3>消息记录</h3>
+        <div class="message-toolbar">
+          <button type="button" id="btn-clear" class="layui-btn layui-btn-xs">清空</button>
+        </div>
+        <ul id="message-list"></ul>
+      </div>
+    </div>
+    <script nonce="{{resource-nonce}}" src="{{node-resources-uri}}/jquery/dist/jquery.min.js"></script>
+    <script nonce="{{resource-nonce}}" src="{{node-resources-uri}}/layui/dist/layui.js"></script>
+    <script nonce="{{resource-nonce}}" src="{{resources-uri}}/redis-pubsub/redis-pubsub.js"></script>
+  </body>
+</html>

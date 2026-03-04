@@ -275,23 +275,6 @@ export class RedisDataloader implements Dataloader {
     } else if (/^Sorted Set$/i.test(typeLabel) || /^zset$/i.test(typeLabel)) {
       let entries: Array<{ value: string; score: number }> = [];
       try {
-        const result = await this.client.zRange(key, 0, -1, {
-          WITHSCORES: true,
-        });
-        if (Array.isArray(result)) {
-          for (let i = 0; i < result.length; i += 2) {
-            entries.push({
-              value: String(result[i]),
-              score: Number(result[i + 1]),
-            });
-          }
-        } else if (result && typeof result === "object" && !Array.isArray(result)) {
-          entries = Object.entries(result).map(([v, s]) => ({
-            value: v,
-            score: Number(s),
-          }));
-        }
-      } catch {
         const arr = (await this.client.sendCommand([
           "ZRANGE",
           key,
@@ -302,6 +285,8 @@ export class RedisDataloader implements Dataloader {
         for (let i = 0; i < arr.length; i += 2) {
           entries.push({ value: arr[i], score: Number(arr[i + 1]) });
         }
+      } catch {
+        entries = [];
       }
       columnDefs = [{ field: "score" }, valueColDef];
       rowData = entries.map((e) => ({ score: e.score, value: e.value }));
@@ -365,8 +350,98 @@ export class RedisDataloader implements Dataloader {
    * 保存表格数据（Redis 不支持表结构更新）
    */
   async saveData(params: SaveDataParams): Promise<SaveResult> {
-    // Redis 是键值存储，不支持类似 SQL 的 UPDATE 操作
-    // 如果需要更新 Redis 数据，应该使用其他方法（如直接操作 key-value）
-    throw new Error("Redis 不支持表结构数据保存操作");
+    throw new Error("Redis 请使用 saveKeyData 保存键值数据");
+  }
+
+  /**
+   * 保存当前 key 的编辑结果（String/List/Set/ZSet/Hash）
+   */
+  async saveKeyData(params: {
+    key: string;
+    dbIndex: number;
+    keyType: string;
+    changes: Array<{ original: Record<string, any>; full: Record<string, any> }>;
+  }): Promise<SaveResult> {
+    const { key, dbIndex, keyType, changes } = params;
+    if (!this.client.isOpen) await this.client.connect();
+    await this.client.select(dbIndex);
+
+    const typeLabel = keyType.toLowerCase();
+    let successCount = 0;
+    let errorCount = 0;
+    const errors: string[] = [];
+
+    try {
+      if (/^string$/i.test(keyType)) {
+        const row = changes[0]?.full;
+        if (row?.value !== undefined) {
+          await this.client.set(key, String(row.value));
+          successCount = 1;
+        }
+      } else if (/^list$/i.test(keyType)) {
+        for (const { original, full } of changes) {
+          const idx = original?.index;
+          if (typeof idx !== "number") continue;
+          const val = full?.value != null ? String(full.value) : "";
+          await this.client.lSet(key, idx, val);
+          successCount++;
+        }
+      } else if (/^set$/i.test(keyType)) {
+        for (const { original, full } of changes) {
+          const oldVal = original?.value != null ? String(original.value) : "";
+          const newVal = full?.value != null ? String(full.value) : "";
+          if (oldVal !== newVal) {
+            if (oldVal) await this.client.sRem(key, oldVal);
+            if (newVal) await this.client.sAdd(key, newVal);
+            successCount++;
+          }
+        }
+      } else if (/^sorted set$/i.test(keyType) || /^zset$/i.test(keyType)) {
+        for (const { full } of changes) {
+          const score = Number(full?.score);
+          const value = full?.value != null ? String(full.value) : "";
+          if (value === "" && !Number.isNaN(score)) continue;
+          await this.client.zAdd(key, { score: Number.isNaN(score) ? 0 : score, value });
+          successCount++;
+        }
+      } else if (/^hash$/i.test(keyType)) {
+        for (const { full } of changes) {
+          const field = full?.field != null ? String(full.field) : "";
+          const value = full?.value != null ? String(full.value) : "";
+          if (field) {
+            await this.client.hSet(key, field, value);
+            successCount++;
+          }
+        }
+      } else if (/^stream$/i.test(keyType)) {
+        for (const { original, full } of changes) {
+          const id = original?.id ?? full?.id;
+          const fieldsStr = full?.fields;
+          if (!id || fieldsStr == null) continue;
+          try {
+            const obj = typeof fieldsStr === "string" ? JSON.parse(fieldsStr) : fieldsStr;
+            await this.client.xAdd(key, id, obj);
+            successCount++;
+          } catch (e) {
+            errorCount++;
+            errors.push(e instanceof Error ? e.message : String(e));
+          }
+        }
+      } else {
+        return { successCount: 0, errorCount: 1, errors: ["不支持的键类型: " + keyType] };
+      }
+    } catch (e) {
+      errorCount++;
+      errors.push(e instanceof Error ? e.message : String(e));
+    }
+
+    return { successCount, errorCount, errors };
+  }
+
+  /**
+   * 复制连接用于 Pub/Sub（订阅需独立连接）
+   */
+  duplicateClient(): RedisClientType {
+    return this.client.duplicate();
   }
 }

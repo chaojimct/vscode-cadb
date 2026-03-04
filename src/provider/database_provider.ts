@@ -66,6 +66,15 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
         ),
         "utf-8"
       ),
+      redisPubsub: readFileSync(
+        path.join(
+          this.context.extensionPath,
+          "resources",
+          "panels",
+          "redis-pubsub.html"
+        ),
+        "utf-8"
+      ),
     };
 
     // 加载树状态

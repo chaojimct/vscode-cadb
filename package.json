@@ -100,6 +100,11 @@
         "icon": "$(attach)"
       },
       {
+        "command": "cadb.redis.pubsub",
+        "title": "Pub/Sub",
+        "icon": "$(comment-discussion)"
+      },
+      {
         "command": "cadb.file.execute",
         "title": "执行",
         "icon": "$(play)"
@@ -225,6 +230,11 @@
         {
           "command": "cadb.collection.useDatabase",
           "when": "view == datasource && viewItem == collection",
+          "group": "context"
+        },
+        {
+          "command": "cadb.redis.pubsub",
+          "when": "view == datasource && viewItem == datasource",
           "group": "context"
         },
         {

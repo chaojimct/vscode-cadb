@@ -4,10 +4,12 @@ import { Datasource } from "../entity/datasource";
 import path from "path";
 import { FormResult } from "../entity/dataloader";
 import { MySQLDataloader } from "../entity/mysql_dataloader";
+import { RedisDataloader } from "../entity/redis_dataloader";
 import { DatabaseManager } from "./database_manager";
 import { ResultWebviewProvider } from "../result_provider";
 import { DatabaseSelector } from "./database_selector";
 import { createWebview } from "../webview_helper";
+import type { RedisClientType } from "redis";
 
 /**
  * 将 unknown 错误转换为可展示的消息文本
@@ -1538,13 +1540,170 @@ async function keyValueResultView(
         }
         break;
       }
-      case "save":
-        panel.webview.postMessage({
-          command: "status",
-          success: false,
-          message: "Redis 键值数据不支持编辑保存",
-        });
+      case "save": {
+        const loader = datasource.dataloader as import("../entity/redis_dataloader").RedisDataloader;
+        if (!loader?.saveKeyData) {
+          panel.webview.postMessage({
+            command: "status",
+            success: false,
+            message: "当前数据源不支持保存",
+          });
+          break;
+        }
+        const keyType = datasource.parent?.tooltip?.toString() ?? "";
+        const dbLabel = databaseName || "";
+        const dbMatch = dbLabel.match(/^DB(\d+)$/i);
+        const dbIndex = dbMatch ? parseInt(dbMatch[1], 10) : 0;
+        const rows = Array.isArray(message.data) ? message.data : [];
+        const changes = rows.map((r: any) => ({
+          original: r.original || {},
+          full: r.full || r.current || r,
+        }));
+        try {
+          const result = await loader.saveKeyData({
+            key,
+            dbIndex,
+            keyType,
+            changes,
+          });
+          if (result.errorCount === 0) {
+            panel.webview.postMessage({
+              command: "status",
+              success: true,
+              message: `成功保存 ${result.successCount} 处修改`,
+            });
+            const freshData = await datasource.listData();
+            if (freshData) {
+              panel.webview.postMessage({ command: "load", data: freshData });
+            }
+          } else {
+            panel.webview.postMessage({
+              command: "status",
+              success: false,
+              message: `保存完成：成功 ${result.successCount}，失败 ${result.errorCount}。${result.errors[0] ?? ""}`,
+            });
+          }
+        } catch (err) {
+          panel.webview.postMessage({
+            command: "status",
+            success: false,
+            message: `保存失败: ${err instanceof Error ? err.message : String(err)}`,
+          });
+        }
         break;
+      }
+    }
+  });
+}
+
+/** Redis Pub/Sub 面板：每个连接一个，用 connectionName 做 key */
+const openRedisPubsubPanels = new Map<string, vscode.WebviewPanel>();
+
+async function openRedisPubsubView(
+  item: Datasource,
+  provider: DataSourceProvider
+) {
+  if (item.type !== "datasource" || item.data?.dbType !== "redis") {
+    vscode.window.showWarningMessage("Pub/Sub 仅支持 Redis 连接");
+    return;
+  }
+
+  const connectionName = item.label?.toString() || "";
+  const existing = openRedisPubsubPanels.get(connectionName);
+  if (existing) {
+    existing.reveal();
+    return;
+  }
+
+  const panel = createWebview(
+    provider,
+    "redisPubsub",
+    `Redis Pub/Sub - ${connectionName}`
+  );
+  openRedisPubsubPanels.set(connectionName, panel);
+
+  let subscriberClient: RedisClientType | null = null;
+
+  panel.onDidDispose(() => {
+    openRedisPubsubPanels.delete(connectionName);
+    if (subscriberClient?.isOpen) {
+      subscriberClient.quit().catch(() => {});
+      subscriberClient = null;
+    }
+  });
+
+  const connectionData = provider.getConnections().find((c) => c.name === connectionName);
+  if (!connectionData) {
+    panel.webview.postMessage({ command: "status", success: false, message: "连接配置不存在" });
+    return;
+  }
+
+  let loader: RedisDataloader | null = null;
+
+  panel.webview.onDidReceiveMessage(async (message) => {
+    if (message.command === "ready") {
+      return;
+    }
+
+    if (!loader) {
+          const ds = await Datasource.createInstance(
+            provider.getConnections(),
+            provider.context,
+            connectionData,
+            false
+          );
+          loader = ds.dataloader instanceof RedisDataloader ? (ds.dataloader as RedisDataloader) : null;
+        }
+
+    if (!loader) {
+      panel.webview.postMessage({ command: "status", success: false, message: "无法创建 Redis 连接" });
+      return;
+    }
+
+    try {
+      if (message.command === "subscribe") {
+        const channel = String(message.channel ?? "").trim();
+        if (!channel) return;
+
+        if (!subscriberClient) {
+          subscriberClient = loader.duplicateClient();
+          await subscriberClient.connect();
+          subscriberClient.on("message", (ch: string, payload: string) => {
+            if (panel.webview) {
+              panel.webview.postMessage({ command: "message", channel: ch, payload });
+            }
+          });
+        }
+
+        await subscriberClient.subscribe(channel, (payload) => {
+          if (panel.webview) {
+            panel.webview.postMessage({ command: "message", channel, payload });
+          }
+        });
+        panel.webview.postMessage({ command: "subscribed", channel });
+      } else if (message.command === "unsubscribe") {
+        const channel = String(message.channel ?? "").trim();
+        if (subscriberClient && channel) {
+          await subscriberClient.unsubscribe(channel);
+          panel.webview.postMessage({ command: "unsubscribed", channel });
+        }
+      } else if (message.command === "publish") {
+        const channel = String(message.channel ?? "").trim();
+        const messagePayload = message.message ?? "";
+        if (!channel) {
+          panel.webview.postMessage({ command: "status", success: false, message: "请输入频道名" });
+          return;
+        }
+        if (!loader.client.isOpen) await loader.client.connect();
+        await loader.client.publish(channel, messagePayload);
+        panel.webview.postMessage({ command: "status", success: true, message: "发布成功" });
+      }
+    } catch (err) {
+      panel.webview.postMessage({
+        command: "status",
+        success: false,
+        message: err instanceof Error ? err.message : String(err),
+      });
     }
   });
 }
@@ -1564,6 +1723,11 @@ export function registerDatasourceItemCommands(
     } else {
       vscode.window.showWarningMessage(`${dbType} 数据源查看数据功能待实现`);
     }
+  });
+
+  vscode.commands.registerCommand("cadb.redis.pubsub", async (args) => {
+    const item = args as Datasource;
+    await openRedisPubsubView(item, provider);
   });
 
   // 注册打开 SQL 文件命令
