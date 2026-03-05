@@ -35,6 +35,8 @@ export interface DatasourceInputData {
   name: string;
   tooltip: string;
   extra?: string;
+  /** 字段是否允许为空（MySQL 等），用于 TreeItem 图标 */
+  nullable?: boolean;
 
   dbType?: "mysql" | "redis" | "oss";
   database?: string;
@@ -300,7 +302,9 @@ export class Datasource extends vscode.TreeItem {
   private initFieldType(input: DatasourceInputData): void {
     if (input.type === "field") {
       this.description = input.extra;
-      this.iconPath = new vscode.ThemeIcon("symbol-constant");
+      this.iconPath = new vscode.ThemeIcon(
+        input.nullable !== false ? "symbol-constant" : "symbol-event"
+      );
     } else {
       this.iconPath = new vscode.ThemeIcon("folder");
     }

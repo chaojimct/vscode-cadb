@@ -293,7 +293,7 @@ export class RedisDataloader implements Dataloader {
       title = `ZSet: ${key}`;
     } else if (/^Hash$/i.test(typeLabel) || /^hash$/i.test(typeLabel)) {
       const obj = await this.client.hGetAll(key);
-      columnDefs = [{ field: "field" }, valueColDef];
+      columnDefs = [{ field: "field", editable: false }, valueColDef];
       rowData = Object.entries(obj).map(([f, v]) => ({ field: f, value: v ?? "" }));
       title = `Hash: ${key}`;
     } else if (/^Stream$/i.test(typeLabel) || /^stream$/i.test(typeLabel)) {
@@ -307,7 +307,7 @@ export class RedisDataloader implements Dataloader {
     } else {
       return {
         title: key,
-        columnDefs: [{ field: "key" }, valueColDef],
+        columnDefs: [{ field: "key", editable: false }, valueColDef],
         rowData: [],
         queryTime: (Date.now() - startTime) / 1000,
       };

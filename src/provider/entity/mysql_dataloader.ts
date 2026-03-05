@@ -640,7 +640,8 @@ ORDER BY
 SELECT 
 	COLUMN_NAME AS name,
 	COLUMN_TYPE AS ctype,
-	COLUMN_COMMENT AS cc
+	COLUMN_COMMENT AS cc,
+	IS_NULLABLE AS is_nullable
 FROM 
     information_schema.COLUMNS 
 WHERE 
@@ -662,6 +663,7 @@ ORDER BY
                     tooltip: row["cc"] as string,
                     extra: row["ctype"] as string,
                     type: "field",
+                    nullable: (row["is_nullable"] as string) === "YES",
                   },
                   this,
                   ds
@@ -835,65 +837,108 @@ ORDER BY
    * 保存表格数据（根据主键更新）
    */
   async saveData(params: SaveDataParams): Promise<SaveResult> {
-    const { tableName, databaseName, primaryKeyField, rows } = params;
-    
-    // 确保连接可用
+    const { tableName, databaseName, primaryKeyField, rows, deletedRows } = params;
+
     await this.ensureConnection();
-    
-    // 切换到指定数据库
     await new Promise<void>((resolve, reject) => {
       this.conn.changeUser({ database: databaseName }, (err: any) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve();
-        }
+        if (err) reject(err);
+        else resolve();
       });
     });
 
     let successCount = 0;
     let errorCount = 0;
     const errors: string[] = [];
+    const executedSql: string[] = [];
+
+    const escapeVal = (v: any): string => {
+      if (v === null || v === undefined) return "NULL";
+      const s = String(v).replace(/'/g, "''");
+      return `'${s}'`;
+    };
+
+    // 先执行标记删除的行的 DELETE
+    if (deletedRows?.length) {
+      for (const { id } of deletedRows) {
+        try {
+          const deleteSql = `DELETE FROM \`${databaseName}\`.\`${tableName}\` WHERE \`${primaryKeyField}\` = ${escapeVal(id)}`;
+          executedSql.push(deleteSql);
+          await new Promise<void>((resolve, reject) => {
+            this.conn.query(deleteSql, (err: any) => {
+              if (err) reject(err);
+              else resolve();
+            });
+          });
+          successCount++;
+        } catch (error) {
+          errorCount++;
+          errors.push(error instanceof Error ? error.message : String(error));
+        }
+      }
+    }
 
     for (const row of rows) {
       try {
-        const id = row.id;
-        const updated = row.updated;
+        const isNew = !!row.isNew;
+        const full = row.full || row.original || {};
+        const updated = row.updated || {};
 
-        if (!id) {
-          errors.push(`行缺少主键值`);
+        if (isNew) {
+          // 新行：INSERT（主键为空时省略该列以支持自增）
+          const allKeys = Object.keys(full).filter((k) => !String(k).startsWith("__"));
+          const insertKeys = allKeys.filter(
+            (k) =>
+              k !== primaryKeyField ||
+              (full[k] != null && String(full[k]).trim() !== "")
+          );
+          if (insertKeys.length === 0) {
+            errors.push("新行无有效字段");
+            errorCount++;
+            continue;
+          }
+          const cols = insertKeys.map((k) => `\`${k}\``).join(", ");
+          const vals = insertKeys.map((k) => escapeVal(full[k])).join(", ");
+          const insertSql = `INSERT INTO \`${databaseName}\`.\`${tableName}\` (${cols}) VALUES (${vals})`;
+          executedSql.push(insertSql);
+          await new Promise<void>((resolve, reject) => {
+            this.conn.query(insertSql, (err: any) => {
+              if (err) reject(err);
+              else resolve();
+            });
+          });
+          successCount++;
+          continue;
+        }
+
+        const id = row.id;
+        if (id === undefined || id === null || id === "") {
+          errors.push("行缺少主键值");
           errorCount++;
           continue;
         }
 
         if (!updated || Object.keys(updated).length === 0) {
-          continue; // 跳过没有实际更新的行
+          continue;
         }
 
-        // 构建 UPDATE 语句
         const setClause = Object.keys(updated)
           .map((key) => {
             const value = updated[key];
             if (value === null || value === undefined) {
               return `\`${key}\` = NULL`;
-            } else {
-              // 转义单引号
-              const escapedValue = String(value).replace(/'/g, "''");
-              return `\`${key}\` = '${escapedValue}'`;
             }
+            return `\`${key}\` = '${String(value).replace(/'/g, "''")}'`;
           })
           .join(", ");
 
-        const updateSql = `UPDATE \`${databaseName}\`.\`${tableName}\` SET ${setClause} WHERE \`${primaryKeyField}\` = '${String(id).replace(/'/g, "''")}'`;
+        const updateSql = `UPDATE \`${databaseName}\`.\`${tableName}\` SET ${setClause} WHERE \`${primaryKeyField}\` = ${escapeVal(id)}`;
+        executedSql.push(updateSql);
 
-        // 执行更新
         await new Promise<void>((resolve, reject) => {
           this.conn.query(updateSql, (err: any) => {
-            if (err) {
-              reject(err);
-            } else {
-              resolve();
-            }
+            if (err) reject(err);
+            else resolve();
           });
         });
 
@@ -910,6 +955,7 @@ ORDER BY
       successCount,
       errorCount,
       errors,
+      executedSql,
     };
   }
 

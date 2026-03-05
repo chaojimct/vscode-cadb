@@ -104,6 +104,25 @@
   height: 100%;
 }
 
+/* ---------- 行状态高亮（编辑 / 标记删除） ---------- */
+.ag-theme-quartz .ag-row.grid-row-edited {
+  background-color: var(--vscode-editor-inactiveSelectionBackground, rgba(255, 235, 59, 0.12));
+}
+.ag-theme-quartz .ag-row.grid-row-edited.ag-row-hover {
+  background-color: var(--vscode-list-hoverBackground, rgba(255, 235, 59, 0.18));
+}
+.ag-theme-quartz .ag-row.grid-row-deleted {
+  background-color: var(--vscode-inputValidation-errorBackground, rgba(244, 67, 54, 0.15));
+  opacity: 0.92;
+}
+.ag-theme-quartz .ag-row.grid-row-deleted .ag-cell {
+  text-decoration: line-through;
+  color: var(--vscode-descriptionForeground, #888);
+}
+.ag-theme-quartz .ag-row.grid-row-deleted.ag-row-hover {
+  background-color: var(--vscode-inputValidation-errorBackground, rgba(244, 67, 54, 0.22));
+}
+
 /* ---------- 无障碍 ---------- */
 .sr-only {
   position: absolute !important;

@@ -202,7 +202,8 @@ export class ResultWebviewProvider implements vscode.WebviewViewProvider {
         /{{csp}}/g,
         `
     default-src 'none';
-		font-src ${webview.cspSource};
+    img-src ${webview.cspSource} data:;
+    font-src ${webview.cspSource};
     style-src ${webview.cspSource} 'unsafe-inline';
     script-src 'nonce-${nonce}';
     connect-src ${webview.cspSource};

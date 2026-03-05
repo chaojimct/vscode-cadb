@@ -52,8 +52,12 @@ class DatabaseTableData {
   }
 
   _doInitGrid(container) {
+    const self = this;
     const columnDefs = this._buildColumnDefs();
     const rowData = this.tableData.map((r, i) => ({ ...r, __rowIndex: i }));
+
+    const boundOnCellValueChanged = this._onCellValueChanged.bind(this);
+    const boundUpdatePaginationUI = this.updatePaginationUI.bind(this);
 
     const gridOptions = {
       columnDefs,
@@ -63,21 +67,38 @@ class DatabaseTableData {
         resizable: true,
         filter: true,
         editable: true,
+        valueFormatter: (params) => {
+          const v = params.value;
+          if (v != null && typeof v === "object") return JSON.stringify(v);
+          return v;
+        },
+        valueParser: (params) => {
+          const s = params.newValue;
+          if (typeof s !== "string") return s;
+          try {
+            return JSON.parse(s);
+          } catch {
+            return s;
+          }
+        },
       },
       pagination: true,
       paginationPageSize: this.paginationSize,
       paginationPageSizeSelector: false,
-      rowSelection: "multiple",
-      suppressRowClickSelection: true,
+      rowSelection: { mode: "multiRow", enableClickSelection: false },
       stopEditingWhenCellsLoseFocus: true,
       animateRows: false,
       getRowId: (params) => params.data.__rowIndex != null ? String(params.data.__rowIndex) : params.id,
-      onCellValueChanged: (e) => self._onCellValueChanged(e),
+      rowClassRules: {
+        "grid-row-deleted": (params) => params.data?.__deleted === true,
+        "grid-row-edited": (params) => params.data?.__edited === true && params.data?.__deleted !== true,
+      },
+      onCellValueChanged: boundOnCellValueChanged,
       onGridReady: (e) => {
         self.gridApi = e.api;
-        self.updatePaginationUI();
+        boundUpdatePaginationUI();
       },
-      onPaginationChanged: () => self.updatePaginationUI?.(),
+      onPaginationChanged: boundUpdatePaginationUI,
     };
 
     if (typeof agGrid !== "undefined" && agGrid.createGrid) {
@@ -105,6 +126,9 @@ class DatabaseTableData {
     ];
     this.columns.forEach((c) => {
       const type = (c.type != null ? String(c.type) : "").toLowerCase();
+      const typeTrim = type.trim();
+      const isBit1 = /^bit\s*\(\s*1\s*\)$/.test(type) || (type.startsWith("bit") && type.includes("1"));
+      const isDateType = /^(date|datetime|timestamp|time)(\s|\(|$)/.test(typeTrim);
       const colDef = {
         field: c.field,
         headerName: (c.headerName != null ? c.headerName : c.field.toUpperCase()),
@@ -118,6 +142,28 @@ class DatabaseTableData {
           cellEditorPopup: c.cellEditorPopup != null ? c.cellEditorPopup : true,
         }),
       };
+      if (isBit1) {
+        colDef.cellRenderer = "agCheckboxCellRenderer";
+        colDef.cellEditor = "agCheckboxCellEditor";
+        colDef.valueGetter = (params) => {
+          const v = params.data?.[c.field];
+          if (v === true || v === 1) return true;
+          if (v === false || v === 0) return false;
+          if (v && typeof v === "object" && v[0] !== undefined) return !!v[0];
+          return !!Number(v);
+        };
+        colDef.valueSetter = (params) => {
+          if (params.data == null) return false;
+          params.data[c.field] = params.newValue ? 1 : 0;
+          return true;
+        };
+      }
+      if (isDateType) {
+        const includeTime = /^(datetime|timestamp|time)(\s|\(|$)/.test(typeTrim);
+        colDef.cellEditor = "agDateStringCellEditor";
+        colDef.cellEditorParams = { includeTime: !!includeTime };
+        colDef.cellEditorPopup = true;
+      }
       defs.push(colDef);
     });
     return defs;
@@ -221,7 +267,7 @@ class DatabaseTableData {
   addRow() {
     if (!this.gridApi) return;
     const rowIndex = this.tableData.length;
-    const newData = { ...this.newRow, __rowIndex: rowIndex };
+    const newData = { ...this.newRow, __rowIndex: rowIndex, __isNew: true };
     this.tableData.push(newData);
     this.gridApi.applyTransaction({ add: [newData] });
     this.originalData.set(rowIndex, JSON.parse(JSON.stringify(newData)));
@@ -250,25 +296,42 @@ class DatabaseTableData {
     layui.use("layer", function () {
       const layer = layui.layer;
       layer.confirm(
-        "确定要删除选中的 " + selected.length + " 行吗？",
-        { icon: 3, title: "确认删除" },
+        "确定将选中的 " + selected.length + " 行标记为删除？（保存时从数据库删除）",
+        { icon: 3, title: "标记删除" },
         function (idx) {
-          self.tableData = self.tableData.filter((row) => !selected.includes(row));
-          self.gridApi.applyTransaction({ remove: selected });
-          selected.forEach((r) => {
-            const i = r.__rowIndex;
-            if (i != null) self.originalData.delete(i);
+          const nodesToRedraw = [];
+          selected.forEach((row) => {
+            row.__deleted = true;
+            const node = self.gridApi.getRowNode(String(row.__rowIndex));
+            if (node) {
+              node.setDataValue("__deleted", true);
+              nodesToRedraw.push(node);
+            }
           });
+          if (nodesToRedraw.length) {
+            self.gridApi.redrawRows({ rowNodes: nodesToRedraw });
+          }
           layer.close(idx);
         }
       );
     });
   }
 
+  /**
+   * 从网格当前数据与原始数据对比得到变更（不依赖 onCellValueChanged）
+   */
   getChangedRows() {
     const primaryKeyField = this._getPrimaryKeyField();
     const result = [];
-    this.changedRows.forEach(({ original, current }) => {
+    if (!this.gridApi) return result;
+    this.gridApi.forEachNode((node) => {
+      const current = node.data;
+      if (!current) return;
+      if (current.__deleted) return;
+      const rowIndex = current.__rowIndex;
+      if (rowIndex == null) return;
+      const original = this.originalData.get(rowIndex);
+      if (!original) return;
       const changes = {};
       for (const key of Object.keys(current)) {
         if (key.startsWith("__")) continue;
@@ -281,8 +344,26 @@ class DatabaseTableData {
           id: original[primaryKeyField],
           original,
           updated: changes,
-          full: current,
+          full: { ...current },
+          isNew: !!current.__isNew,
         });
+      }
+    });
+    return result;
+  }
+
+  /** 获取标记为删除的行（主键 id，供保存时执行 DELETE） */
+  getDeletedRows() {
+    const primaryKeyField = this._getPrimaryKeyField();
+    const result = [];
+    if (!this.gridApi) return result;
+    this.gridApi.forEachNode((node) => {
+      const current = node.data;
+      if (!current?.__deleted) return;
+      const original = this.originalData.get(current.__rowIndex);
+      const id = original?.[primaryKeyField] ?? current[primaryKeyField];
+      if (id !== undefined && id !== null && id !== "") {
+        result.push({ id, original: original || current });
       }
     });
     return result;
@@ -291,6 +372,11 @@ class DatabaseTableData {
   _getPrimaryKeyField() {
     const pk = this.columns.find((c) => c.key === "PRI");
     return pk ? pk.field : "id";
+  }
+
+  /** 供 grid 保存时上报主键字段名（MySQL 等） */
+  getPrimaryKeyField() {
+    return this._getPrimaryKeyField();
   }
 
   setFilter(field, type, value) {

@@ -10,6 +10,7 @@ export interface ColDef {
   field: string;
   colId?: string;
   type?: string | string[];
+  editable?: boolean;
 }
 
 export interface TableResult {
@@ -28,10 +29,11 @@ export interface FormResult {
  * 保存行数据的参数
  */
 export interface SaveRowData {
-  id: any; // 主键值
+  id: any; // 主键值（新行可为空）
   original: Record<string, any>; // 原始数据
   updated: Record<string, any>; // 更新的字段（仅包含改变的字段）
   full: Record<string, any>; // 完整的新数据
+  isNew?: boolean; // 是否为新插入行
 }
 
 /**
@@ -41,7 +43,8 @@ export interface SaveDataParams {
   tableName: string; // 表名
   databaseName: string; // 数据库名
   primaryKeyField: string; // 主键字段名
-  rows: SaveRowData[]; // 要保存的行数据
+  rows: SaveRowData[]; // 要保存的行数据（更新/插入）
+  deletedRows?: Array<{ id: any }>; // 标记删除的行（主键值，执行 DELETE）
 }
 
 /**
@@ -51,6 +54,8 @@ export interface SaveResult {
   successCount: number; // 成功数量
   errorCount: number; // 失败数量
   errors: string[]; // 错误信息列表
+  /** 已执行的 SQL（如 MySQL UPDATE），用于输出到 CADB SQL 面板 */
+  executedSql?: string[];
 }
 
 export interface Dataloader {

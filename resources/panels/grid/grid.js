@@ -15,11 +15,13 @@
   const actions = {
     save: () => {
       const changed = dbTable.getChangedRows();
-      if (changed.length === 0) {
+      const deleted = dbTable.getDeletedRows?.() ?? [];
+      if (changed.length === 0 && deleted.length === 0) {
         vscode?.postMessage({ command: "status", success: false, message: "没有需要保存的修改" });
         return;
       }
-      vscode?.postMessage({ command: "save", data: changed });
+      const primaryKeyField = dbTable.getPrimaryKeyField?.() ?? undefined;
+      vscode?.postMessage({ command: "save", data: changed, deleted, primaryKeyField });
     },
     refresh: () => vscode?.postMessage({ command: "refresh" }),
     add: () => dbTable.addRow(),
@@ -49,13 +51,11 @@
     const payload = event.data?.data != null ? event.data.data : event.data;
 
     if (command === "load") {
-      if (!payload?.columnDefs?.length) return;
-      dbTable.init(
-        payload.columnDefs,
-        Array.isArray(payload.rowData) ? payload.rowData : [],
-        payload.queryTime ?? 0
-      );
-      dbTable.updatePaginationUI();
+      const columnDefs = payload?.columnDefs;
+      const rowData = Array.isArray(payload?.rowData) ? payload.rowData : [];
+      if (!columnDefs?.length) return;
+      dbTable.init(columnDefs, rowData, payload?.queryTime ?? 0);
+      dbTable.updatePaginationUI?.();
       return;
     }
 

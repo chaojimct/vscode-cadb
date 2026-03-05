@@ -1336,7 +1336,8 @@ const openTablePanels = new Map<string, vscode.WebviewPanel>();
 
 async function sqlResultView(
   datasource: Datasource,
-  provider: DataSourceProvider
+  provider: DataSourceProvider,
+  outputChannel: vscode.OutputChannel
 ) {
   const data = await datasource.listData();
   const tableName = datasource.label?.toString() || "";
@@ -1376,11 +1377,9 @@ async function sqlResultView(
     switch (message.command) {
       case "save":
         try {
-          if (
-            !message.data ||
-            !Array.isArray(message.data) ||
-            message.data.length === 0
-          ) {
+          const saveRows = Array.isArray(message.data) ? message.data : [];
+          const deletedRows = Array.isArray(message.deleted) ? message.deleted : [];
+          if (saveRows.length === 0 && deletedRows.length === 0) {
             panel.webview.postMessage({
               command: "status",
               success: false,
@@ -1419,51 +1418,59 @@ async function sqlResultView(
             return;
           }
 
-          // 获取主键字段名
+          // 主键字段：优先用前端上报的，否则从列定义取
           const primaryKeyField =
+            message.primaryKeyField ||
             data?.columnDefs?.find((col: any) => col.key === "PRI")?.field ||
             "id";
 
-          // 使用 dataloader 的 saveData 方法
           const saveResult = await dsInstance.dataloader.saveData({
             tableName: tableName,
             databaseName: databaseName,
             primaryKeyField: primaryKeyField,
-            rows: message.data,
+            rows: saveRows,
+            deletedRows: deletedRows.map((r: { id: any }) => ({ id: r.id })),
           });
 
-          // 发送结果
           if (saveResult.errorCount === 0) {
+            const msg = `成功更新 ${saveResult.successCount} 行`;
+            vscode.window.showInformationMessage(msg);
+            if (saveResult.executedSql?.length) {
+              const timestamp = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+              outputChannel.appendLine(`-- [${timestamp}] 表格保存 · ${databaseName}.${tableName}`);
+              saveResult.executedSql.forEach((sql) => {
+                outputChannel.appendLine(sql.replace(/\s+/g, " ").trim());
+              });
+              outputChannel.show(true);
+            }
             panel.webview.postMessage({
               command: "status",
               success: true,
-              message: `成功更新 ${saveResult.successCount} 行`,
+              message: msg,
             });
-            // 刷新表格数据（第一页）
             const refreshedData = await datasource.listData();
             panel.webview.postMessage({
               command: "load",
               data: refreshedData,
             });
           } else {
+            const errMsg = `更新完成：成功 ${saveResult.successCount} 行，失败 ${saveResult.errorCount} 行。${
+              saveResult.errors.length > 0 ? saveResult.errors[0] : ""
+            }`;
             panel.webview.postMessage({
               command: "status",
               success: false,
-              message: `更新完成：成功 ${saveResult.successCount} 行，失败 ${
-                saveResult.errorCount
-              } 行。${
-                saveResult.errors.length > 0 ? saveResult.errors[0] : ""
-              }`,
+              message: errMsg,
             });
           }
         } catch (error) {
           console.error("保存失败:", error);
+          const errMsg = `保存失败: ${error instanceof Error ? error.message : String(error)}`;
+          vscode.window.showErrorMessage(errMsg);
           panel.webview.postMessage({
             command: "status",
             success: false,
-            message: `保存失败: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
+            message: errMsg,
           });
         }
         break;
@@ -1550,7 +1557,10 @@ async function keyValueResultView(
           });
           break;
         }
-        const keyType = datasource.parent?.tooltip?.toString() ?? "";
+        const keyType =
+          datasource.parent?.tooltip?.toString() ||
+          datasource.parent?.label?.toString() ||
+          "";
         const dbLabel = databaseName || "";
         const dbMatch = dbLabel.match(/^DB(\d+)$/i);
         const dbIndex = dbMatch ? parseInt(dbMatch[1], 10) : 0;
@@ -1567,27 +1577,32 @@ async function keyValueResultView(
             changes,
           });
           if (result.errorCount === 0) {
+            const msg = `成功保存 ${result.successCount} 处修改`;
+            vscode.window.showInformationMessage(msg);
             panel.webview.postMessage({
               command: "status",
               success: true,
-              message: `成功保存 ${result.successCount} 处修改`,
+              message: msg,
             });
             const freshData = await datasource.listData();
             if (freshData) {
               panel.webview.postMessage({ command: "load", data: freshData });
             }
           } else {
+            const errMsg = `保存完成：成功 ${result.successCount}，失败 ${result.errorCount}。${result.errors[0] ?? ""}`;
             panel.webview.postMessage({
               command: "status",
               success: false,
-              message: `保存完成：成功 ${result.successCount}，失败 ${result.errorCount}。${result.errors[0] ?? ""}`,
+              message: errMsg,
             });
           }
         } catch (err) {
+          const errMsg = `保存失败: ${err instanceof Error ? err.message : String(err)}`;
+          vscode.window.showErrorMessage(errMsg);
           panel.webview.postMessage({
             command: "status",
             success: false,
-            message: `保存失败: ${err instanceof Error ? err.message : String(err)}`,
+            message: errMsg,
           });
         }
         break;
@@ -1717,7 +1732,7 @@ export function registerDatasourceItemCommands(
     const datasource = args as Datasource;
     const dbType = datasource.dataloader?.dbType() || "";
     if (dbType === "mysql") {
-      await sqlResultView(datasource, provider);
+      await sqlResultView(datasource, provider, outputChannel);
     } else if (dbType === "redis") {
       await keyValueResultView(datasource, provider);
     } else {
