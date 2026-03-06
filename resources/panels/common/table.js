@@ -264,13 +264,197 @@ class DatabaseTableData {
     if (this.gridApi) this.gridApi.paginationGoToPreviousPage();
   }
 
-  addRow() {
+  /**
+   * 根据列默认值解析出用于新行表单的初始值（如 CURRENT_TIMESTAMP -> 当前时间）
+   */
+  getNewRowFormDefaults() {
+    const now = new Date();
+    const pad = (n) => (n < 10 ? "0" + n : String(n));
+    const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    const timeStr = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    const datetimeStr = `${dateStr}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    const defaults = {};
+    (this.columns || []).forEach((c) => {
+      const def = c.defaultValue;
+      if (def == null || String(def).trim() === "") {
+        const type = (c.type != null ? String(c.type) : "").toLowerCase();
+        const isBit1 = /^bit\s*\(\s*1\s*\)$/.test(type) || (type.startsWith("bit") && type.includes("1"));
+        defaults[c.field] = isBit1 ? 0 : "";
+        return;
+      }
+      const v = String(def).trim().toUpperCase();
+      if (v === "CURRENT_TIMESTAMP") {
+        defaults[c.field] = datetimeStr;
+        return;
+      }
+      if (v === "CURRENT_DATE") {
+        defaults[c.field] = dateStr;
+        return;
+      }
+      defaults[c.field] = def;
+    });
+    return defaults;
+  }
+
+  /**
+   * 打开「新增行」表单弹窗（原生 HTML），填写后插入一行
+   */
+  openAddRowForm() {
+    if (!this.gridApi || !this.columns?.length) return;
+    var self = this;
+    var modal = document.getElementById("grid-add-row-modal");
+    if (!modal) {
+      modal = document.createElement("div");
+      modal.id = "grid-add-row-modal";
+      modal.className = "native-modal-overlay";
+      modal.setAttribute("aria-hidden", "true");
+      modal.innerHTML =
+        "<div class=\"native-modal-dialog\" role=\"dialog\" aria-labelledby=\"grid-add-row-modal-title\">" +
+          "<div class=\"native-modal-title\" id=\"grid-add-row-modal-title\">新增数据行</div>" +
+          "<div class=\"native-modal-body\"></div>" +
+          "<div class=\"native-modal-error\" id=\"grid-add-row-modal-error\" style=\"display:none;\"></div>" +
+          "<div class=\"native-modal-footer\">" +
+            "<button type=\"button\" class=\"native-modal-btn native-modal-btn-primary\" data-action=\"submit-add-row\">提交</button>" +
+            "<button type=\"button\" class=\"native-modal-btn\" data-action=\"cancel-add-row\">取消</button>" +
+          "</div>" +
+        "</div>";
+      document.body.appendChild(modal);
+      modal.addEventListener("click", function (e) {
+        if (e.target === modal) self._closeAddRowModal();
+      });
+      var cancelBtn = modal.querySelector("[data-action=cancel-add-row]");
+      if (cancelBtn) cancelBtn.addEventListener("click", function () { self._closeAddRowModal(); });
+      var submitBtn = modal.querySelector("[data-action=submit-add-row]");
+      if (submitBtn) submitBtn.addEventListener("click", function () {
+        var formEl = modal.querySelector("#grid-add-row-form");
+        if (formEl) formEl.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+      });
+    }
+    var formDefaults = self.getNewRowFormDefaults();
+    var primaryKeyField = self._getPrimaryKeyField();
+    var formHtml = self._buildAddRowFormHtml(formDefaults, primaryKeyField);
+    var body = modal.querySelector(".native-modal-body");
+    if (body) {
+      body.innerHTML = formHtml;
+      var formEl = body.querySelector("#grid-add-row-form");
+      if (formEl) {
+        formEl.addEventListener("submit", function (e) {
+          e.preventDefault();
+          var errEl = modal.querySelector("#grid-add-row-modal-error");
+          var data = self._collectAddRowFormData(formEl);
+          var err = self._validateAddRowForm(data);
+          if (err) {
+            if (errEl) {
+              errEl.textContent = err;
+              errEl.style.display = "block";
+            }
+            return;
+          }
+          if (errEl) errEl.style.display = "none";
+          self.addRowWithData(data);
+          self._closeAddRowModal();
+        });
+      }
+    }
+    var errEl = modal.querySelector("#grid-add-row-modal-error");
+    if (errEl) { errEl.textContent = ""; errEl.style.display = "none"; }
+    modal.classList.add("native-modal-open");
+    modal.setAttribute("aria-hidden", "false");
+  }
+
+  _closeAddRowModal() {
+    var modal = document.getElementById("grid-add-row-modal");
+    if (modal) {
+      modal.classList.remove("native-modal-open");
+      modal.setAttribute("aria-hidden", "true");
+    }
+  }
+
+  _buildAddRowFormHtml(formDefaults, primaryKeyField) {
+    const rows = [];
+    (this.columns || []).forEach((c) => {
+      const required = c.canNull !== "YES" && !c.autoIncrement;
+      const comment = c.comment ? String(c.comment).trim() : "";
+      const label = (c.headerName != null ? c.headerName : c.field) + (required ? " <span class=\"form-required\">*</span>" : "");
+      const type = (c.type != null ? String(c.type) : "").toLowerCase();
+      const isBit1 = /^bit\s*\(\s*1\s*\)$/.test(type) || (type.startsWith("bit") && type.includes("1"));
+      const isDate = /^date(\s|\(|$)/.test(type);
+      const isDateTime = /^(datetime|timestamp|time)(\s|\(|$)/.test(type);
+      let inputType = "text";
+      if (isBit1) inputType = "radio";
+      else if (isDate) inputType = "date";
+      else if (isDateTime) inputType = "datetime-local";
+      else if (/^(int|bigint|smallint|decimal|float|double|numeric)(\s|\(|$)/i.test(type)) inputType = "number";
+      const val = formDefaults[c.field] ?? "";
+      const escapedVal = String(val).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      let inputHtml;
+      if (inputType === "radio") {
+        const isYes = val === true || val === 1 || val === "1" || String(val).toLowerCase() === "true";
+        inputHtml =
+          "<label class=\"form-radio-option\"><input type=\"radio\" name=\"" + c.field + "\" value=\"1\" " + (isYes ? "checked" : "") + " /> 是</label>" +
+          "<label class=\"form-radio-option\"><input type=\"radio\" name=\"" + c.field + "\" value=\"0\" " + (!isYes ? "checked" : "") + " /> 否</label>";
+      } else {
+        var placeholder = c.autoIncrement ? "<auto_increment>" : (comment ? comment.replace(/"/g, "&quot;") : "");
+        var displayVal = c.autoIncrement ? "" : escapedVal;
+        inputHtml = "<input type=\"" + inputType + "\" name=\"" + c.field + "\" value=\"" + displayVal + "\" placeholder=\"" + placeholder + "\" class=\"native-form-input\" />";
+      }
+      rows.push(
+        "<div class=\"native-form-row\">" +
+          "<label class=\"native-form-label\">" + label + "</label>" +
+          "<div class=\"native-form-field\">" +
+            inputHtml +
+            (comment ? "<div class=\"form-field-comment\">" + comment.replace(/</g, "&lt;") + "</div>" : "") +
+          "</div>" +
+        "</div>"
+      );
+    });
+    return "<form id=\"grid-add-row-form\" class=\"native-add-row-form\">" + rows.join("") + "</form>";
+  }
+
+  _collectAddRowFormData(formEl) {
+    const data = {};
+    (this.columns || []).forEach((c) => {
+      const type = (c.type != null ? String(c.type) : "").toLowerCase();
+      const isBit1 = /^bit\s*\(\s*1\s*\)$/.test(type) || (type.startsWith("bit") && type.includes("1"));
+      if (isBit1) {
+        const radio = formEl.querySelector("[name=\"" + c.field + "\"]:checked");
+        data[c.field] = radio && radio.value === "1" ? 1 : 0;
+      } else {
+        const input = formEl.querySelector("[name=\"" + c.field + "\"]");
+        if (input) {
+          const v = input.value != null ? String(input.value).trim() : "";
+          data[c.field] = v;
+        }
+      }
+    });
+    return data;
+  }
+
+  _validateAddRowForm(data) {
+    for (const c of this.columns || []) {
+      if (c.autoIncrement) continue;
+      if (c.canNull !== "YES") {
+        const v = data[c.field];
+        if (v === undefined || v === null || (typeof v === "string" && v.trim() === "")) {
+          return "请填写必填字段：" + (c.headerName != null ? c.headerName : c.field);
+        }
+      }
+    }
+    return null;
+  }
+
+  addRowWithData(data) {
     if (!this.gridApi) return;
     const rowIndex = this.tableData.length;
-    const newData = { ...this.newRow, __rowIndex: rowIndex, __isNew: true };
+    const newData = { ...data, __rowIndex: rowIndex, __isNew: true };
     this.tableData.push(newData);
     this.gridApi.applyTransaction({ add: [newData] });
     this.originalData.set(rowIndex, JSON.parse(JSON.stringify(newData)));
+  }
+
+  addRow() {
+    if (!this.gridApi) return;
+    this.openAddRowForm();
   }
 
   refreshTable() {
@@ -339,13 +523,15 @@ class DatabaseTableData {
         const ov = original[key] != null ? String(original[key]).trim() : "";
         if (cv !== ov) changes[key] = current[key];
       }
-      if (Object.keys(changes).length > 0) {
+      const hasChanges = Object.keys(changes).length > 0;
+      const isNewRow = !!current.__isNew;
+      if (hasChanges || isNewRow) {
         result.push({
           id: original[primaryKeyField],
           original,
           updated: changes,
           full: { ...current },
-          isNew: !!current.__isNew,
+          isNew: isNewRow,
         });
       }
     });
@@ -446,9 +632,13 @@ class DatabaseTableData {
   exportXLSX() {
     // AG Grid Community 不支持 Excel 导出，提示用户
     if (this.vscode) {
-      this.vscode.postMessage({ command: "status", success: false, message: "AG Grid Community 暂不支持 XLSX 导出，请使用 CSV 或 JSON" });
+      this.vscode.postMessage({
+        command: "showMessage",
+        type: "warning",
+        message: "AG Grid Community 暂不支持 XLSX 导出，请使用 CSV 或 JSON",
+      });
     } else {
-      alert("AG Grid Community 暂不支持 XLSX 导出，请使用 CSV 或 JSON");
+      console.warn("AG Grid Community 暂不支持 XLSX 导出，请使用 CSV 或 JSON");
     }
   }
 }

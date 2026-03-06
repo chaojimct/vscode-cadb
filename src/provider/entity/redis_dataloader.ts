@@ -381,10 +381,14 @@ export class RedisDataloader implements Dataloader {
       } else if (/^list$/i.test(keyType)) {
         for (const { original, full } of changes) {
           const idx = original?.index;
-          if (typeof idx !== "number") continue;
           const val = full?.value != null ? String(full.value) : "";
-          await this.client.lSet(key, idx, val);
-          successCount++;
+          if (typeof idx === "number") {
+            await this.client.lSet(key, idx, val);
+            successCount++;
+          } else {
+            await this.client.rPush(key, val);
+            successCount++;
+          }
         }
       } else if (/^set$/i.test(keyType)) {
         for (const { original, full } of changes) {
@@ -415,12 +419,14 @@ export class RedisDataloader implements Dataloader {
         }
       } else if (/^stream$/i.test(keyType)) {
         for (const { original, full } of changes) {
-          const id = original?.id ?? full?.id;
+          let id = original?.id ?? full?.id;
+          if (id == null || id === "") id = "*";
           const fieldsStr = full?.fields;
-          if (!id || fieldsStr == null) continue;
+          if (fieldsStr == null) continue;
           try {
             const obj = typeof fieldsStr === "string" ? JSON.parse(fieldsStr) : fieldsStr;
-            await this.client.xAdd(key, id, obj);
+            if (typeof obj !== "object" || obj === null) continue;
+            await this.client.xAdd(key, String(id), obj);
             successCount++;
           } catch (e) {
             errorCount++;

@@ -11,6 +11,14 @@ export interface ColDef {
   colId?: string;
   type?: string | string[];
   editable?: boolean;
+  /** 是否允许 NULL，如 'YES' / 'NO' */
+  canNull?: string;
+  /** 默认值，如 CURRENT_TIMESTAMP */
+  defaultValue?: string | null;
+  /** 列注释，用于表单提示 */
+  comment?: string | null;
+  /** 是否自增（如主键 ID） */
+  autoIncrement?: boolean;
 }
 
 export interface TableResult {

@@ -1374,6 +1374,15 @@ async function sqlResultView(
       });
       return;
     }
+    if (message.command === "showMessage") {
+      const msg = message.message ?? "";
+      if (message.type === "error") {
+        vscode.window.showErrorMessage(msg);
+      } else {
+        vscode.window.showWarningMessage(msg);
+      }
+      return;
+    }
     switch (message.command) {
       case "save":
         try {
@@ -1424,11 +1433,20 @@ async function sqlResultView(
             data?.columnDefs?.find((col: any) => col.key === "PRI")?.field ||
             "id";
 
+          // 新增行：先把 original 复制到 updated，用户修改再覆盖；full 用合并结果供 INSERT 使用
+          const normalizedRows = saveRows.map((r: { isNew?: boolean; original?: Record<string, any>; updated?: Record<string, any>; full?: Record<string, any>; [k: string]: any }) => {
+            if (!r.isNew || (!r.original && !r.updated)) return r;
+            const base = r.original || {};
+            const overrides = r.updated || {};
+            const merged = { ...base, ...overrides };
+            return { ...r, updated: merged, full: merged };
+          });
+
           const saveResult = await dsInstance.dataloader.saveData({
             tableName: tableName,
             databaseName: databaseName,
             primaryKeyField: primaryKeyField,
-            rows: saveRows,
+            rows: normalizedRows,
             deletedRows: deletedRows.map((r: { id: any }) => ({ id: r.id })),
           });
 
@@ -1536,6 +1554,15 @@ async function keyValueResultView(
       const freshData = await datasource.listData();
       if (freshData) {
         panel.webview.postMessage({ command: "load", data: freshData });
+      }
+      return;
+    }
+    if (message.command === "showMessage") {
+      const msg = message.message ?? "";
+      if (message.type === "error") {
+        vscode.window.showErrorMessage(msg);
+      } else {
+        vscode.window.showWarningMessage(msg);
       }
       return;
     }

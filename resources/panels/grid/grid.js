@@ -66,7 +66,11 @@
         window.showSuccessMessage?.(msg);
         dbTable.refreshTable();
       } else {
-        window.showErrorMessage?.(msg) ?? alert(msg);
+        if (typeof window.showErrorMessage === "function") {
+          window.showErrorMessage(msg);
+        } else {
+          vscode?.postMessage({ command: "showMessage", type: "error", message: msg });
+        }
       }
     }
   });

@@ -784,19 +784,22 @@ ORDER BY
       if (!table || !database) {
         return resolve([]);
       }
-      this.conn.query(`DESC \`${database}\`.\`${table}\``, (err, results) => {
+      this.conn.query(`SHOW FULL COLUMNS FROM \`${database}\`.\`${table}\``, (err, results) => {
         if (err) {
           vscode.window.showErrorMessage(err.message);
           return resolve([]);
         }
         resolve(
           (results as any[]).map((e) => {
+            const extra = String(e["Extra"] ?? "").toLowerCase();
             return {
               field: e["Field"],
               type: e["Type"],
               canNull: e["Null"],
               key: e["Key"],
               defaultValue: e["Default"],
+              comment: e["Comment"] ?? null,
+              autoIncrement: extra.includes("auto_increment"),
             } as ColDef;
           })
         );
@@ -854,6 +857,8 @@ ORDER BY
 
     const escapeVal = (v: any): string => {
       if (v === null || v === undefined) return "NULL";
+      if (v === true || String(v).toLowerCase() === "true") return "1";
+      if (v === false || String(v).toLowerCase() === "false") return "0";
       const s = String(v).replace(/'/g, "''");
       return `'${s}'`;
     };
@@ -898,7 +903,12 @@ ORDER BY
             continue;
           }
           const cols = insertKeys.map((k) => `\`${k}\``).join(", ");
-          const vals = insertKeys.map((k) => escapeVal(full[k])).join(", ");
+          const insertVal = (v: any): string => {
+            const s = String(v ?? "").trim().toUpperCase();
+            if (s === "CURRENT_TIMESTAMP" || s === "CURRENT_DATE") return s;
+            return escapeVal(v);
+          };
+          const vals = insertKeys.map((k) => insertVal(full[k])).join(", ");
           const insertSql = `INSERT INTO \`${databaseName}\`.\`${tableName}\` (${cols}) VALUES (${vals})`;
           executedSql.push(insertSql);
           await new Promise<void>((resolve, reject) => {
@@ -927,6 +937,12 @@ ORDER BY
             const value = updated[key];
             if (value === null || value === undefined) {
               return `\`${key}\` = NULL`;
+            }
+            if (value === true || value === "true" || value === 1) {
+              return `\`${key}\` = 1`;
+            }
+            if (value === false || value === "false" || value === 0) {
+              return `\`${key}\` = 0`;
             }
             return `\`${key}\` = '${String(value).replace(/'/g, "''")}'`;
           })
