@@ -747,86 +747,81 @@ async function updateDatabaseConfig(
   });
 }
 
-async function addEntry(item: any, provider: DataSourceProvider) {
-  if (item && item.type === "datasourceType") {
-    const dataloader = (item as Datasource).dataloader;
-    if (!dataloader) {
-      return;
-    }
-
-    const collations = await dataloader.listCollations(item);
-    const options = collations.map((c) => ({
-      label: c.label?.toString() || "",
-      value: c.label?.toString() || "",
-    }));
-
-    const panel = createWebview(provider, "settings", "创建数据库");
-
-    // 直接发送初始化数据（页面加载时会自动处理）
-    panel.webview.postMessage({
-      command: "load",
-      configType: "database",
-      data: {}, // 新建数据库，使用空数据
-      options: { collation: options },
-    });
-
-    // 监听来自 webview 的消息
-    panel.webview.onDidReceiveMessage(async (message) => {
-      switch (message.command) {
-        case "save":
-          try {
-            const databaseName = message.payload.name;
-            await dataloader.createDatabase(message.payload);
-            panel.webview.postMessage({
-              command: "status",
-              success: true,
-              message: "✔️ 数据库创建成功",
-            });
-            setTimeout(() => panel.dispose(), 1000);
-
-            // 刷新数据库列表
-            provider.refresh(item);
-
-            // 等待刷新完成后，找到新创建的数据库节点并加载其子节点
-            setTimeout(async () => {
-              try {
-                // 重新展开 datasourceType 节点以获取最新的数据库列表
-                const databases = await item.expand(provider.context);
-                item.children = databases || [];
-
-                // 找到新创建的数据库节点
-                const newDatabase = item.children.find(
-                  (db: Datasource) => db.label?.toString() === databaseName
-                );
-
-                if (newDatabase && newDatabase.type === "collection") {
-                  // 加载新数据库的子节点（表），这会更新 description 为表数量
-                  await provider.loadCollectionChildren(newDatabase);
-                }
-              } catch (err) {
-                // 忽略错误，不影响主流程
-                console.error("加载新数据库子节点失败:", err);
-              }
-            }, 500);
-          } catch (error) {
-            panel.webview.postMessage({
-              command: "status",
-              success: false,
-              message: `❗ 创建失败: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            });
-          }
-          break;
-        case "cancel":
-          panel.dispose();
-          break;
-      }
-    });
+/**
+ * 在已有连接下创建数据库（仅当 item 为 datasourceType 时由「新建数据库」命令调用）
+ */
+async function addDatabaseEntry(item: Datasource, provider: DataSourceProvider) {
+  const dataloader = item.dataloader;
+  if (!dataloader) {
     return;
   }
 
-  if (item instanceof Datasource) {
+  const collations = await dataloader.listCollations(item);
+  const options = collations.map((c) => ({
+    label: c.label?.toString() || "",
+    value: c.label?.toString() || "",
+  }));
+
+  const panel = createWebview(provider, "settings", "创建数据库");
+
+  panel.webview.postMessage({
+    command: "load",
+    configType: "database",
+    data: {},
+    options: { collation: options },
+  });
+
+  panel.webview.onDidReceiveMessage(async (message) => {
+    switch (message.command) {
+      case "save":
+        try {
+          const databaseName = message.payload.name;
+          await dataloader.createDatabase(message.payload);
+          panel.webview.postMessage({
+            command: "status",
+            success: true,
+            message: "✔️ 数据库创建成功",
+          });
+          setTimeout(() => panel.dispose(), 1000);
+
+          provider.refresh(item);
+
+          setTimeout(async () => {
+            try {
+              const databases = await item.expand(provider.context);
+              item.children = databases || [];
+
+              const newDatabase = item.children.find(
+                (db: Datasource) => db.label?.toString() === databaseName
+              );
+
+              if (newDatabase && newDatabase.type === "collection") {
+                await provider.loadCollectionChildren(newDatabase);
+              }
+            } catch (err) {
+              console.error("加载新数据库子节点失败:", err);
+            }
+          }, 500);
+        } catch (error) {
+          panel.webview.postMessage({
+            command: "status",
+            success: false,
+            message: `❗ 创建失败: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          });
+        }
+        break;
+      case "cancel":
+        panel.dispose();
+        break;
+    }
+  });
+}
+
+async function addEntry(item: any, provider: DataSourceProvider) {
+  // 「新建项」统一打开数据库连接配置（主机、端口、用户名、密码等）
+  if (item instanceof Datasource && item.type !== "datasourceType") {
     await item.create(provider.context, provider.databaseManager);
     provider.refresh();
   } else {
@@ -943,6 +938,26 @@ export function registerDatasourceCommands(
         );
       }
     })
+  );
+
+  disposables.push(
+    vscode.commands.registerCommand(
+      "cadb.datasource.addDatabase",
+      async (item: Datasource) => {
+        try {
+          if (item && item.type === "datasourceType") {
+            await addDatabaseEntry(item, provider);
+          }
+        } catch (error) {
+          console.error("addDatabaseEntry 执行失败:", error);
+          vscode.window.showErrorMessage(
+            `创建数据库失败: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+        }
+      }
+    )
   );
 
   disposables.push(

@@ -56,6 +56,11 @@
         "icon": "$(add)"
       },
       {
+        "command": "cadb.datasource.addDatabase",
+        "title": "新建数据库",
+        "icon": "$(database)"
+      },
+      {
         "command": "cadb.datasource.refresh",
         "title": "刷新",
         "icon": "$(refresh)"
@@ -220,6 +225,11 @@
         {
           "command": "cadb.datasource.add",
           "when": "view == datasource && (viewItem =~ /Type$/ || viewItem == folder)",
+          "group": "inline"
+        },
+        {
+          "command": "cadb.datasource.addDatabase",
+          "when": "view == datasource && viewItem =~ /Type$/",
           "group": "inline"
         },
         {
