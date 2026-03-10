@@ -4,6 +4,7 @@ import { Datasource } from "../entity/datasource";
 import path from "path";
 import { FormResult } from "../entity/dataloader";
 import { MySQLDataloader } from "../entity/mysql_dataloader";
+import { OssDataLoader } from "../entity/oss_dataloader";
 import { RedisDataloader } from "../entity/redis_dataloader";
 import { DatabaseManager } from "./database_manager";
 import { ResultWebviewProvider } from "../result_provider";
@@ -178,6 +179,77 @@ function findAncestorByType(
     current = current.parent;
   }
   return undefined;
+}
+
+/** 从 OSS 树节点解析出 bucket 与完整 key（path） */
+function getOssBucketAndKey(node: Datasource): { bucket: string; key: string } | null {
+  const bucketNode = findAncestorByType(node, "collectionType");
+  if (!bucketNode) return null;
+  const bucket = bucketNode.label?.toString() ?? "";
+  if (!bucket) return null;
+  const parts: string[] = [];
+  let cur: Datasource | undefined = node;
+  while (cur && cur !== bucketNode) {
+    const name = cur.label?.toString() ?? "";
+    if (name) parts.unshift(name);
+    cur = cur.parent;
+  }
+  const key = parts.join("/") + (node.type === "folder" ? "/" : "");
+  return { bucket, key };
+}
+
+/** OSS 文件：下载到临时目录后按后缀用默认编辑器打开 */
+async function ossPreview(
+  node: Datasource,
+  provider: DataSourceProvider
+): Promise<void> {
+  if (node.type === "folder") {
+    return;
+  }
+  const loader = node.dataloader as OssDataLoader | undefined;
+  const info = getOssBucketAndKey(node);
+  if (!loader || !info) {
+    vscode.window.showWarningMessage("无法解析 OSS 路径");
+    return;
+  }
+  const { bucket, key } = info;
+  try {
+    const buf = await loader.getObject(bucket, key);
+    const baseDir = vscode.Uri.joinPath(
+      provider.context.globalStorageUri,
+      "cadb-oss-preview",
+      bucket
+    );
+    const keyParts = key.split("/").filter(Boolean);
+    const fileName = keyParts[keyParts.length - 1] || "file";
+    const tempUri =
+      keyParts.length > 1
+        ? vscode.Uri.joinPath(baseDir, ...keyParts.slice(0, -1), fileName)
+        : vscode.Uri.joinPath(baseDir, fileName);
+    await vscode.workspace.fs.createDirectory(baseDir);
+    let parent = baseDir;
+    for (const segment of keyParts.slice(0, -1)) {
+      parent = vscode.Uri.joinPath(parent, segment);
+      await vscode.workspace.fs.createDirectory(parent);
+    }
+    await vscode.workspace.fs.writeFile(tempUri, buf);
+    await vscode.commands.executeCommand("vscode.open", tempUri, {
+      viewColumn: vscode.ViewColumn.One,
+      preview: false,
+    });
+  } catch (e) {
+    vscode.window.showErrorMessage(
+      `打开失败: ${e instanceof Error ? e.message : String(e)}`
+    );
+  }
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function validateAndGetFilePath(
@@ -1777,9 +1849,102 @@ export function registerDatasourceItemCommands(
       await sqlResultView(datasource, provider, outputChannel);
     } else if (dbType === "redis") {
       await keyValueResultView(datasource, provider);
+    } else if (dbType === "oss") {
+      await ossPreview(datasource, provider);
     } else {
       vscode.window.showWarningMessage(`${dbType} 数据源查看数据功能待实现`);
     }
+  });
+
+  vscode.commands.registerCommand("cadb.oss.download", async (args) => {
+    const node = args as Datasource;
+    const loader = node.dataloader as OssDataLoader | undefined;
+    const info = getOssBucketAndKey(node);
+    if (!loader || !info) {
+      vscode.window.showWarningMessage("仅支持 OSS 节点下载");
+      return;
+    }
+    const { bucket, key } = info;
+    if (node.type === "folder") {
+      let list = await loader.listObjectsWithPrefix(bucket, key);
+      list = list.filter((o) => o.Key && o.Key !== key && !o.Key.endsWith("/"));
+      if (list.length === 0) {
+        vscode.window.showInformationMessage("该文件夹为空");
+        return;
+      }
+      const dirUri = await vscode.window.showOpenDialog({
+        canSelectFolders: true,
+        canSelectFiles: false,
+        canSelectMany: false,
+        title: "选择保存目录",
+      });
+      if (!dirUri?.length) return;
+      const baseDir = dirUri[0];
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "下载 OSS 文件夹",
+          cancellable: false,
+        },
+        async () => {
+          for (const obj of list) {
+            if (!obj.Key) continue;
+            const buf = await loader.getObject(bucket, obj.Key);
+            const relPath = obj.Key.slice(key.length).replace(/^\/+/, "") || obj.Key.split("/").pop() || "file";
+            const fileUri = vscode.Uri.joinPath(baseDir, relPath);
+            const parts = relPath.split("/").filter(Boolean);
+            if (parts.length > 1) {
+              const dir = vscode.Uri.joinPath(baseDir, ...parts.slice(0, -1));
+              try {
+                await vscode.workspace.fs.createDirectory(dir);
+              } catch {
+                // 父目录可能已存在
+              }
+            }
+            await vscode.workspace.fs.writeFile(fileUri, buf);
+          }
+        }
+      );
+      vscode.window.showInformationMessage(`已下载 ${list.length} 个文件`);
+      return;
+    }
+    const defaultName = key.split("/").pop() || "download";
+    const uri = await vscode.window.showSaveDialog({
+      defaultUri: vscode.Uri.joinPath(
+        vscode.workspace.workspaceFolders?.[0]?.uri ?? vscode.Uri.file(process.env.HOME || ""),
+        defaultName
+      ),
+      title: "保存 OSS 文件",
+    });
+    if (!uri) return;
+    try {
+      const buf = await loader.getObject(bucket, key);
+      await vscode.workspace.fs.writeFile(uri, buf);
+      vscode.window.showInformationMessage("下载完成");
+    } catch (e) {
+      vscode.window.showErrorMessage(
+        `下载失败: ${e instanceof Error ? e.message : String(e)}`
+      );
+    }
+  });
+
+  vscode.commands.registerCommand("cadb.oss.cache.clear", async () => {
+    const cacheDir = vscode.Uri.joinPath(
+      provider.context.globalStorageUri,
+      "cadb-oss-preview"
+    );
+    try {
+      await vscode.workspace.fs.delete(cacheDir, { recursive: true });
+    } catch (e) {
+      const err = e as { code?: string };
+      if (err?.code !== "FileNotFound" && err?.code !== "ENOENT") {
+        vscode.window.showErrorMessage(
+          `清除失败: ${e instanceof Error ? e.message : String(e)}`
+        );
+        return;
+      }
+    }
+    vscode.window.showInformationMessage("OSS 临时缓存已清除");
   });
 
   vscode.commands.registerCommand("cadb.redis.pubsub", async (args) => {

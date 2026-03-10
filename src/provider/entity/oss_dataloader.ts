@@ -7,7 +7,13 @@ import {
   SaveResult,
   TableResult,
 } from "./dataloader";
-import { HeadBucketCommand, ListBucketsCommand, ListObjectsV2Command, S3Client } from "@aws-sdk/client-s3";
+import {
+  GetObjectCommand,
+  HeadBucketCommand,
+  ListBucketsCommand,
+  ListObjectsV2Command,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { Datasource, DatasourceInputData } from "./datasource";
 
 /** 将字节数格式化为 KB、MB、GB 等易读字符串 */
@@ -225,6 +231,43 @@ export class OssDataLoader implements Dataloader {
     }
     return ds.children;
   }
+
+  /** 获取对象内容（用于预览与下载） */
+  async getObject(bucket: string, key: string): Promise<Uint8Array> {
+    const result = await this.client.send(
+      new GetObjectCommand({ Bucket: bucket, Key: key })
+    );
+    const body = result.Body;
+    if (!body) return new Uint8Array(0);
+    return await body.transformToByteArray();
+  }
+
+  /** 按前缀列出所有对象（用于文件夹下载） */
+  async listObjectsWithPrefix(
+    bucket: string,
+    prefix: string
+  ): Promise<{ Key: string; Size?: number }[]> {
+    const out: { Key: string; Size?: number }[] = [];
+    let continuationToken: string | undefined;
+    do {
+      const result = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: bucket,
+          Prefix: prefix,
+          ContinuationToken: continuationToken,
+          MaxKeys: 1000,
+        })
+      );
+      if (result.Contents?.length) {
+        for (const c of result.Contents) {
+          if (c.Key) out.push({ Key: c.Key, Size: c.Size });
+        }
+      }
+      continuationToken = result.IsTruncated ? result.NextContinuationToken : undefined;
+    } while (continuationToken);
+    return out;
+  }
+
   listFolders(ds: Datasource): Promise<Datasource[]> {
     throw new Error("listFolders Method not implemented.");
   }

@@ -1,11 +1,13 @@
 {
   "name": "vscode-cadb",
   "displayName": "vscode-cadb",
+  "publisher": "codingsoul",
   "description": "Powerful database management VSCode plugin!",
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.104.0"
   },
+  "license": "MIT",
   "categories": [
     "Other"
   ],
@@ -13,13 +15,14 @@
     "onLanguage:sql"
   ],
   "main": "./dist/extension.js",
+  "icon": "logo.png",
   "contributes": {
     "viewsContainers": {
       "activitybar": [
         {
           "id": "datasource",
           "title": "CADB",
-          "icon": "./resources/icons/logo.svg"
+          "icon": "./logo.png"
         }
       ],
       "panel": [
@@ -78,6 +81,15 @@
         "command": "cadb.datasource.filterEntry",
         "title": "过滤显示",
         "icon": "$(cursor)"
+      },
+      {
+        "command": "cadb.oss.download",
+        "title": "下载",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "cadb.oss.cache.clear",
+        "title": "清除 OSS 临时缓存"
       },
       {
         "command": "cadb.collection.useDatabase",
@@ -230,6 +242,11 @@
         {
           "command": "cadb.datasource.addDatabase",
           "when": "view == datasource && viewItem =~ /Type$/",
+          "group": "inline"
+        },
+        {
+          "command": "cadb.oss.download",
+          "when": "view == datasource && (viewItem == folder || viewItem == item)",
           "group": "inline"
         },
         {
