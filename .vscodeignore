@@ -2,6 +2,10 @@
 .vscode-test/**
 out/**
 node_modules/**
+!node_modules/jquery/**
+!node_modules/layui/**
+!node_modules/tabulator-tables/**
+!node_modules/@vscode/codicons/**
 src/**
 .gitignore
 .yarnrc

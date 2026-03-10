@@ -1,6 +1,7 @@
+import { existsSync } from "fs";
+import path from "path";
 import * as vscode from "vscode";
 import { DataSourceProvider } from "./database_provider";
-import path from "path";
 import { generateNonce } from "./utils";
 
 export function createWebview(
@@ -49,13 +50,14 @@ export function createWebview(
     .replace(/{{node-resources-uri}}/g, nodeResourcesUri.toString())
     .replace(/{{resources-uri}}/g, resourcesUri.toString())
     .replace(/{{resource-nonce}}/g, nonce);
-  panel.iconPath = vscode.Uri.file(
-    path.join(
-      provider.context.extensionPath,
-      "resources",
-      "panels",
-      "favicon.ico"
-    )
+  const faviconPath = path.join(
+    provider.context.extensionPath,
+    "resources",
+    "panels",
+    "favicon.ico"
   );
+  if (existsSync(faviconPath)) {
+    panel.iconPath = vscode.Uri.file(faviconPath);
+  }
   return panel;
 }
