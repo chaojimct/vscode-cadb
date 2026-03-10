@@ -1,71 +1,34 @@
-# vscode-cadb README
+# CADB
 
-This is the README for your extension "vscode-cadb". After writing up a brief description, we recommend including the following sections.
+在 VS Code 中管理多种数据源的扩展：MySQL、Redis、OSS，支持 SQL 执行、Notebook 与查询面板。
 
-## Features
+## 功能特性
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+- **MySQL**：连接数据库，浏览库/表，执行 SQL、解释 SQL，表数据查看与编辑，复制连接信息
+- **Redis**：连接实例，浏览键值，Pub/Sub
+- **OSS**：浏览 Bucket/目录与文件，点击文件下载到临时目录后按后缀用默认编辑器打开，支持文件夹下载、清除临时缓存
+- **SQL Notebook**：`.jsql` 笔记本，执行 SQL 并查看结果
+- **查询面板**：数据源树、搜索、过滤，右键菜单（编辑、下载、删除、复制连接等）
 
-For example if there is an image subfolder under your extension project workspace:
+## 使用说明
 
-\!\[feature X\]\(images/feature-x.png\)
+1. 安装扩展后，左侧活动栏会出现 **CADB** 图标，点击进入「数据源」视图。
+2. 点击「新建项」或视图内「+」，选择数据源类型（MySQL / Redis / OSS），按提示配置连接并保存。
+3. 展开数据源节点：MySQL 可展开库与表并执行 SQL；Redis 可浏览键与 Pub/Sub；OSS 可展开目录，点击文件会先下载到临时目录再按文件类型打开。
+4. 命令面板（`Ctrl+Shift+P` / `Cmd+Shift+P`）可搜索并执行扩展命令，如「清除 OSS 临时缓存」「选择数据库」「执行 SQL」等。
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+## 常用命令
 
-## Requirements
+| 命令 | 说明 |
+|------|------|
+| 新建项 | 添加数据源（MySQL/Redis/OSS） |
+| 刷新 | 刷新数据源树 |
+| 编辑 | 编辑当前节点配置 |
+| 下载 | OSS 文件/文件夹下载到本地 |
+| 清除 OSS 临时缓存 | 删除 OSS 预览用临时文件 |
+| 执行 SQL | 执行当前 SQL |
+| 新建 Notebook | 创建 SQL Notebook |
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+## 许可证
 
-## Extension Settings
-
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
-
-For example:
-
-This extension contributes the following settings:
-
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
-
-## Known Issues
-
-Calling out known issues can help limit users opening duplicate issues against your extension.
-
-## Release Notes
-
-Users appreciate release notes as you update your extension.
-
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
-
----
-
-## Following extension guidelines
-
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+[MIT](LICENSE) © codingsoul
