@@ -210,90 +210,61 @@ export class SqlNotebookController {
       // 保存数据库连接信息到 Notebook 元数据
       await this._saveNotebookMetadata(cell.notebook, datasourceName, databaseName);
 
-      // 处理结果
-      if (Array.isArray(result)) {
-        // SELECT 查询结果
-        const html = this._generateHtmlTable(result);
-        const outputItems: vscode.NotebookCellOutputItem[] = [
-          vscode.NotebookCellOutputItem.text(html, 'text/html'),
-          vscode.NotebookCellOutputItem.json(result, 'application/json')
-        ];
-        const output = new vscode.NotebookCellOutput(outputItems);
+      // 处理结果：统一输出为 application/x.sql-result，由 notebook 渲染器以表格展示
+      const executionTimeSec = (Date.now() - startTime) / 1000;
+      if (Array.isArray(result) && result.length > 0) {
+        const columns = Object.keys(result[0]).map((name) => ({ name }));
+        const sqlResult = {
+          type: 'query-result' as const,
+          columns,
+          data: result,
+          rowCount: result.length,
+          executionTime: executionTimeSec,
+        };
+        const output = new vscode.NotebookCellOutput([
+          vscode.NotebookCellOutputItem.json(sqlResult, 'application/x.sql-result'),
+        ]);
+        await execution.replaceOutput([output]);
+      } else if (Array.isArray(result) && result.length === 0) {
+        const sqlResult = {
+          type: 'query-result' as const,
+          columns: [] as { name: string }[],
+          data: [] as any[],
+          rowCount: 0,
+          executionTime: executionTimeSec,
+          message: '查询成功，无数据',
+        };
+        const output = new vscode.NotebookCellOutput([
+          vscode.NotebookCellOutputItem.json(sqlResult, 'application/x.sql-result'),
+        ]);
         await execution.replaceOutput([output]);
       } else {
-        // 其他操作结果
-        const affectedRows = (result as any)?.affectedRows || 0;
-        const message = `执行成功，影响 ${affectedRows} 行 (${executionTime}ms)`;
-        const outputItems: vscode.NotebookCellOutputItem[] = [
-          vscode.NotebookCellOutputItem.text(message)
-        ];
-        const output = new vscode.NotebookCellOutput(outputItems);
+        const affectedRows = (result as any)?.affectedRows ?? 0;
+        const sqlResult = {
+          type: 'query-result' as const,
+          columns: [] as { name: string }[],
+          data: [] as any[],
+          rowCount: affectedRows,
+          executionTime: executionTimeSec,
+          message: `执行成功，影响 ${affectedRows} 行`,
+        };
+        const output = new vscode.NotebookCellOutput([
+          vscode.NotebookCellOutputItem.json(sqlResult, 'application/x.sql-result'),
+        ]);
         await execution.replaceOutput([output]);
       }
     } catch (error: any) {
-      const outputItems: vscode.NotebookCellOutputItem[] = [
-        vscode.NotebookCellOutputItem.error(error)
-      ];
-      const output = new vscode.NotebookCellOutput(outputItems);
+      const sqlError = {
+        type: 'query-error' as const,
+        error: error?.message ?? String(error),
+      };
+      const output = new vscode.NotebookCellOutput([
+        vscode.NotebookCellOutputItem.json(sqlError, 'application/x.sql-error'),
+      ]);
       await execution.replaceOutput([output]);
     } finally {
       execution.end(true, Date.now());
     }
-  }
-
-  /**
-   * 生成 HTML 表格
-   */
-  private _generateHtmlTable(data: any[]): string {
-    if (data.length === 0) {
-      return '<div style="padding: 10px; color: var(--vscode-descriptionForeground);"><i>No results found</i></div>';
-    }
-    
-    const columns = Object.keys(data[0]);
-    
-    let html = '<div style="overflow-x: auto;"><table style="border-collapse: collapse; width: 100%; font-family: var(--vscode-font-family); font-size: var(--vscode-editor-font-size);">';
-    
-    // Header
-    html += '<thead><tr>';
-    columns.forEach(col => {
-      html += `<th style="border: 1px solid var(--vscode-panel-border); padding: 6px; background-color: var(--vscode-editor-inactiveSelectionBackground); text-align: left; font-weight: bold; color: var(--vscode-editor-foreground);">${col}</th>`;
-    });
-    html += '</tr></thead>';
-    
-    // Body
-    html += '<tbody>';
-    data.forEach((row, index) => {
-      // 使用透明度来实现斑马纹，适应不同主题
-      const bgStyle = index % 2 === 0 ? '' : 'background-color: var(--vscode-keybindingTable-rowsBackground);';
-      html += `<tr style="${bgStyle}">`;
-      columns.forEach(col => {
-        const value = row[col];
-        let displayValue = '';
-        if (value === null) {
-          displayValue = '<span style="color: var(--vscode-descriptionForeground); font-style: italic;">null</span>';
-        } else if (value instanceof Date) {
-          displayValue = value.toISOString();
-        } else if (typeof value === 'object') {
-          displayValue = JSON.stringify(value);
-        } else {
-          // 转义 HTML 字符防止注入或显示错误
-          displayValue = String(value)
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
-        }
-        html += `<td style="border: 1px solid var(--vscode-panel-border); padding: 6px; color: var(--vscode-editor-foreground);">${displayValue}</td>`;
-      });
-      html += '</tr>';
-    });
-    html += '</tbody>';
-    
-    html += '</table></div>';
-    html += `<div style="margin-top: 8px; color: var(--vscode-descriptionForeground); font-size: 0.9em;">Total: ${data.length} rows</div>`;
-    
-    return html;
   }
 
   /**

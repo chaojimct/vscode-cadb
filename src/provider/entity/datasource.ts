@@ -93,13 +93,77 @@ export class Datasource extends vscode.TreeItem {
     }
   };
 
+  /** 创建数据库时由调用方注入（避免循环依赖） */
+  public static createDatabaseHost?: {
+    createWebview(viewType: string, title: string): vscode.WebviewPanel;
+    refresh(item?: Datasource): void;
+    loadCollectionChildren(node: Datasource): Promise<void>;
+  };
+
   public create = async (
     context: vscode.ExtensionContext,
     databaseManager?: DatabaseManager
   ): Promise<void> => {
     switch (this.type) {
       case "datasourceType":
-        // TODO: 创建数据库
+        if (this.dataloader instanceof MySQLDataloader) {
+          const host = Datasource.createDatabaseHost;
+          if (!host || !this.dataloader) return;
+          const dataloader = this.dataloader;
+          const item = this;
+          const collations = await dataloader.listCollations(item);
+          const options = collations.map((c) => ({
+            label: c.label?.toString() || "",
+            value: c.label?.toString() || "",
+          }));
+          const panel = host.createWebview("settings", "创建数据库");
+          panel.webview.postMessage({
+            command: "load",
+            configType: "database",
+            data: {},
+            options: { collation: options },
+          });
+          panel.webview.onDidReceiveMessage(async (message: { command: string; payload?: any }) => {
+            switch (message.command) {
+              case "save":
+                try {
+                  const databaseName = message.payload?.name;
+                  await dataloader.createDatabase(message.payload);
+                  panel.webview.postMessage({
+                    command: "status",
+                    success: true,
+                    message: "✔️ 数据库创建成功",
+                  });
+                  setTimeout(() => panel.dispose(), 1000);
+                  host.refresh(item);
+                  setTimeout(async () => {
+                    try {
+                      const databases = await item.expand(context);
+                      item.children = databases || [];
+                      const newDatabase = item.children.find(
+                        (db: Datasource) => db.label?.toString() === databaseName
+                      );
+                      if (newDatabase && newDatabase.type === "collection") {
+                        await host.loadCollectionChildren(newDatabase);
+                      }
+                    } catch (err) {
+                      console.error("加载新数据库子节点失败:", err);
+                    }
+                  }, 500);
+                } catch (error) {
+                  panel.webview.postMessage({
+                    command: "status",
+                    success: false,
+                    message: `❗ 创建失败: ${error instanceof Error ? error.message : String(error)}`,
+                  });
+                }
+                break;
+              case "cancel":
+                panel.dispose();
+                break;
+            }
+          });
+        }
         break;
       case "fileType":
         if (!this.parent || !this.parent.label) {
