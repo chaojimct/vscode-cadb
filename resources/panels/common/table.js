@@ -16,15 +16,29 @@ class DatabaseTableData {
     this.originalData = new Map(); // row index -> original row
     this.queryTime = 0;
     this.paginationSize = 2000;
+    /** 服务端分页：当前偏移（LIMIT offset, pageSize） */
+    this.dataOffset = 0;
+    /** 是否使用服务端分页（由 load 传入 pageSize/offset 时启用） */
+    this.serverPagination = false;
   }
 
   /**
    * 初始化表格
+   * @param {object} [options] - 可选，{ pageSize, offset } 存在时启用服务端分页
    */
-  init(columns, data, queryTime) {
+  init(columns, data, queryTime, options) {
     this.columns = columns;
     this.tableData = data || [];
     this.queryTime = queryTime || 0;
+    if (options && options.pageSize != null) {
+      this.serverPagination = true;
+      this.pageSize = options.pageSize;
+      this.paginationSize = options.pageSize;
+      this.dataOffset = options.offset ?? 0;
+    } else {
+      this.serverPagination = false;
+      this.dataOffset = 0;
+    }
     this.changedRows.clear();
     this.originalData.clear();
     (this.tableData || []).forEach((row, index) => {
@@ -34,6 +48,10 @@ class DatabaseTableData {
       this.newRow[c.field] = c.defaultValue ?? "";
     });
     this._initGrid();
+  }
+
+  getDataOffset() {
+    return this.dataOffset ?? 0;
   }
 
   _initGrid() {
@@ -82,7 +100,7 @@ class DatabaseTableData {
           }
         },
       },
-      pagination: true,
+      pagination: !this.serverPagination,
       paginationPageSize: this.paginationSize,
       paginationPageSizeSelector: false,
       rowSelection: { mode: "multiRow", enableClickSelection: false },
@@ -111,6 +129,9 @@ class DatabaseTableData {
       {
         headerName: "#",
         valueGetter: (params) => {
+          if (this.serverPagination) {
+            return this.dataOffset + (params.node?.rowIndex ?? 0) + 1;
+          }
           const api = params.api;
           const page = (api?.paginationGetCurrentPage?.() ?? 0);
           const pageSize = api?.paginationGetPageSize?.() ?? this.paginationSize;
@@ -240,16 +261,25 @@ class DatabaseTableData {
 
   updatePaginationUI() {
     if (!this.gridApi) return;
+    const rangeEl = document.getElementById("pagination-range");
+    const prevBtn = document.getElementById("btn-prev-page");
+    const nextBtn = document.getElementById("btn-next-page");
+
+    if (this.serverPagination) {
+      const from = this.tableData.length === 0 ? 0 : this.dataOffset + 1;
+      const to = this.dataOffset + this.tableData.length;
+      if (rangeEl) rangeEl.textContent = `${from} - ${to}`;
+      if (prevBtn) prevBtn.disabled = this.dataOffset === 0;
+      if (nextBtn) nextBtn.disabled = this.tableData.length < this.pageSize;
+      return;
+    }
+
     const page = (this.gridApi.paginationGetCurrentPage?.() ?? 0) + 1;
     const total = this.gridApi.getDisplayedRowCount?.() ?? this.tableData.length;
     const size = this.paginationSize;
     const from = total === 0 ? 0 : (page - 1) * size + 1;
     const to = Math.min(page * size, total);
     const text = `${from} - ${to} / ${total}`;
-
-    const rangeEl = document.getElementById("pagination-range");
-    const prevBtn = document.getElementById("btn-prev-page");
-    const nextBtn = document.getElementById("btn-next-page");
     if (rangeEl) rangeEl.textContent = text;
     const maxPage = Math.max(1, Math.ceil(total / size));
     if (prevBtn) prevBtn.disabled = page <= 1;
@@ -257,10 +287,18 @@ class DatabaseTableData {
   }
 
   nextPage() {
+    if (this.serverPagination && this.vscode) {
+      this.vscode.postMessage({ command: "loadPage", offset: this.dataOffset + this.pageSize });
+      return;
+    }
     if (this.gridApi) this.gridApi.paginationGoToNextPage();
   }
 
   prevPage() {
+    if (this.serverPagination && this.vscode) {
+      this.vscode.postMessage({ command: "loadPage", offset: Math.max(0, this.dataOffset - this.pageSize) });
+      return;
+    }
     if (this.gridApi) this.gridApi.paginationGoToPreviousPage();
   }
 

@@ -3,7 +3,7 @@
   "displayName": "vscode-cadb",
   "publisher": "codingsoul",
   "description": "Powerful database management VSCode plugin!",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "engines": {
     "vscode": "^1.104.0"
   },
@@ -80,6 +80,11 @@
         "command": "cadb.datasource.edit",
         "title": "编辑",
         "icon": "$(edit)"
+      },
+      {
+        "command": "cadb.datasource.rename",
+        "title": "重命名",
+        "icon": "$(pencil)"
       },
       {
         "command": "cadb.datasource.filterEntry",
@@ -239,6 +244,11 @@
           "group": "inline"
         },
         {
+          "command": "cadb.datasource.rename",
+          "when": "view == datasource && viewItem == datasource",
+          "group": "inline"
+        },
+        {
           "command": "cadb.datasource.add",
           "when": "view == datasource && (viewItem =~ /Type$/ || viewItem == folder)",
           "group": "inline"
@@ -260,6 +270,11 @@
         },
         {
           "command": "cadb.redis.pubsub",
+          "when": "view == datasource && viewItem == datasource",
+          "group": "context"
+        },
+        {
+          "command": "cadb.datasource.rename",
           "when": "view == datasource && viewItem == datasource",
           "group": "context"
         },
@@ -346,6 +361,13 @@
           "minimum": 1,
           "maximum": 3,
           "description": "SQL Notebook 编辑器行高"
+        },
+        "cadb.grid.pageSize": {
+          "type": "number",
+          "default": 2000,
+          "minimum": 1,
+          "maximum": 10000,
+          "description": "表格每页查询条数（上一页/下一页按此数量翻页，单次查询最多返回该条数）"
         }
       }
     },

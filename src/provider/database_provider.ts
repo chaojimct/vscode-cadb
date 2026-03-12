@@ -816,4 +816,44 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
       this.saveTreeState();
     }
   }
+
+  /**
+   * 重命名连接：迁移树状态中所有以旧连接名为 key 的数据到新名称
+   * @param oldName 原连接名称
+   * @param newName 新连接名称
+   */
+  public renameConnection(oldName: string, newName: string): void {
+    if (oldName === newName) return;
+    if (!this.treeState.cachedTreeData) this.treeState.cachedTreeData = {};
+    if (this.treeState.cachedTreeData[oldName]) {
+      this.treeState.cachedTreeData[newName] = this.treeState.cachedTreeData[oldName];
+      delete this.treeState.cachedTreeData[oldName];
+    }
+    if (this.treeState.selectedDatabases?.[oldName] !== undefined) {
+      if (!this.treeState.selectedDatabases) this.treeState.selectedDatabases = {};
+      this.treeState.selectedDatabases[newName] = this.treeState.selectedDatabases[oldName];
+      delete this.treeState.selectedDatabases[oldName];
+    }
+    if (this.treeState.selectedTables) {
+      const newSelectedTables: Record<string, string[]> = {};
+      for (const [key, tables] of Object.entries(this.treeState.selectedTables)) {
+        if (key.startsWith(`${oldName}:`)) {
+          newSelectedTables[`${newName}:${key.slice(oldName.length + 1)}`] = tables;
+        } else {
+          newSelectedTables[key] = tables;
+        }
+      }
+      this.treeState.selectedTables = newSelectedTables;
+    }
+    if (this.treeState.expandedNodes?.length) {
+      const segmentOld = `datasource:${oldName}`;
+      const segmentNew = `datasource:${newName}`;
+      this.treeState.expandedNodes = this.treeState.expandedNodes.map((path) => {
+        const parts = path.split("/");
+        if (parts[0] === segmentOld) parts[0] = segmentNew;
+        return parts.join("/");
+      });
+    }
+    this.saveTreeState();
+  }
 }

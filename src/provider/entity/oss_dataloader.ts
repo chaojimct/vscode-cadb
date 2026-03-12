@@ -271,7 +271,7 @@ export class OssDataLoader implements Dataloader {
   listFolders(ds: Datasource): Promise<Datasource[]> {
     throw new Error("listFolders Method not implemented.");
   }
-  listData(ds: Datasource): Promise<TableResult> {
+  listData(ds: Datasource, _options?: { offset?: number; limit?: number }): Promise<TableResult> {
     throw new Error("listData Method not implemented.");
   }
   descDatasource(ds: Datasource): Promise<FormResult | undefined> {

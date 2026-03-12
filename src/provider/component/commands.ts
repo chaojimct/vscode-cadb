@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { DataSourceProvider } from "../database_provider";
 import { Datasource } from "../entity/datasource";
 import path from "path";
-import { FormResult } from "../entity/dataloader";
+import { FormResult, type TableResult } from "../entity/dataloader";
 import { MySQLDataloader } from "../entity/mysql_dataloader";
 import { OssDataLoader } from "../entity/oss_dataloader";
 import { RedisDataloader } from "../entity/redis_dataloader";
@@ -939,6 +939,50 @@ export function registerDatasourceCommands(
     )
   );
 
+  disposables.push(
+    vscode.commands.registerCommand("cadb.datasource.rename", async (item: Datasource) => {
+      if (!item || item.type !== "datasource") {
+        return;
+      }
+      const oldName = item.label?.toString()?.trim() || "";
+      if (!oldName) {
+        vscode.window.showWarningMessage("无法获取当前连接名称");
+        return;
+      }
+      const connections = provider.getConnections();
+      const newName = await vscode.window.showInputBox({
+        title: "重命名数据源连接",
+        prompt: "输入新的连接名称",
+        value: oldName,
+        validateInput: (value) => {
+          const name = value?.trim() || "";
+          if (!name) return "名称不能为空";
+          if (name === oldName) return "名称未更改";
+          if (connections.some((c) => c.name === name)) return "该名称已被其他连接使用";
+          return "";
+        },
+      });
+      if (newName === undefined || newName.trim() === "" || newName.trim() === oldName) {
+        return;
+      }
+      const name = newName.trim();
+      if (connections.some((c) => c.name === name)) {
+        vscode.window.showWarningMessage("该名称已被其他连接使用");
+        return;
+      }
+      const index = connections.findIndex((c) => c.name === oldName);
+      if (index === -1) {
+        vscode.window.showErrorMessage("未找到要重命名的连接");
+        return;
+      }
+      connections[index] = { ...connections[index], name };
+      await provider.context.globalState.update("cadb.connections", connections);
+      provider.renameConnection(oldName, name);
+      provider.refresh();
+      vscode.window.showInformationMessage(`已重命名为 "${name}"`);
+    })
+  );
+
   // 注册通用删除命令
   disposables.push(
     vscode.commands.registerCommand("cadb.delete", async (item: Datasource) => {
@@ -1315,24 +1359,32 @@ export function registerDatasourceCommands(
 /** 已打开的表格数据面板：key = connectionName|databaseName|tableName，同一表只保留一个 */
 const openTablePanels = new Map<string, vscode.WebviewPanel>();
 
+function getGridPageSize(): number {
+  return vscode.workspace.getConfiguration("cadb").get<number>("grid.pageSize", 2000);
+}
+
 async function sqlResultView(
   datasource: Datasource,
   provider: DataSourceProvider,
   outputChannel: vscode.OutputChannel
 ) {
-  const data = await datasource.listData();
+  const pageSize = getGridPageSize();
+  const data = await datasource.listData({ offset: 0, limit: pageSize });
   const tableName = datasource.label?.toString() || "";
   const databaseName = datasource.parent?.parent?.label?.toString() || "";
   const connectionName =
     datasource.dataloader?.rootNode().label?.toString() || "";
   const panelKey = `${connectionName}|${databaseName}|${tableName}`;
 
+  const postLoad = (payload: TableResult | null, offset: number, limit: number) =>
+    payload ? { command: "load" as const, data: { ...payload, pageSize: limit, offset } } : null;
+
   const existing = openTablePanels.get(panelKey);
   if (existing) {
     existing.reveal();
-    // 优先由 webview 在 visibilitychange 时发 ready 触发加载；延迟再发一次 load 作为兜底（部分环境下 visibility 可能不触发）
     setTimeout(() => {
-      existing.webview.postMessage({ command: "load", data: data });
+      const msg = postLoad(data, 0, pageSize);
+      if (msg) existing.webview.postMessage(msg);
     }, 150);
     return;
   }
@@ -1347,12 +1399,18 @@ async function sqlResultView(
 
   panel.webview.onDidReceiveMessage(async (message) => {
     if (message.command === "ready") {
-      // 每次 ready 都拉取最新数据，保证首次打开与再次切回该面板时都能正确加载
-      const freshData = await datasource.listData();
-      panel.webview.postMessage({
-        command: "load",
-        data: freshData,
-      });
+      const limit = getGridPageSize();
+      const freshData = await datasource.listData({ offset: 0, limit });
+      const msg = postLoad(freshData, 0, limit);
+      if (msg) panel.webview.postMessage(msg);
+      return;
+    }
+    if (message.command === "loadPage") {
+      const offset = typeof message.offset === "number" ? message.offset : 0;
+      const limit = getGridPageSize();
+      const freshData = await datasource.listData({ offset, limit });
+      const msg = postLoad(freshData, offset, limit);
+      if (msg) panel.webview.postMessage(msg);
       return;
     }
     if (message.command === "showMessage") {
@@ -1447,11 +1505,10 @@ async function sqlResultView(
               success: true,
               message: msg,
             });
-            const refreshedData = await datasource.listData();
-            panel.webview.postMessage({
-              command: "load",
-              data: refreshedData,
-            });
+            const limit = getGridPageSize();
+            const refreshedData = await datasource.listData({ offset: 0, limit });
+            const loadMsg = postLoad(refreshedData, 0, limit);
+            if (loadMsg) panel.webview.postMessage(loadMsg);
           } else {
             const errMsg = `更新完成：成功 ${saveResult.successCount} 行，失败 ${saveResult.errorCount} 行。${saveResult.errors.length > 0 ? saveResult.errors[0] : ""
               }`;
@@ -1473,11 +1530,11 @@ async function sqlResultView(
         }
         break;
       case "refresh": {
-        const data = await datasource.listData();
-        panel.webview.postMessage({
-          command: "load",
-          data: data,
-        });
+        const offset = typeof message.offset === "number" ? message.offset : 0;
+        const limit = getGridPageSize();
+        const freshData = await datasource.listData({ offset, limit });
+        const loadMsg = postLoad(freshData, offset, limit);
+        if (loadMsg) panel.webview.postMessage(loadMsg);
         break;
       }
     }

@@ -775,8 +775,10 @@ ORDER BY
     }
   }
 
-  async listData(ds: Datasource): Promise<TableResult> {
+  async listData(ds: Datasource, options?: { offset?: number; limit?: number }): Promise<TableResult> {
     const startTime = Date.now();
+    const offset = options?.offset ?? 0;
+    const limit = options?.limit ?? 2000;
 
     const descTable = await new Promise<ColDef[]>((resolve) => {
       const table = ds.label;
@@ -813,7 +815,7 @@ ORDER BY
     const dataTable = await new Promise<Record<string, any>[]>((resolve) => {
       if (!baseTable) return resolve([]);
       this.conn.query(
-        `SELECT * FROM ${baseTable} LIMIT 2000`,
+        `SELECT * FROM ${baseTable} LIMIT ${Number(offset)} , ${Number(limit)}`,
         (err, results) => {
           if (err) {
             vscode.window.showErrorMessage(err.message);

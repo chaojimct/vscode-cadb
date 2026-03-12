@@ -23,7 +23,11 @@
       const primaryKeyField = dbTable.getPrimaryKeyField?.() ?? undefined;
       vscode?.postMessage({ command: "save", data: changed, deleted, primaryKeyField });
     },
-    refresh: () => vscode?.postMessage({ command: "refresh" }),
+    refresh: () =>
+      vscode?.postMessage({
+        command: "refresh",
+        offset: dbTable.getDataOffset?.() ?? 0,
+      }),
     add: () => dbTable.addRow(),
     delete: () => dbTable.deleteRow(),
     undo: () => dbTable.undo(),
@@ -54,7 +58,11 @@
       const columnDefs = payload?.columnDefs;
       const rowData = Array.isArray(payload?.rowData) ? payload.rowData : [];
       if (!columnDefs?.length) return;
-      dbTable.init(columnDefs, rowData, payload?.queryTime ?? 0);
+      const options =
+        payload?.pageSize != null
+          ? { pageSize: payload.pageSize, offset: payload.offset ?? 0 }
+          : undefined;
+      dbTable.init(columnDefs, rowData, payload?.queryTime ?? 0, options);
       dbTable.updatePaginationUI?.();
       return;
     }

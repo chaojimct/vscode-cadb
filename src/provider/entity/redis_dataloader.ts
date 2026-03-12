@@ -223,7 +223,7 @@ export class RedisDataloader implements Dataloader {
     }
     return Promise.resolve(ds.children);
   }
-  async listData(ds: Datasource): Promise<TableResult> {
+  async listData(ds: Datasource, _options?: { offset?: number; limit?: number }): Promise<TableResult> {
     const startTime = Date.now();
 
     if (!this.client.isOpen) {

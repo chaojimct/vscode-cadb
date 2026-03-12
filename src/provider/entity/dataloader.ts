@@ -87,7 +87,7 @@ export interface Dataloader {
   listColumns(ds: Datasource): Promise<Datasource[]>;
   listTables(ds: Datasource): Promise<Datasource[]>;
   listFolders(ds: Datasource): Promise<Datasource[]>;
-  listData(ds: Datasource): Promise<TableResult>;
+  listData(ds: Datasource, options?: { offset?: number; limit?: number }): Promise<TableResult>;
 
   descDatasource(ds: Datasource): Promise<FormResult | undefined>;
   descUser(ds: Datasource): Promise<FormResult | undefined>;
