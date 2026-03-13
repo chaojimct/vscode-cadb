@@ -4,20 +4,13 @@ import * as vscode from "vscode";
 import { Datasource, DatasourceInputData } from "./entity/datasource";
 import type { DatabaseManager } from "./component/database_manager";
 
-interface CachedNode {
-  data: DatasourceInputData;
-  children?: CachedNode[];
-  collapsibleState?: vscode.TreeItemCollapsibleState;
-}
-
 /**
- * 树展开状态接口
+ * 树状态接口（仅持久化展开状态与用户过滤选项，不缓存树数据）
  */
 interface TreeState {
   expandedNodes: string[]; // 存储已展开节点的路径
   selectedDatabases?: Record<string, string[]>; // 存储每个连接选择显示的数据库
   selectedTables?: Record<string, string[]>; // 存储每个数据库选择显示的表，key格式为 "connectionName:databaseName"
-  cachedTreeData?: Record<string, CachedNode[]>; // 存储缓存的树数据
 }
 
 export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
@@ -90,58 +83,10 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
 
   private async initialize() {
     const connections = this.getConnections();
-    const cachedData = this.treeState.cachedTreeData;
-    
-    // 简单验证缓存是否有效（检查连接名称）
-    const modelNames = connections.map(m => m.name).sort();
-    const cacheNames = cachedData ? Object.keys(cachedData).sort() : [];
-    const cacheValid = cachedData && JSON.stringify(modelNames) === JSON.stringify(cacheNames);
-
-    if (cacheValid && cachedData) {
-      this.rootNodes = connections.map(m => {
-        const node = new Datasource(m);
-        const cachedChildren = cachedData[m.name];
-        if (cachedChildren) {
-          node.children = this.deserializeChildren(cachedChildren, node);
-          // 如果有子节点，设置为折叠状态
-          if (node.children.length > 0) {
-            node.collapsibleState = vscode.TreeItemCollapsibleState.Collapsed;
-          }
-        }
-        return node;
-      });
-      this._onDidChangeTreeData.fire();
-    } else {
-      this.rootNodes = connections.map(m => new Datasource(m));
-      this._onDidChangeTreeData.fire();
-      // 后台加载并缓存
-      this.refreshAndCache();
-    }
-  }
-
-  private deserializeChildren(cachedChildren: CachedNode[], parent: Datasource): Datasource[] {
-    return cachedChildren.map(childCache => {
-      // 创建节点，传入父节点的 dataloader 和父节点引用
-      const childNode = new Datasource(childCache.data, parent.dataloader, parent);
-      
-      if (childCache.collapsibleState !== undefined) {
-        childNode.collapsibleState = childCache.collapsibleState;
-      }
-      
-      if (childCache.children) {
-        childNode.children = this.deserializeChildren(childCache.children, childNode);
-      }
-      
-      return childNode;
-    });
-  }
-
-  private serializeChildren(nodes: Datasource[]): CachedNode[] {
-    return nodes.map(node => ({
-      data: node.data,
-      collapsibleState: node.collapsibleState,
-      children: node.children && node.children.length > 0 ? this.serializeChildren(node.children) : undefined
-    }));
+    this.rootNodes = connections.map(m => new Datasource(m));
+    this._onDidChangeTreeData.fire();
+    // 每次加载都拉取最新数据，过滤显示仍按 treeState 中的 selectedDatabases/selectedTables 应用
+    this.refreshAndCache();
   }
 
   /**
@@ -291,43 +236,33 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
     }
   }
 
+  /**
+   * 从服务器拉取最新树数据并刷新视图，不写本地缓存。
+   * 仍根据 treeState 中的 selectedDatabases/selectedTables 过滤显示。
+   */
   public async refreshAndCache() {
     const connections = this.getConnections();
     this.rootNodes = connections.map(m => new Datasource(m));
     this._onDidChangeTreeData.fire();
-    
+
     await vscode.window.withProgress({
       location: vscode.ProgressLocation.Window,
       title: "正在同步数据库结构...",
       cancellable: false
     }, async (progress) => {
-      const cache: Record<string, CachedNode[]> = {};
-      
-      // 并行处理所有连接，大幅提升性能
       const nodePromises = this.rootNodes.map(async (node, index) => {
         try {
-          progress.report({ 
+          progress.report({
             message: `正在加载 ${node.label} (${index + 1}/${this.rootNodes.length})`,
             increment: 100 / this.rootNodes.length
           });
-          
-          // 使用快速展开模式：只加载到表级别，不加载字段
-          // 字段信息会在用户展开表时按需加载，避免初始同步时加载大量不必要的数据
           await this.expandRecursiveFast(node, 2);
-          
-          cache[node.label as string] = this.serializeChildren(node.children);
         } catch (error) {
           console.error(`加载连接 ${node.label} 失败:`, error);
-          // 即使失败也保存空数组，避免重复尝试
-          cache[node.label as string] = [];
         }
       });
 
-      // 等待所有连接并行加载完成
       await Promise.all(nodePromises);
-      
-      this.treeState.cachedTreeData = cache;
-      this.saveTreeState();
       this._onDidChangeTreeData.fire();
     });
   }
@@ -503,21 +438,29 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
   }
 
   /**
-   * 加载树状态
+   * 加载树状态（仅展开状态与用户过滤选项，不包含树数据缓存）
    */
   private loadTreeState(): TreeState {
-    return this.context.globalState.get<TreeState>('cadb.treeState', {
-      expandedNodes: [],
-      selectedDatabases: {},
-      selectedTables: {}
-    });
+    const stored = this.context.globalState.get<TreeState>('cadb.treeState');
+    if (!stored) {
+      return { expandedNodes: [], selectedDatabases: {}, selectedTables: {} };
+    }
+    return {
+      expandedNodes: stored.expandedNodes ?? [],
+      selectedDatabases: stored.selectedDatabases ?? {},
+      selectedTables: stored.selectedTables ?? {}
+    };
   }
 
   /**
-   * 保存树状态
+   * 保存树状态（仅持久化展开状态与过滤选项）
    */
   private saveTreeState(): void {
-    this.context.globalState.update('cadb.treeState', this.treeState);
+    this.context.globalState.update('cadb.treeState', {
+      expandedNodes: this.treeState.expandedNodes,
+      selectedDatabases: this.treeState.selectedDatabases,
+      selectedTables: this.treeState.selectedTables
+    });
   }
 
   /**
@@ -661,18 +604,7 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
     
     await this.expandRecursive(datasource);
     
-    // 触发更新
     this._onDidChangeTreeData.fire(datasource);
-
-    // 保存缓存
-    const connectionName = datasource.label?.toString() || '';
-    if (connectionName) {
-       if (!this.treeState.cachedTreeData) {
-         this.treeState.cachedTreeData = {};
-       }
-       this.treeState.cachedTreeData[connectionName] = this.serializeChildren(datasource.children);
-       this.saveTreeState();
-    }
   }
 
   /**
@@ -807,15 +739,9 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
   }
 
   /**
-   * 清除缓存的树数据
-   * @param connectionName 连接名称
+   * 清除缓存的树数据（已移除本地缓存，保留此方法仅为兼容调用）
    */
-  public clearCachedTreeData(connectionName: string): void {
-    if (this.treeState.cachedTreeData && this.treeState.cachedTreeData[connectionName]) {
-      delete this.treeState.cachedTreeData[connectionName];
-      this.saveTreeState();
-    }
-  }
+  public clearCachedTreeData(_connectionName: string): void {}
 
   /**
    * 重命名连接：迁移树状态中所有以旧连接名为 key 的数据到新名称
@@ -824,11 +750,6 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
    */
   public renameConnection(oldName: string, newName: string): void {
     if (oldName === newName) return;
-    if (!this.treeState.cachedTreeData) this.treeState.cachedTreeData = {};
-    if (this.treeState.cachedTreeData[oldName]) {
-      this.treeState.cachedTreeData[newName] = this.treeState.cachedTreeData[oldName];
-      delete this.treeState.cachedTreeData[oldName];
-    }
     if (this.treeState.selectedDatabases?.[oldName] !== undefined) {
       if (!this.treeState.selectedDatabases) this.treeState.selectedDatabases = {};
       this.treeState.selectedDatabases[newName] = this.treeState.selectedDatabases[oldName];

@@ -3,7 +3,7 @@
   "displayName": "vscode-cadb",
   "publisher": "codingsoul",
   "description": "Powerful database management VSCode plugin!",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "engines": {
     "vscode": "^1.104.0"
   },
@@ -161,11 +161,6 @@
         "icon": "$(database)"
       },
       {
-        "command": "cadb.sql.selectTable",
-        "title": "选择表",
-        "icon": "$(file)"
-      },
-      {
         "command": "cadb.notebook.showDatabaseStatus",
         "title": "显示数据库状态",
         "icon": "$(info)"
@@ -319,11 +314,6 @@
       "notebook/toolbar": [
         {
           "command": "cadb.sql.selectDatabase",
-          "when": "notebookType == cadb.sqlNotebook",
-          "group": "navigation"
-        },
-        {
-          "command": "cadb.sql.selectTable",
           "when": "notebookType == cadb.sqlNotebook",
           "group": "navigation"
         },

@@ -1982,14 +1982,19 @@ export function registerDatasourceItemCommands(
         return; // 用户取消或未修改
       }
 
+      // 原文件后缀；若用户输入未带后缀则自动补上
+      const originalExt = path.extname(currentName) || path.extname(filePath);
+      const trimmedNew = newName.trim();
+      const finalName = path.extname(trimmedNew) ? trimmedNew : trimmedNew + (originalExt ? (trimmedNew.endsWith(".") ? originalExt.slice(1) : originalExt) : "");
+
       const fileUri = vscode.Uri.file(filePath);
       const dirUri = vscode.Uri.file(path.dirname(filePath));
-      const newFileUri = vscode.Uri.joinPath(dirUri, newName);
+      const newFileUri = vscode.Uri.joinPath(dirUri, finalName);
 
       // 检查新文件名是否已存在
       try {
         await vscode.workspace.fs.stat(newFileUri);
-        vscode.window.showErrorMessage(`文件 "${newName}" 已存在`);
+        vscode.window.showErrorMessage(`文件 "${finalName}" 已存在`);
         return;
       } catch (e) {
         // 文件不存在，可以重命名
@@ -2000,7 +2005,7 @@ export function registerDatasourceItemCommands(
         overwrite: false,
       });
 
-      vscode.window.showInformationMessage(`文件已重命名为 "${newName}"`);
+      vscode.window.showInformationMessage(`文件已重命名为 "${finalName}"`);
 
       // 刷新父节点以更新文件列表
       if (fileItem.parent) {

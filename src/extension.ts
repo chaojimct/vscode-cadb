@@ -18,6 +18,10 @@ import { CaCompletionItemProvider } from "./provider/completion_item_provider";
 import { SqlCodeLensProvider } from "./provider/component/sql_codelens_provider";
 import { SqlExecutor } from "./provider/component/sql_executor";
 import { DatabaseStatusBar } from "./provider/component/database_status_bar";
+import {
+  MySQLTableWorkspaceSymbolProvider,
+  CadbTableDocumentContentProvider,
+} from "./provider/workspace_symbol_provider";
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -295,6 +299,27 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.languages.registerCodeLensProvider(
       { language: "sql", scheme: "file" },
       sqlCodeLensProvider
+    )
+  );
+
+  // 工作区符号：将 MySQL 数据表加入「转到工作区中的符号」(Ctrl/Cmd+T)，选择表可快速打开表数据
+  const mysqlTableSymbolProvider = new MySQLTableWorkspaceSymbolProvider(
+    provider,
+    context
+  );
+  context.subscriptions.push(
+    vscode.languages.registerWorkspaceSymbolProvider(mysqlTableSymbolProvider)
+  );
+
+  // cadb:// 虚拟文档：从工作区符号打开表时，提供占位内容并触发「查看数据」打开表面板
+  const cadbTableContentProvider = new CadbTableDocumentContentProvider(
+    provider,
+    context
+  );
+  context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider(
+      "cadb",
+      cadbTableContentProvider
     )
   );
 
