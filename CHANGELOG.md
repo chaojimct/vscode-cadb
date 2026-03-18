@@ -1,5 +1,27 @@
 # 更新日志
 
+## [0.0.5]
+
+### 新增
+
+- **SQL Hover Provider**：在 SQL Notebook 中悬停 SQL 关键字、表名、列名时显示提示信息（`sql_hover_provider.ts`，新增 360 行）。
+- **SQL Notebook 命令增强**：新增多种 SQL Notebook 操作命令，支持更多交互方式。
+- **结果面板增强**：新增 `ResultProvider`（`result_provider.ts`），提供结构化查询结果展示能力。
+- **Grid 面板**：新增 Grid 面板（`grid.html`、`grid.js`、`grid.css`），支持网格视图展示数据。
+- **Edit 面板增强**：Edit 面板新增字段配置与样式改进。
+
+### 变更
+
+- **SQL Notebook 控制器重构**：`sql_notebook_controller.ts` 大幅优化（+234/-232），改进执行与渲染逻辑。
+- **SQL Notebook 序列化**：`sql_notebook_serializer.ts` 增强数据序列化能力。
+- **MySQL 数据加载器**：`mysql_dataloader.ts` 扩展数据加载能力，支持更多查询场景。
+- **补全提供器**：`completion_item_provider.ts` 优化自动补全体验。
+- **数据库状态栏**：`database_status_bar.ts` 增强状态显示与交互。
+- **Notebook 渲染器**：`renderer.js` 大幅重写（+408 行），提升结果渲染效果与性能。
+- **通用组件**：`field-config.js`、`table.js` 等组件优化配置与表格展示。
+
+---
+
 ## [0.0.4]
 
 ### 新增

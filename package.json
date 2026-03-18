@@ -3,7 +3,7 @@
   "displayName": "vscode-cadb",
   "publisher": "codingsoul",
   "description": "Powerful database management VSCode plugin!",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "engines": {
     "vscode": "^1.104.0"
   },
