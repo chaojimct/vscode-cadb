@@ -3,9 +3,13 @@ import path from "path";
 import { readFileSync } from "fs";
 import { generateNonce } from "./utils";
 
+const MAX_HISTORY_TABS = 30;
+const MAX_ROWS_PER_HISTORY = 200;
+
 /**
  * 查询结果 Webview Provider
  * 显示在 VSCode 底部面板（与终端、输出等一起）
+ * 支持历史记录保存与 Tab 切换
  */
 export class ResultWebviewProvider implements vscode.WebviewViewProvider {
   private webviewView?: vscode.WebviewView;
@@ -14,6 +18,7 @@ export class ResultWebviewProvider implements vscode.WebviewViewProvider {
   private isWebviewReady: boolean = false;
   private pendingMessages: any[] = [];
   private resultCounter: number = 0; // 查询结果编号计数器
+  private historyTabs: any[] = [];
 
   constructor(context: vscode.ExtensionContext) {
     this.context = context;
@@ -60,11 +65,19 @@ export class ResultWebviewProvider implements vscode.WebviewViewProvider {
       if (message.command === "ready") {
         this.isWebviewReady = true;
 
+        // 先恢复历史记录
+        this.restoreHistory();
+
         // 发送所有待处理的消息
         this.pendingMessages.forEach((msg) => {
           this.webviewView?.webview.postMessage(msg);
         });
         this.pendingMessages = [];
+      } else if (message.command === "saveHistory") {
+        this.saveHistoryTab(message);
+      } else if (message.command === "clearHistory") {
+        this.historyTabs = [];
+        this.context.globalState.update("cadb.queryHistory", undefined);
       }
     });
 
@@ -183,6 +196,48 @@ export class ResultWebviewProvider implements vscode.WebviewViewProvider {
       id: `result-${Date.now()}`,
       pinned: false,
     };
+  }
+
+  /**
+   * 保存单个标签到历史（供下次恢复）
+   */
+  private saveHistoryTab(msg: any): void {
+    const tab: any = { id: msg.tabId, pinned: msg.pinned || false };
+    if (msg.columns && msg.data) {
+      tab.type = "result";
+      tab.title = msg.title;
+      tab.columns = msg.columns;
+      tab.data = Array.isArray(msg.data)
+        ? msg.data.slice(0, MAX_ROWS_PER_HISTORY)
+        : [];
+    } else if (msg.text !== undefined) {
+      tab.type = "message";
+      tab.title = msg.title;
+      tab.text = msg.text;
+      tab.messageType = msg.type || "info";
+    } else {
+      return;
+    }
+    this.historyTabs = this.historyTabs.filter((t) => t.id !== tab.id);
+    this.historyTabs.push(tab);
+    if (this.historyTabs.length > MAX_HISTORY_TABS) {
+      this.historyTabs = this.historyTabs.slice(-MAX_HISTORY_TABS);
+    }
+    this.context.globalState.update("cadb.queryHistory", this.historyTabs);
+  }
+
+  /**
+   * 恢复历史记录到 webview
+   */
+  private restoreHistory(): void {
+    const saved = this.context.globalState.get<any[]>("cadb.queryHistory");
+    if (saved && saved.length > 0) {
+      this.historyTabs = saved;
+      this.webviewView?.webview.postMessage({
+        command: "restoreHistory",
+        tabs: this.historyTabs,
+      });
+    }
   }
 
   /**

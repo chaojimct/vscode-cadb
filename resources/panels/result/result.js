@@ -76,6 +76,11 @@ layui.use(["tabs", "layer"], function () {
           <i class="layui-icon layui-icon-close-fill"></i>
           <span>关闭全部结果</span>
         </div>
+        <div class="tab-context-menu-separator"></div>
+        <div class="tab-context-menu-item" data-action="clear-history">
+          <i class="layui-icon layui-icon-delete"></i>
+          <span>清除历史记录</span>
+        </div>
       </div>
     `;
 
@@ -225,7 +230,13 @@ layui.use(["tabs", "layer"], function () {
         break;
 
       case "close-all":
-        closeAllUnpinnedTabs(true); // 显示提示消息
+        closeAllUnpinnedTabs(true);
+        break;
+      case "clear-history":
+        if (vscode) {
+          vscode.postMessage({ command: "clearHistory" });
+        }
+        closeAllUnpinnedTabs();
         break;
     }
   }
@@ -500,10 +511,7 @@ layui.use(["tabs", "layer"], function () {
 
     switch (message.command) {
       case "showResult": {
-        // 1. 先删除所有未固定的标签
-        closeAllUnpinnedTabs();
-
-        // 2. 然后添加新的查询结果标签
+        // 添加新标签（不关闭已有标签，支持 Tab 切换历史记录）
         const { title, columns, data, id, pinned } = message;
         const tabId = id || `result-${Date.now()}`;
         const content = createTableContent(columns, data, tabId);
@@ -514,15 +522,16 @@ layui.use(["tabs", "layer"], function () {
           content: content,
           icon: "&#xe65b;",
           pinned: pinned || false,
-          closable: true, // 确保可以关闭
+          closable: true,
         });
+        // 保存历史供下次恢复
+        if (vscode) {
+          vscode.postMessage({ command: "saveHistory", tabId, title, columns, data, pinned });
+        }
         break;
       }
       case "showMessage": {
-        // 1. 先删除所有未固定的标签
-        closeAllUnpinnedTabs();
-
-        // 2. 然后添加新的消息标签
+        // 添加新标签（不关闭已有标签，支持 Tab 切换历史记录）
         const { title, text, type, id, pinned } = message;
         const content = createMessageContent(text, type || "info");
 
@@ -532,7 +541,37 @@ layui.use(["tabs", "layer"], function () {
           content: content,
           icon: type === "error" ? "&#xe69c;" : "&#xe65b;",
           pinned: pinned || false,
-          closable: true, // 确保可以关闭
+          closable: true,
+        });
+        if (vscode) {
+          vscode.postMessage({ command: "saveHistory", tabId: id, title, text, type, pinned });
+        }
+        break;
+      }
+      case "restoreHistory": {
+        // 恢复历史记录标签
+        const tabs = message.tabs || [];
+        tabs.forEach((tab, index) => {
+          if (tab.type === "result" && tab.columns && tab.data) {
+            const content = createTableContent(tab.columns, tab.data, tab.id);
+            addResultTab({
+              id: tab.id,
+              title: tab.title || `结果 #${index + 1}`,
+              content: content,
+              pinned: tab.pinned || false,
+              closable: true,
+            });
+          } else if (tab.type === "message") {
+            const content = createMessageContent(tab.text || "", tab.messageType || "info");
+            addResultTab({
+              id: tab.id,
+              title: tab.title || "消息",
+              content: content,
+              icon: tab.type === "error" ? "&#xe69c;" : "&#xe65b;",
+              pinned: tab.pinned || false,
+              closable: true,
+            });
+          }
         });
         break;
       }

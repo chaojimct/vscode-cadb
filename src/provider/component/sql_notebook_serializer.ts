@@ -19,6 +19,7 @@ interface RawNotebookCell {
     rowCount: number;
     executionTime: number;
   };
+  results?: any[]; // 多次执行的历史结果（application/x.sql-results）
   error?: string;
 }
 
@@ -78,18 +79,27 @@ export class SqlNotebookSerializer implements vscode.NotebookSerializer {
       }
 
       // 恢复输出
-      if (rawCell.result) {
+      if (rawCell.results && Array.isArray(rawCell.results) && rawCell.results.length > 0) {
         cellData.outputs = [
           new vscode.NotebookCellOutput([
             vscode.NotebookCellOutputItem.json(
-              {
+              { type: 'query-results', results: rawCell.results },
+              'application/x.sql-results'
+            ),
+          ]),
+        ];
+      } else if (rawCell.result) {
+        cellData.outputs = [
+          new vscode.NotebookCellOutput([
+            vscode.NotebookCellOutputItem.json(
+              { type: 'query-results', results: [{
                 type: 'query-result',
                 columns: rawCell.result.columns,
                 data: rawCell.result.data,
                 rowCount: rawCell.result.rowCount,
                 executionTime: rawCell.result.executionTime,
-              },
-              'application/x.sql-result'
+              }] },
+              'application/x.sql-results'
             ),
           ]),
         ];
@@ -97,11 +107,8 @@ export class SqlNotebookSerializer implements vscode.NotebookSerializer {
         cellData.outputs = [
           new vscode.NotebookCellOutput([
             vscode.NotebookCellOutputItem.json(
-              {
-                type: 'query-error',
-                error: rawCell.error,
-              },
-              'application/x.sql-error'
+              { type: 'query-results', results: [{ type: 'query-error', error: rawCell.error }] },
+              'application/x.sql-results'
             ),
           ]),
         ];
@@ -143,7 +150,9 @@ export class SqlNotebookSerializer implements vscode.NotebookSerializer {
           for (const item of output.items) {
             try {
               const outputData = JSON.parse(new TextDecoder().decode(item.data));
-              if (outputData.type === 'query-result') {
+              if (outputData.type === 'query-results' && Array.isArray(outputData.results)) {
+                rawCell.results = outputData.results;
+              } else if (outputData.type === 'query-result') {
                 rawCell.result = {
                   columns: outputData.columns,
                   data: outputData.data,
