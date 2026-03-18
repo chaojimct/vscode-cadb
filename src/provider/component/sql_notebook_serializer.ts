@@ -13,6 +13,7 @@ interface RawNotebook {
 interface RawNotebookCell {
   id?: string;
   sql: string;
+  cadb?: { datasource: string; database: string };
   result?: {
     columns: Array<{ name: string; type: number }>;
     data: any[];
@@ -73,10 +74,10 @@ export class SqlNotebookSerializer implements vscode.NotebookSerializer {
       const rawCell = raw.cells[i];
       const cellData = cells[i];
 
-      // 保存 cell 的元数据（ID）
-      if (rawCell.id) {
-        cellData.metadata = { id: rawCell.id };
-      }
+      const meta = cellData.metadata ? { ...cellData.metadata } : {};
+      if (rawCell.id) meta.id = rawCell.id;
+      if (rawCell.cadb?.datasource && rawCell.cadb?.database) meta.cadb = rawCell.cadb;
+      if (Object.keys(meta).length > 0) cellData.metadata = meta;
 
       // 恢复输出
       if (rawCell.results && Array.isArray(rawCell.results) && rawCell.results.length > 0) {
@@ -143,6 +144,9 @@ export class SqlNotebookSerializer implements vscode.NotebookSerializer {
         id: cell.metadata?.id || `cell-${Date.now()}-${Math.random()}`,
         sql: cell.value || '',
       };
+      if (cell.metadata?.cadb) {
+        rawCell.cadb = cell.metadata.cadb as { datasource: string; database: string };
+      }
 
       // 从输出中提取结果或错误
       if (cell.outputs && cell.outputs.length > 0) {

@@ -77,6 +77,18 @@
   line-height: 1;
 }
 
+.grid-nav-link {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: none;
+  font-size: 13px;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.grid-nav-link:hover {
+  color: var(--vscode-textLink-activeForeground);
+  background: var(--grid-hover);
+}
+
 /* 分页按钮略小 */
 .grid-toolbar__pagination button {
   width: 28px;

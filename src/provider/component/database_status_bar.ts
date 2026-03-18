@@ -36,6 +36,16 @@ export class DatabaseStatusBar {
     this._disposables.push(
       vscode.window.onDidChangeActiveNotebookEditor(() => {
         this._updateStatusBarVisibility();
+        this._updateStatusBar();
+      })
+    );
+
+    // 监听 Notebook 内 cell 选择变化，切换焦点时展示当前 cell 的连接/库
+    this._disposables.push(
+      vscode.window.onDidChangeNotebookEditorSelection((e) => {
+        if (e.notebookEditor.notebook.notebookType === 'cadb.sqlNotebook') {
+          this._updateStatusBar();
+        }
       })
     );
     
@@ -63,22 +73,61 @@ export class DatabaseStatusBar {
   }
 
   /**
+   * 获取当前聚焦的 cell（Notebook 中）
+   */
+  private _getFocusedCell(): vscode.NotebookCell | undefined {
+    const editor = vscode.window.activeNotebookEditor;
+    if (!editor || editor.notebook.notebookType !== 'cadb.sqlNotebook') return undefined;
+    const sel = (editor as any).selection;
+    const start = sel && typeof sel.start === 'number' ? sel.start : 0;
+    try {
+      return editor.notebook.cellAt(start);
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
    * 更新状态栏显示内容
+   * 在 SQL Notebook 中优先展示当前聚焦 cell 的 cell.metadata.cadb，否则展示全局选择
    */
   private _updateStatusBar(): void {
-    const currentConnection = this._databaseManager.getCurrentConnection();
-    const currentDatabase = this._databaseManager.getCurrentDatabase();
+    const editor = vscode.window.activeNotebookEditor;
+    const isSqlNotebook = editor?.notebook?.notebookType === 'cadb.sqlNotebook';
+    let connectionLabel = '';
+    let databaseLabel = '';
+    let useCellSetting = false;
 
-    const connectionLabel = currentConnection?.label?.toString() || '';
-    const databaseLabel = currentDatabase?.label?.toString() || '';
-    
-    if (currentConnection && currentDatabase) {
+    if (isSqlNotebook) {
+      const cell = this._getFocusedCell();
+      const cadb = cell?.metadata?.cadb as { datasource?: string; database?: string } | undefined;
+      if (cadb?.datasource && cadb?.database) {
+        connectionLabel = cadb.datasource;
+        databaseLabel = cadb.database;
+        useCellSetting = true;
+        this._statusBarItem.command = 'cadb.notebook.setCellDatabase';
+      }
+    }
+
+    if (!useCellSetting) {
+      const currentConnection = this._databaseManager.getCurrentConnection();
+      const currentDatabase = this._databaseManager.getCurrentDatabase();
+      connectionLabel = currentConnection?.label?.toString() || '';
+      databaseLabel = currentDatabase?.label?.toString() || '';
+      this._statusBarItem.command = 'cadb.selectDatabase';
+    }
+
+    if (connectionLabel && databaseLabel) {
       this._statusBarItem.text = `$(database) ${connectionLabel} / ${databaseLabel}`;
-      this._statusBarItem.tooltip = `当前连接: ${connectionLabel} - ${databaseLabel}`;
+      this._statusBarItem.tooltip = useCellSetting
+        ? `当前 Cell: ${connectionLabel} - ${databaseLabel} (点击更换)`
+        : `当前连接: ${connectionLabel} - ${databaseLabel}`;
       this._statusBarItem.backgroundColor = undefined;
-    } else if (currentConnection) {
+    } else if (connectionLabel) {
       this._statusBarItem.text = `$(database) ${connectionLabel} (未选择数据库)`;
-      this._statusBarItem.tooltip = `当前连接: ${connectionLabel} (未选择数据库)`;
+      this._statusBarItem.tooltip = useCellSetting
+        ? `当前 Cell 未设置数据库 (点击设置)`
+        : `当前连接: ${connectionLabel} (未选择数据库)`;
       this._statusBarItem.backgroundColor = new vscode.ThemeColor(
         "statusBarItem.warningBackground"
       );

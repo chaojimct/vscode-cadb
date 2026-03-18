@@ -83,7 +83,7 @@ export class SqlNotebookController {
       // 尝试恢复
       const success = await this._databaseManager.setActiveDatabase(metadata.datasource, metadata.database);
       if (success) {
-        // 如果成功恢复，更新控制器描述
+        // 成功恢复后显式更新，确保 kernel 选择器回显
         this._updateDescription();
       }
       return success;
@@ -92,7 +92,7 @@ export class SqlNotebookController {
   }
 
   /**
-   * 更新控制器描述，显示当前选择的数据源和数据库
+   * 更新控制器 label/description，在顶部 kernel 选择器中回显当前选择的数据源和数据库
    */
   private _updateDescription(): void {
     const currentConnection = this._databaseManager.getCurrentConnection();
@@ -101,19 +101,27 @@ export class SqlNotebookController {
     const connectionLabel = currentConnection?.label?.toString() || '';
     const databaseLabel = currentDatabase?.label?.toString() || '';
 
-    // 在 VSCode Notebook API 中，description 和 detail 应该是可更新的
-    // 但如果 UI 没有更新，可能需要重新创建控制器或使用其他方式
-    // 尝试直接更新属性
     try {
       if (currentConnection && currentDatabase) {
-        this._controller.description = `${connectionLabel} / ${databaseLabel}`;
-        this._controller.detail = `点击工具栏按钮选择数据库连接`;
+        const dbInfo = `${connectionLabel} / ${databaseLabel}`;
+        // 同时更新 label，使 kernel 选择器主显示区域能回显数据库信息
+        this._controller.label = `SQL Notebook · ${dbInfo}`;
+        this._controller.description = dbInfo;
+        this._controller.detail = `点击「选择数据库」可更换连接`;
+        vscode.commands.executeCommand('setContext', 'cadb.hasDatabaseSelected', true);
+        vscode.commands.executeCommand('setContext', 'cadb.notebook.databaseLabel', dbInfo);
       } else if (currentConnection) {
+        this._controller.label = `SQL Notebook · ${connectionLabel} (未选库)`;
         this._controller.description = connectionLabel;
         this._controller.detail = '未选择数据库，点击工具栏按钮选择';
+        vscode.commands.executeCommand('setContext', 'cadb.hasDatabaseSelected', false);
+        vscode.commands.executeCommand('setContext', 'cadb.notebook.databaseLabel', '');
       } else {
+        this._controller.label = 'SQL Notebook';
         this._controller.description = '未选择数据库';
         this._controller.detail = '点击工具栏按钮选择数据库连接';
+        vscode.commands.executeCommand('setContext', 'cadb.hasDatabaseSelected', false);
+        vscode.commands.executeCommand('setContext', 'cadb.notebook.databaseLabel', '');
       }
     } catch (error) {
       console.error('[SqlNotebookController] 更新描述失败:', error);
@@ -144,34 +152,43 @@ export class SqlNotebookController {
   }
 
   private async _doExecuteCell(cell: vscode.NotebookCell): Promise<void> {
-    // 执行前尝试从 Metadata 恢复连接
-    await this._restoreConnectionFromMetadata(cell.notebook);
+    // 1）优先使用 Cell 自己的 metadata（cell.metadata.cadb）
+    const cellCadb = cell.metadata?.cadb as { datasource?: string; database?: string } | undefined;
+    let datasourceName: string;
+    let databaseName: string;
 
-    const currentConnection = this._databaseManager.getCurrentConnection();
-    const currentDatabase = this._databaseManager.getCurrentDatabase();
+    if (cellCadb?.datasource && cellCadb?.database) {
+      datasourceName = cellCadb.datasource;
+      databaseName = cellCadb.database;
+      await this._databaseManager.setActiveDatabase(datasourceName, databaseName);
+    } else {
+      // 2）否则尝试从 Notebook metadata 恢复
+      await this._restoreConnectionFromMetadata(cell.notebook);
+      const currentConnection = this._databaseManager.getCurrentConnection();
+      const currentDatabase = this._databaseManager.getCurrentDatabase();
 
-    if (!currentConnection || !currentDatabase) {
-      // 如果没有选择数据库，提示用户选择
-      const choice = await vscode.window.showWarningMessage(
-        '没有选择数据库连接，请先选择数据库连接',
-        { modal: true },
-        '选择数据库', '取消'
-      );
+      if (!currentConnection || !currentDatabase) {
+        const choice = await vscode.window.showWarningMessage(
+          '没有选择数据库连接，请先选择数据库连接',
+          { modal: true },
+          '选择数据库', '取消'
+        );
 
-      if (choice === '选择数据库') {
-        await this._databaseManager.selectDatabase();
-        
-        // 再次检查是否选择了数据库
-        const newConnection = this._databaseManager.getCurrentConnection();
-        const newDatabase = this._databaseManager.getCurrentDatabase();
-        
-        if (!newConnection || !newDatabase) {
-          vscode.window.showErrorMessage('未选择数据库连接，无法执行SQL');
+        if (choice === '选择数据库') {
+          await this._databaseManager.selectDatabase();
+          const newConnection = this._databaseManager.getCurrentConnection();
+          const newDatabase = this._databaseManager.getCurrentDatabase();
+          if (!newConnection || !newDatabase) {
+            vscode.window.showErrorMessage('未选择数据库连接，无法执行SQL');
+            return;
+          }
+        } else {
           return;
         }
-      } else {
-        return; // 用户取消执行
       }
+
+      datasourceName = this._databaseManager.getCurrentConnection()!.label?.toString() || '';
+      databaseName = this._databaseManager.getCurrentDatabase()!.label?.toString() || '';
     }
 
     const execution = this._controller.createNotebookCellExecution(cell);
@@ -181,13 +198,7 @@ export class SqlNotebookController {
 
       const finalConnection = this._databaseManager.getCurrentConnection();
       const finalDatabase = this._databaseManager.getCurrentDatabase();
-      
-      if (!finalConnection || !finalDatabase) {
-        return;
-      }
-
-      const datasourceName = finalConnection.label?.toString() || '';
-      const databaseName = finalDatabase.label?.toString() || '';
+      if (!finalConnection || !finalDatabase) return;
 
       const connection = await this._getConnection(datasourceName, databaseName);
       const sql = cell.document.getText().trim();
@@ -207,8 +218,8 @@ export class SqlNotebookController {
       });
       const executionTime = Date.now() - startTime;
 
-      // 保存数据库连接信息到 Notebook 元数据
       await this._saveNotebookMetadata(cell.notebook, datasourceName, databaseName);
+      await this._saveCellMetadata(cell, datasourceName, databaseName);
 
       // 读取已有历史结果并追加本次结果
       const executionTimeSec = (Date.now() - startTime) / 1000;
@@ -420,6 +431,22 @@ export class SqlNotebookController {
       console.log(`[Notebook] 已保存连接信息: ${datasource} / ${database}`);
     } catch (error) {
       console.error('[Notebook] 保存元数据失败:', error);
+    }
+  }
+
+  /** 保存 Cell 的数据库连接到 cell.metadata.cadb */
+  private async _saveCellMetadata(
+    cell: vscode.NotebookCell,
+    datasource: string,
+    database: string
+  ): Promise<void> {
+    try {
+      const edit = new vscode.WorkspaceEdit();
+      const newMetadata = { ...cell.metadata, cadb: { datasource, database } };
+      edit.set(cell.notebook.uri, [vscode.NotebookEdit.updateCellMetadata(cell.index, newMetadata)]);
+      await vscode.workspace.applyEdit(edit);
+    } catch (error) {
+      console.error('[Notebook] 保存 Cell 元数据失败:', error);
     }
   }
 

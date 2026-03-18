@@ -23,13 +23,32 @@ body {
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   font-size: 12px;
   line-height: 1.4;
-  padding: 12px;
+  padding: 0;
+  margin: 0;
+}
+
+.edit-toolbar {
+  flex-shrink: 0;
+  background-color: var(--vscode-bg);
+}
+
+.edit-nav-link {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: none;
+  font-size: 13px;
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+.edit-nav-link:hover {
+  color: var(--vscode-textLink-activeForeground);
+  background: var(--vscode-hover);
 }
 
 .edit-container {
   display: flex;
   gap: 12px;
-  height: calc(100vh - 24px);
+  height: calc(100vh - 50px);
+  padding: 12px;
 }
 
 /* ========== 左侧面板 - Layui Tab ========== */

@@ -85,9 +85,17 @@ class DatabaseTableData {
         resizable: true,
         filter: true,
         editable: true,
+        maxWidth: 220,
         valueFormatter: (params) => {
           const v = params.value;
-          if (v != null && typeof v === "object") return JSON.stringify(v);
+          if (v == null) return "";
+          if (typeof v === "object") {
+            if (v.type === "Buffer" && Array.isArray(v.data)) {
+              const hex = v.data.map((b) => String(b.toString(16).padStart(2, "0"))).join("");
+              return "0x" + hex.toUpperCase();
+            }
+            return JSON.stringify(v);
+          }
           return v;
         },
         valueParser: (params) => {
@@ -149,12 +157,14 @@ class DatabaseTableData {
       const type = (c.type != null ? String(c.type) : "").toLowerCase();
       const typeTrim = type.trim();
       const isBit1 = /^bit\s*\(\s*1\s*\)$/.test(type) || (type.startsWith("bit") && type.includes("1"));
+      const isBitN = /^bit\s*\(\s*\d+\s*\)$/.test(type) || (type.startsWith("bit") && !type.includes("1"));
       const isDateType = /^(date|datetime|timestamp|time)(\s|\(|$)/.test(typeTrim);
       const colDef = {
         field: c.field,
         headerName: (c.headerName != null ? c.headerName : c.field.toUpperCase()),
         width: c.width != null ? c.width : 120,
-        minWidth: c.minWidth != null ? c.minWidth : 80,
+        minWidth: c.minWidth != null ? c.minWidth : 60,
+        maxWidth: c.maxWidth != null ? c.maxWidth : 220,
         ...this._getFilterConfig(c, type),
         ...this._getComparatorConfig(c, type),
         // 透传 AG Grid 列扩展配置（如 cellEditor、cellEditorPopup 等）
@@ -179,6 +189,15 @@ class DatabaseTableData {
           return true;
         };
       }
+      if (isBitN && !isBit1) {
+        colDef.valueFormatter = (params) => {
+          const v = params.value;
+          if (v == null) return "";
+          if (typeof v === "number") return String(v);
+          if (Buffer.isBuffer && Buffer.isBuffer(v)) return "0x" + v.toString("hex").toUpperCase();
+          return String(v);
+        };
+      }
       if (isDateType) {
         const includeTime = /^(datetime|timestamp|time)(\s|\(|$)/.test(typeTrim);
         colDef.cellEditor = "agDateStringCellEditor";
@@ -191,7 +210,7 @@ class DatabaseTableData {
   }
 
   _getFilterConfig(col, type) {
-    const isNumeric = /^(int|bigint|smallint|mediumint|decimal|float|double|numeric)(\s|\(|$)/i.test(type);
+    const isNumeric = /^(tinyint|smallint|mediumint|int|bigint|decimal|float|double|numeric|bit)(\s|\(|$)/i.test(type);
     const isDate = /^(date|datetime|timestamp|time)(\s|$)/i.test(type);
     if (isNumeric) return { filter: "agNumberColumnFilter" };
     if (isDate) return { filter: "agDateColumnFilter" };
@@ -199,7 +218,7 @@ class DatabaseTableData {
   }
 
   _getComparatorConfig(col, type) {
-    const isNumeric = /^(int|bigint|smallint|mediumint|decimal|float|double|numeric)(\s|\(|$)/i.test(type);
+    const isNumeric = /^(tinyint|smallint|mediumint|int|bigint|decimal|float|double|numeric|bit)(\s|\(|$)/i.test(type);
     const isDate = /^(date|datetime|timestamp|time)(\s|$)/i.test(type);
     if (isNumeric) {
       return {
@@ -422,7 +441,7 @@ class DatabaseTableData {
       if (isBit1) inputType = "radio";
       else if (isDate) inputType = "date";
       else if (isDateTime) inputType = "datetime-local";
-      else if (/^(int|bigint|smallint|decimal|float|double|numeric)(\s|\(|$)/i.test(type)) inputType = "number";
+      else if (/^(tinyint|smallint|mediumint|int|bigint|decimal|float|double|numeric|bit)(\s|\(|$)/i.test(type)) inputType = "number";
       const val = formDefaults[c.field] ?? "";
       const escapedVal = String(val).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
       let inputHtml;

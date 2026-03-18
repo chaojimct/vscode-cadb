@@ -442,15 +442,17 @@ layui.use(["tabs", "layer"], function () {
 
     // 转换列定义为 Tabulator 格式
     const tabulatorColumns = columns.map((col) => ({
-      title: col.field.toUpperCase(),
-      field: col.field,
+      title: (col.field || col.name || col).toString().toUpperCase(),
+      field: col.field || col.name,
       headerSort: true,
       resizable: true,
-      minWidth: 100,
+      minWidth: 60,
+      maxWidth: 400,
     }));
 
-    // 创建 Tabulator 实例
+    // 创建 Tabulator 实例（列宽可拖拽调节）
     new Tabulator(`#${containerId}`, {
+      columnMaxWidth: 400,
       height: "100%",
       layout: "fitColumns",
       columns: tabulatorColumns,

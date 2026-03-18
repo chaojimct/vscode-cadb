@@ -8,6 +8,9 @@ interface ConnectionCache {
   lastUsed: number;
 }
 
+/** 最近悬浮的表信息，用于无参 command 链接回退（hover 内传参在某些环境下不生效） */
+export let lastHoveredTableInfo: { conn: string; db: string; table: string } | null = null;
+
 /**
  * SQL 悬浮提示提供者
  * - 表名悬浮：展示该表的 DDL (SHOW CREATE TABLE)
@@ -42,17 +45,25 @@ export class SqlHoverProvider implements vscode.HoverProvider {
 
     const sql = document.getText();
     const offset = document.offsetAt(position);
+    const aliasMap = this._buildAliasMap(sql);
 
-    // 检查是否为 table.column 格式（光标在 column 部分）
+    // 检查是否为 table.column 格式（光标在 column 部分，table 可能是表名或别名）
     const tableCol = this._parseTableColumn(word, sql, offset);
     if (tableCol) {
-      return this._hoverColumn(connection, databaseName, tableCol.table, tableCol.column);
+      const realTable = aliasMap.get(tableCol.table.toLowerCase()) ?? tableCol.table;
+      return this._hoverColumn(connection, databaseName, realTable, tableCol.column);
     }
 
     // 检查是否为表名（在 FROM, JOIN, UPDATE, INSERT INTO 等上下文中）
     const tableName = this._parseTableName(word, sql, offset);
     if (tableName) {
-      return this._hoverTable(connection, databaseName, tableName);
+      return this._hoverTable(connection, databaseName, datasourceName, tableName, null);
+    }
+
+    // 检查是否为表别名（悬浮显示对应表信息）
+    const aliasTable = aliasMap.get(word.toLowerCase());
+    if (aliasTable) {
+      return this._hoverTable(connection, databaseName, datasourceName, aliasTable, word);
     }
 
     // 检查是否为裸字段名（无表前缀）
@@ -75,9 +86,16 @@ export class SqlHoverProvider implements vscode.HoverProvider {
       const notebook = vscode.workspace.notebookDocuments.find((nb) =>
         nb.getCells().some((c) => c.document.uri.toString() === document.uri.toString())
       );
-      if (notebook?.metadata) {
-        datasourceName = (notebook.metadata.datasource as string) || "";
-        databaseName = (notebook.metadata.database as string) || "";
+      if (notebook) {
+        const cell = notebook.getCells().find((c) => c.document.uri.toString() === document.uri.toString());
+        const cellCadb = cell?.metadata?.cadb as { datasource?: string; database?: string } | undefined;
+        if (cellCadb?.datasource && cellCadb?.database) {
+          datasourceName = cellCadb.datasource;
+          databaseName = cellCadb.database;
+        } else if (notebook.metadata) {
+          datasourceName = (notebook.metadata.datasource as string) || "";
+          databaseName = (notebook.metadata.database as string) || "";
+        }
       }
     }
 
@@ -152,6 +170,25 @@ export class SqlHoverProvider implements vscode.HoverProvider {
   }
 
   /**
+   * 从 SQL 中解析表别名映射：alias -> 真实表名
+   * 支持 FROM table [AS] alias, JOIN table [AS] alias
+   */
+  private _buildAliasMap(sql: string): Map<string, string> {
+    const map = new Map<string, string>();
+    const regex = /\b(?:FROM|JOIN)\s+[`]?([a-zA-Z0-9_]+)[`]?(?:\s+(?:AS\s+)?[`]?([a-zA-Z0-9_]+)[`]?)?/gi;
+    let m: RegExpExecArray | null;
+    while ((m = regex.exec(sql)) !== null) {
+      const table = m[1];
+      const alias = m[2];
+      if (alias && alias.toLowerCase() !== table.toLowerCase()) {
+        map.set(alias.toLowerCase(), table);
+      }
+      map.set(table.toLowerCase(), table); // 表名本身也可查
+    }
+    return map;
+  }
+
+  /**
    * 从 SQL 中提取本 cell 出现的表名（按出现顺序）
    */
   private _extractTablesFromSql(sql: string): string[] {
@@ -172,7 +209,9 @@ export class SqlHoverProvider implements vscode.HoverProvider {
   private _hoverTable(
     connection: any,
     databaseName: string,
-    tableName: string
+    datasourceName: string,
+    tableName: string,
+    alias: string | null = null
   ): Promise<vscode.Hover | null> {
     return new Promise((resolve) => {
       const db = "`" + databaseName.replace(/`/g, "``") + "`";
@@ -186,7 +225,18 @@ export class SqlHoverProvider implements vscode.HoverProvider {
           }
           const row = results[0] as Record<string, string>;
           const createSql = row["Create Table"] ?? row["create table"] ?? "";
+          lastHoveredTableInfo = {
+            conn: datasourceName,
+            db: databaseName,
+            table: tableName,
+          };
           const md = new vscode.MarkdownString();
+          md.isTrusted = true; // 允许 command 链接可点击执行（命令需在 package.json 中声明）
+          // 使用无参 command，点击时从 lastHoveredTableInfo 读取（hover 内传参在某些环境下不生效）
+          md.appendMarkdown(`[进入表数据](command:cadb.hover.openTableData) · [表编辑](command:cadb.hover.editTable)\n\n`);
+          if (alias) {
+            md.appendMarkdown(`别名 \`${alias}\` → 表 \`${tableName}\`\n\n`);
+          }
           md.appendMarkdown(`### 表 \`${tableName}\` DDL\n\n`);
           md.appendCodeblock(createSql, "sql");
           resolve(new vscode.Hover(md));
