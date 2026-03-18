@@ -16,6 +16,7 @@ import { DatabaseManager } from "./provider/component/database_manager";
 import { ResultWebviewProvider } from "./provider/result_provider";
 import { CaCompletionItemProvider } from "./provider/completion_item_provider";
 import { SqlCodeLensProvider } from "./provider/component/sql_codelens_provider";
+import { SqlHoverProvider } from "./provider/component/sql_hover_provider";
 import { SqlExecutor } from "./provider/component/sql_executor";
 import { DatabaseStatusBar } from "./provider/component/database_status_bar";
 import {
@@ -300,6 +301,14 @@ export function activate(context: vscode.ExtensionContext) {
       { language: "sql", scheme: "file" },
       sqlCodeLensProvider
     )
+  );
+
+  // SQL 悬浮提示（表名展示 DDL，字段名展示类型、备注等）
+  const sqlHoverProvider = new SqlHoverProvider();
+  sqlHoverProvider.setProvider(provider);
+  sqlHoverProvider.setDatabaseManager(databaseManager);
+  context.subscriptions.push(
+    vscode.languages.registerHoverProvider({ language: "sql" }, sqlHoverProvider)
   );
 
   // 工作区符号：将 MySQL 数据表加入「转到工作区中的符号」(Ctrl/Cmd+T)，选择表可快速打开表数据

@@ -210,61 +210,94 @@ export class SqlNotebookController {
       // 保存数据库连接信息到 Notebook 元数据
       await this._saveNotebookMetadata(cell.notebook, datasourceName, databaseName);
 
-      // 处理结果：统一输出为 application/x.sql-result，由 notebook 渲染器以表格展示
+      // 读取已有历史结果并追加本次结果
       const executionTimeSec = (Date.now() - startTime) / 1000;
-      if (Array.isArray(result) && result.length > 0) {
-        const columns = Object.keys(result[0]).map((name) => ({ name }));
-        const sqlResult = {
-          type: 'query-result' as const,
-          columns,
-          data: result,
-          rowCount: result.length,
-          executionTime: executionTimeSec,
-        };
-        const output = new vscode.NotebookCellOutput([
-          vscode.NotebookCellOutputItem.json(sqlResult, 'application/x.sql-result'),
-        ]);
-        await execution.replaceOutput([output]);
-      } else if (Array.isArray(result) && result.length === 0) {
-        const sqlResult = {
-          type: 'query-result' as const,
-          columns: [] as { name: string }[],
-          data: [] as any[],
-          rowCount: 0,
-          executionTime: executionTimeSec,
-          message: '查询成功，无数据',
-        };
-        const output = new vscode.NotebookCellOutput([
-          vscode.NotebookCellOutputItem.json(sqlResult, 'application/x.sql-result'),
-        ]);
-        await execution.replaceOutput([output]);
-      } else {
-        const affectedRows = (result as any)?.affectedRows ?? 0;
-        const sqlResult = {
-          type: 'query-result' as const,
-          columns: [] as { name: string }[],
-          data: [] as any[],
-          rowCount: affectedRows,
-          executionTime: executionTimeSec,
-          message: `执行成功，影响 ${affectedRows} 行`,
-        };
-        const output = new vscode.NotebookCellOutput([
-          vscode.NotebookCellOutputItem.json(sqlResult, 'application/x.sql-result'),
-        ]);
-        await execution.replaceOutput([output]);
-      }
-    } catch (error: any) {
-      const sqlError = {
-        type: 'query-error' as const,
-        error: error?.message ?? String(error),
-      };
+      const previousResults = this._getPreviousResults(cell);
+      const newResult = this._buildResultItem(result, executionTimeSec);
+      const allResults = [...previousResults, newResult].slice(-20); // 最多保留 20 次
+
+      const sqlResults = { type: 'query-results' as const, results: allResults };
       const output = new vscode.NotebookCellOutput([
-        vscode.NotebookCellOutputItem.json(sqlError, 'application/x.sql-error'),
+        vscode.NotebookCellOutputItem.json(sqlResults, 'application/x.sql-results'),
+      ]);
+      await execution.replaceOutput([output]);
+    } catch (error: any) {
+      const previousResults = this._getPreviousResults(cell);
+      const errorResult = { type: 'query-error' as const, error: error?.message ?? String(error) };
+      const allResults = [...previousResults, errorResult].slice(-20);
+
+      const sqlResults = { type: 'query-results' as const, results: allResults };
+      const output = new vscode.NotebookCellOutput([
+        vscode.NotebookCellOutputItem.json(sqlResults, 'application/x.sql-results'),
       ]);
       await execution.replaceOutput([output]);
     } finally {
       execution.end(true, Date.now());
     }
+  }
+
+  /**
+   * 从 cell 输出中读取此前的结果列表（用于历史 Tab）
+   */
+  private _getPreviousResults(cell: vscode.NotebookCell): any[] {
+    for (const out of cell.outputs) {
+      for (const item of out.items) {
+        if (item.mime === 'application/x.sql-results') {
+          try {
+            const text = new TextDecoder().decode(item.data);
+            const parsed = JSON.parse(text);
+            return Array.isArray(parsed.results) ? parsed.results : [];
+          } catch {
+            return [];
+          }
+        }
+        if (item.mime === 'application/x.sql-result') {
+          try {
+            const text = new TextDecoder().decode(item.data);
+            const parsed = JSON.parse(text);
+            return [parsed];
+          } catch {
+            return [];
+          }
+        }
+      }
+    }
+    return [];
+  }
+
+  /**
+   * 将本次查询结果构建为统一格式的条目
+   */
+  private _buildResultItem(result: any, executionTimeSec: number): any {
+    if (Array.isArray(result) && result.length > 0) {
+      const columns = Object.keys(result[0]).map((name) => ({ name }));
+      return {
+        type: 'query-result' as const,
+        columns,
+        data: result,
+        rowCount: result.length,
+        executionTime: executionTimeSec,
+      };
+    }
+    if (Array.isArray(result) && result.length === 0) {
+      return {
+        type: 'query-result' as const,
+        columns: [] as { name: string }[],
+        data: [] as any[],
+        rowCount: 0,
+        executionTime: executionTimeSec,
+        message: '查询成功，无数据',
+      };
+    }
+    const affectedRows = (result as any)?.affectedRows ?? 0;
+    return {
+      type: 'query-result' as const,
+      columns: [] as { name: string }[],
+      data: [] as any[],
+      rowCount: affectedRows,
+      executionTime: executionTimeSec,
+      message: `执行成功，影响 ${affectedRows} 行`,
+    };
   }
 
   /**

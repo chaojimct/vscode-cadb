@@ -204,6 +204,7 @@
         "displayName": "SQL Notebook Renderer",
         "mimeTypes": [
           "application/x.sql-result",
+          "application/x.sql-results",
           "application/x.sql-error"
         ],
         "entrypoint": "./resources/notebook/renderer.js"
