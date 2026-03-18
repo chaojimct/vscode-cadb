@@ -96,6 +96,8 @@ function initDatasourceForm(data = {}) {
     filteredData = {
       dbType: data.dbType,
       name: data.name,
+      saveLocation: data.saveLocation,
+      markColor: data.markColor,
       sqlitePath: data.database || data.sqlitePath,
     };
   } else {

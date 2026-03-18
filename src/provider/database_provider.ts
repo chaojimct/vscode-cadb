@@ -19,6 +19,7 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
   public databaseManager?: DatabaseManager;
   private treeState: TreeState;
   private rootNodes: Datasource[] = [];
+  private workspaceConnections: DatasourceInputData[] = [];
 
   constructor(context: vscode.ExtensionContext) {
     this.context = context;
@@ -78,15 +79,174 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
   }
 
   public getConnections(): DatasourceInputData[] {
-    return this.context.globalState.get("cadb.connections", []);
+    const userConnections =
+      this.context.globalState.get<DatasourceInputData[]>("cadb.connections", []) ||
+      [];
+    const workspaceConnections = this.workspaceConnections || [];
+
+    const userByName = new Map<string, DatasourceInputData>();
+    for (const c of userConnections) {
+      if (c && typeof c.name === "string") {
+        userByName.set(c.name, { ...c, saveLocation: c.saveLocation ?? "user" });
+      }
+    }
+
+    const merged: DatasourceInputData[] = [];
+    for (const c of workspaceConnections) {
+      if (!c || typeof c.name !== "string") continue;
+      merged.push({ ...c, saveLocation: "workspace" });
+      userByName.delete(c.name);
+    }
+    for (const c of userByName.values()) {
+      merged.push(c);
+    }
+
+    return merged;
+  }
+
+  public getUserConnections(): DatasourceInputData[] {
+    return (
+      this.context.globalState.get<DatasourceInputData[]>("cadb.connections", []) ||
+      []
+    );
+  }
+
+  public getWorkspaceConnections(): DatasourceInputData[] {
+    return this.workspaceConnections || [];
+  }
+
+  public async addConnection(payload: DatasourceInputData): Promise<void> {
+    const saveLocation =
+      payload.saveLocation === "workspace" ? "workspace" : "user";
+    const normalized: DatasourceInputData = { ...payload, saveLocation };
+
+    if (saveLocation === "workspace") {
+      if (!this.getWorkspaceConnectionsFileUri()) {
+        const existing = this.getUserConnections();
+        existing.push({ ...normalized, saveLocation: "user" });
+        await this.context.globalState.update("cadb.connections", existing);
+        return;
+      }
+      const existing = this.getWorkspaceConnections();
+      this.workspaceConnections = [...existing, normalized];
+      await this.persistWorkspaceConnections(this.workspaceConnections);
+      return;
+    }
+
+    const existing = this.getUserConnections();
+    existing.push(normalized);
+    await this.context.globalState.update("cadb.connections", existing);
+  }
+
+  public async updateConnectionByName(
+    originalName: string,
+    payload: DatasourceInputData
+  ): Promise<void> {
+    const idxWorkspace = this.workspaceConnections.findIndex(
+      (c) => c.name === originalName
+    );
+    if (idxWorkspace !== -1) {
+      this.workspaceConnections[idxWorkspace] = {
+        ...payload,
+        saveLocation: "workspace",
+      };
+      await this.persistWorkspaceConnections(this.workspaceConnections);
+      return;
+    }
+
+    const userConnections = this.getUserConnections();
+    const idxUser = userConnections.findIndex((c) => c.name === originalName);
+    if (idxUser === -1) {
+      throw new Error("未找到要更新的连接配置");
+    }
+    userConnections[idxUser] = { ...payload, saveLocation: "user" };
+    await this.context.globalState.update("cadb.connections", userConnections);
+  }
+
+  public async renameConnectionRecord(
+    oldName: string,
+    newName: string
+  ): Promise<void> {
+    const idxWorkspace = this.workspaceConnections.findIndex(
+      (c) => c.name === oldName
+    );
+    if (idxWorkspace !== -1) {
+      this.workspaceConnections[idxWorkspace] = {
+        ...this.workspaceConnections[idxWorkspace],
+        name: newName,
+        saveLocation: "workspace",
+      };
+      await this.persistWorkspaceConnections(this.workspaceConnections);
+      return;
+    }
+
+    const userConnections = this.getUserConnections();
+    const idxUser = userConnections.findIndex((c) => c.name === oldName);
+    if (idxUser === -1) {
+      throw new Error("未找到要重命名的连接");
+    }
+    userConnections[idxUser] = {
+      ...userConnections[idxUser],
+      name: newName,
+      saveLocation: "user",
+    };
+    await this.context.globalState.update("cadb.connections", userConnections);
   }
 
   private async initialize() {
+    this.workspaceConnections = await this.loadWorkspaceConnections();
     const connections = this.getConnections();
     this.rootNodes = connections.map(m => new Datasource(m));
     this._onDidChangeTreeData.fire();
     // 每次加载都拉取最新数据，过滤显示仍按 treeState 中的 selectedDatabases/selectedTables 应用
     this.refreshAndCache();
+  }
+
+  private getWorkspaceRootUri(): vscode.Uri | null {
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders || folders.length === 0) {
+      return null;
+    }
+    return folders[0].uri;
+  }
+
+  private getWorkspaceCadbDirUri(): vscode.Uri | null {
+    const root = this.getWorkspaceRootUri();
+    if (!root) return null;
+    return vscode.Uri.joinPath(root, ".cadb");
+  }
+
+  private getWorkspaceConnectionsFileUri(): vscode.Uri | null {
+    const dir = this.getWorkspaceCadbDirUri();
+    if (!dir) return null;
+    return vscode.Uri.joinPath(dir, "connections.json");
+  }
+
+  private async loadWorkspaceConnections(): Promise<DatasourceInputData[]> {
+    const fileUri = this.getWorkspaceConnectionsFileUri();
+    if (!fileUri) return [];
+    try {
+      const raw = await vscode.workspace.fs.readFile(fileUri);
+      const json = new TextDecoder("utf-8").decode(raw);
+      const parsed = JSON.parse(json);
+      if (!Array.isArray(parsed)) return [];
+      return parsed as DatasourceInputData[];
+    } catch {
+      return [];
+    }
+  }
+
+  private async persistWorkspaceConnections(
+    connections: DatasourceInputData[]
+  ): Promise<void> {
+    const dir = this.getWorkspaceCadbDirUri();
+    const fileUri = this.getWorkspaceConnectionsFileUri();
+    if (!dir || !fileUri) {
+      return;
+    }
+    await vscode.workspace.fs.createDirectory(dir);
+    const content = JSON.stringify(connections, null, 2);
+    await vscode.workspace.fs.writeFile(fileUri, Buffer.from(content, "utf-8"));
   }
 
   /**

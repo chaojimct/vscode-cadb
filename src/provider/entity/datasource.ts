@@ -12,6 +12,17 @@ import { RedisDataloader } from "./redis_dataloader";
 import { OssDataLoader } from "./oss_dataloader";
 
 const iconDir: string[] = ["..", "..", "resources", "icons"];
+const markColorThemeIds: Record<string, string> = {
+  red: "charts.red",
+  yellow: "charts.yellow",
+  blue: "charts.blue",
+  green: "charts.green",
+  cyan: "charts.cyan",
+  purple: "charts.purple",
+  gray: "charts.gray",
+  orange: "charts.orange",
+  pink: "charts.pink",
+};
 
 export interface DatasourceInputData {
   type:
@@ -39,6 +50,8 @@ export interface DatasourceInputData {
   nullable?: boolean;
 
   dbType?: "mysql" | "redis" | "oss";
+  saveLocation?: "workspace" | "user";
+  markColor?: "red" | "yellow" | "blue" | "green" | "cyan" | "purple" | "gray" | "orange" | "pink" | "none";
   database?: string;
   username?: string;
   password?: string;
@@ -418,6 +431,16 @@ export class Datasource extends vscode.TreeItem {
   private initDatasource(input: DatasourceInputData): void {
     if (input.type === "datasource") {
       this.description = `${input.host}:${input.port}`;
+      const markColor = input.markColor;
+      if (markColor && markColor !== "none" && markColorThemeIds[markColor]) {
+        this.resourceUri = vscode.Uri.parse(
+          `cadb-color://datasource/${encodeURIComponent(input.name)}?color=${encodeURIComponent(
+            markColorThemeIds[markColor]
+          )}`
+        );
+      } else {
+        this.resourceUri = undefined;
+      }
       switch (input.dbType) {
         case "mysql":
           this.iconPath = {

@@ -25,6 +25,23 @@ import {
   resolveTableDatasource,
 } from "./provider/workspace_symbol_provider";
 
+class CadbColorDecorationProvider implements vscode.FileDecorationProvider {
+  private readonly emitter = new vscode.EventEmitter<vscode.Uri | vscode.Uri[]>();
+  readonly onDidChangeFileDecorations = this.emitter.event;
+
+  provideFileDecoration(uri: vscode.Uri): vscode.ProviderResult<vscode.FileDecoration> {
+    if (uri.scheme !== "cadb-color") {
+      return;
+    }
+    const params = new URLSearchParams(uri.query);
+    const color = params.get("color");
+    if (!color) {
+      return;
+    }
+    return new vscode.FileDecoration("●", undefined, new vscode.ThemeColor(color));
+  }
+}
+
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
@@ -34,6 +51,9 @@ export function activate(context: vscode.ExtensionContext) {
   // 创建输出通道用于显示 SQL 执行日志
   const outputChannel = vscode.window.createOutputChannel("CADB SQL");
   context.subscriptions.push(outputChannel);
+  context.subscriptions.push(
+    vscode.window.registerFileDecorationProvider(new CadbColorDecorationProvider())
+  );
 
   const provider = new DataSourceProvider(context);
   // 视图命令

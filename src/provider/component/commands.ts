@@ -142,12 +142,15 @@ async function saveDatasourceConfigForCreate(
   provider: DataSourceProvider,
   payload: any
 ): Promise<void> {
-  await Datasource.createInstance(
-    provider.getConnections(),
-    provider.context,
-    payload,
-    true
-  );
+  const name = String(payload?.name || "").trim();
+  if (!name) {
+    throw new Error("连接名称不能为空");
+  }
+  const connections = provider.getConnections();
+  if (connections.some((c) => c.name === name)) {
+    throw new Error("该连接名称已存在");
+  }
+  await provider.addConnection(payload);
 }
 
 /**
@@ -744,32 +747,17 @@ async function updateNonOssDatasourceConfig(
   item: Datasource,
   payload: any
 ): Promise<void> {
-  const connections = provider.getConnections();
-  const index = connections.findIndex(
-    (conn) => conn.name === item.label?.toString()
-  );
-
-  if (index === -1) {
+  const originalName = item.label?.toString() || "";
+  if (!originalName) {
     throw new Error("未找到要更新的连接配置");
   }
-
-  // 更新配置数据
-  connections[index] = {
+  const next = {
+    ...(item.data || {}),
+    ...payload,
     type: "datasource",
-    name: payload.name,
     tooltip: `${payload.dbType}://${payload.host}:${payload.port}`,
-    dbType: payload.dbType,
-    host: payload.host,
-    port: payload.port,
-    username: payload.username,
-    password: payload.password,
-    database: payload.database,
   };
-
-  // 保存到全局状态
-  await provider.context.globalState.update("cadb.connections", connections);
-
-  // 刷新视图
+  await provider.updateConnectionByName(originalName, next);
   provider.refresh();
 }
 
@@ -1008,13 +996,14 @@ export function registerDatasourceCommands(
         vscode.window.showWarningMessage("该名称已被其他连接使用");
         return;
       }
-      const index = connections.findIndex((c) => c.name === oldName);
-      if (index === -1) {
-        vscode.window.showErrorMessage("未找到要重命名的连接");
+      try {
+        await provider.renameConnectionRecord(oldName, name);
+      } catch (error) {
+        vscode.window.showErrorMessage(
+          `未找到要重命名的连接: ${toErrorMessage(error)}`
+        );
         return;
       }
-      connections[index] = { ...connections[index], name };
-      await provider.context.globalState.update("cadb.connections", connections);
       provider.renameConnection(oldName, name);
       provider.refresh();
       vscode.window.showInformationMessage(`已重命名为 "${name}"`);

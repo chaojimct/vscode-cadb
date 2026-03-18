@@ -125,6 +125,7 @@ class DynamicForm {
     // 只渲染 checkbox（switch 也是 checkbox）
     // select 使用原生 HTML，不需要 Layui 渲染
     this.form.render("checkbox");
+    this.form.render("radio");
     
     // 渲染折叠面板
     if (this.element) {
@@ -327,6 +328,9 @@ class DynamicForm {
       case "select":
         html += this.generateSelectField(fieldName, config);
         break;
+      case "radio":
+        html += this.generateRadioField(fieldName, config);
+        break;
       case "checkbox":
         html += this.generateCheckboxField(fieldName, config);
         break;
@@ -368,6 +372,32 @@ class DynamicForm {
     html += "</div>";
 
     return html;
+  }
+
+  /**
+   * 生成单选框字段
+   */
+  generateRadioField(fieldName, config) {
+    const options = Array.isArray(config.options) ? config.options : [];
+    return `
+      <label class="layui-form-label">${config.label}</label>
+      <div class="layui-input-block">
+        ${options
+          .map((option) => {
+            const value = typeof option === "object" ? option.value : option;
+            const label = typeof option === "object" ? option.label : option;
+            return `
+              <input
+                type="radio"
+                name="${fieldName}"
+                value="${value}"
+                title="${label}"
+              />
+            `;
+          })
+          .join("")}
+      </div>
+    `;
   }
 
   /**
@@ -900,6 +930,22 @@ class DynamicForm {
       }
 
       switch (config.type) {
+        case "radio": {
+          const v =
+            value !== null && value !== undefined && String(value) !== ""
+              ? String(value)
+              : config.value !== undefined
+                ? String(config.value)
+                : "";
+          const $radios = $(`[name="${fieldName}"][type="radio"]`);
+          $radios.prop("checked", false);
+          if (v) {
+            $radios
+              .filter((_, el) => $(el).val() === v)
+              .prop("checked", true);
+          }
+          break;
+        }
         case "checkbox":
         case "switch":
           // 处理 Y/N 或 boolean 值
@@ -958,6 +1004,7 @@ class DynamicForm {
     // switch 也是 checkbox，只需要渲染 checkbox
     if (this.form) {
       this.form.render("checkbox");
+      this.form.render("radio");
     }
     
     // 重新初始化密码框的眼睛图标
@@ -1001,6 +1048,12 @@ class DynamicForm {
       }
 
       switch (config.type) {
+        case "radio": {
+          const selected = $form.find(`[name="${fieldName}"][type="radio"]:checked`).val();
+          formData[fieldName] =
+            selected !== undefined && selected !== null ? selected : "";
+          break;
+        }
         case "checkbox":
         case "switch":
           formData[fieldName] = $element.prop("checked");
@@ -1054,6 +1107,28 @@ class DynamicForm {
           .text();
         this.showStatus(`${label} 不能为空`, "error");
         return false; // 跳出循环
+      }
+    });
+
+    if (!isValid) {
+      return false;
+    }
+
+    Object.keys(this.fieldMapping).forEach((fieldName) => {
+      const config = this.getFieldConfig(fieldName);
+      if (config.type !== "radio" || !config.required) {
+        return;
+      }
+      const $formItem = $form.find(`[data-field-name="${fieldName}"]`);
+      if ($formItem.length && !$formItem.is(":visible")) {
+        return;
+      }
+      const selected = $form
+        .find(`[name="${fieldName}"][type="radio"]:checked`)
+        .val();
+      if (!selected) {
+        isValid = false;
+        this.showStatus(`${config.label} 不能为空`, "error");
       }
     });
 
