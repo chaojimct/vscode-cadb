@@ -4,15 +4,22 @@
 
 function formatCellValue(value) {
   if (value === null || value === undefined) return { text: 'NULL', italic: true, muted: true };
-  if (typeof value === 'string' && value.includes('T') && value.includes('Z')) {
+  if (typeof value === 'object') {
     try {
-      const date = new Date(value);
-      return { text: date.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) };
+      const s = JSON.stringify(value);
+      return { text: s.length > 200 ? s.slice(0, 200) + '…' : s };
     } catch (e) {
       return { text: String(value) };
     }
   }
-  return { text: String(value) };
+  const str = String(value);
+  if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(str) || (str.includes('T') && str.includes('Z'))) {
+    const date = new Date(str);
+    if (!isNaN(date.getTime())) {
+      return { text: date.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) };
+    }
+  }
+  return { text: str };
 }
 
 function renderSingleResult(data, container) {
@@ -28,15 +35,62 @@ function renderSingleResult(data, container) {
   }
   if (data.columns && data.columns.length > 0 && data.data && data.data.length > 0) {
     const table = document.createElement('table');
-    table.className = 'sql-result-table';
-    table.style.cssText = 'width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; border: 1px solid var(--vscode-panel-border);';
+    table.className = 'sql-result-table sql-result-table-resizable';
+    table.style.cssText = 'width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 8px; font-size: 13px; border: 1px solid var(--vscode-panel-border);';
+    const colgroup = document.createElement('colgroup');
+    const cols = [];
+    data.columns.forEach(() => {
+      const col = document.createElement('col');
+      col.style.minWidth = '60px';
+      col.style.width = '120px';
+      col.style.maxWidth = '400px';
+      colgroup.appendChild(col);
+      cols.push(col);
+    });
+    table.appendChild(colgroup);
     const thead = document.createElement('thead');
     const headerRow = document.createElement('tr');
     headerRow.style.cssText = 'background: var(--vscode-editor-background); border-bottom: 2px solid var(--vscode-panel-border);';
-    data.columns.forEach((col) => {
+    data.columns.forEach((col, i) => {
       const th = document.createElement('th');
-      th.textContent = col.name;
-      th.style.cssText = 'padding: 8px 12px; text-align: left; font-weight: bold; color: var(--vscode-foreground); border-right: 1px solid var(--vscode-panel-border);';
+      th.style.position = 'relative';
+      th.style.padding = '8px 12px';
+      th.style.textAlign = 'left';
+      th.style.fontWeight = 'bold';
+      th.style.color = 'var(--vscode-foreground)';
+      th.style.borderRight = '1px solid var(--vscode-panel-border)';
+      th.style.overflow = 'hidden';
+      th.style.textOverflow = 'ellipsis';
+      const label = document.createElement('span');
+      label.textContent = col.name;
+      th.appendChild(label);
+      if (i < data.columns.length - 1) {
+        const handle = document.createElement('div');
+        handle.className = 'sql-result-col-resize-handle';
+        handle.title = '拖拽调节列宽';
+        handle.style.cssText = 'position:absolute; right:0; top:0; bottom:0; width:6px; cursor:col-resize; z-index:1;';
+        handle.addEventListener('mouseenter', () => { handle.style.background = 'var(--vscode-focusBorder)'; });
+        handle.addEventListener('mouseleave', () => { handle.style.background = ''; });
+        const colEl = cols[i];
+        handle.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          const startX = e.clientX;
+          const startW = parseInt(colEl.style.width) || 120;
+          const onMove = (ev) => {
+            const newW = Math.min(400, Math.max(60, startW + (ev.clientX - startX)));
+            colEl.style.width = newW + 'px';
+          };
+          const onUp = () => {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            document.body.style.cursor = '';
+          };
+          document.body.style.cursor = 'col-resize';
+          document.addEventListener('mousemove', onMove);
+          document.addEventListener('mouseup', onUp);
+        });
+        th.appendChild(handle);
+      }
       headerRow.appendChild(th);
     });
     thead.appendChild(headerRow);
@@ -51,10 +105,7 @@ function renderSingleResult(data, container) {
         const td = document.createElement('td');
         const v = formatCellValue(row[col.name]);
         td.textContent = v.text;
-        td.style.padding = '6px 12px';
-        td.style.color = v.muted ? 'var(--vscode-disabledForeground)' : 'var(--vscode-foreground)';
-        td.style.fontStyle = v.italic ? 'italic' : '';
-        td.style.borderRight = '1px solid var(--vscode-panel-border)';
+        td.style.cssText = 'padding: 6px 12px; color: ' + (v.muted ? 'var(--vscode-disabledForeground)' : 'var(--vscode-foreground)') + '; font-style: ' + (v.italic ? 'italic' : '') + '; border-right: 1px solid var(--vscode-panel-border); max-width: 220px; overflow: hidden; text-overflow: ellipsis;';
         tr.appendChild(td);
       });
       tbody.appendChild(tr);
@@ -77,33 +128,32 @@ function renderSingleResult(data, container) {
   }
 }
 
+function setAllOutputsExpanded(expanded) {
+  document.querySelectorAll('.sql-notebook-output-wrapper').forEach((w) => {
+    const tw = w.querySelector('.sql-notebook-output-toggle');
+    const cw = w.querySelector('.sql-notebook-output-content');
+    if (tw && cw) {
+      cw.style.display = expanded ? '' : 'none';
+      tw.textContent = expanded ? '▼' : '▶';
+      tw.dataset.expanded = expanded ? '1' : '0';
+    }
+  });
+}
+
 function createCollapsibleWrapper(contentEl) {
   const wrapper = document.createElement('div');
   wrapper.className = 'sql-notebook-output-wrapper';
-  wrapper.style.display = 'flex';
-  wrapper.style.width = '100%';
-  wrapper.style.minHeight = '24px';
+  wrapper.style.cssText = 'display: flex; width: 100%; min-height: 24px; align-items: flex-start;';
+
+  const toolbar = document.createElement('div');
+  toolbar.className = 'sql-notebook-output-toolbar';
+  toolbar.style.cssText = 'display: flex; align-items: flex-start; gap: 2px; padding: 2px 4px; flex-shrink: 0; border-right: 1px solid var(--vscode-panel-border, transparent);';
 
   const toggle = document.createElement('div');
   toggle.className = 'sql-notebook-output-toggle';
   toggle.title = '点击收起/展开';
-  toggle.style.cssText = `
-    width: 20px;
-    min-width: 20px;
-    cursor: pointer;
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    padding-top: 6px;
-    color: var(--vscode-foreground);
-    opacity: 0.7;
-    user-select: none;
-    flex-shrink: 0;
-    border-right: 1px solid var(--vscode-panel-border, transparent);
-    transition: background-color 0.15s;
-  `;
-  toggle.innerHTML = '▼';
-  toggle.style.fontSize = '10px';
+  toggle.style.cssText = 'width: 20px; min-width: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--vscode-foreground); opacity: 0.7; user-select: none; font-size: 10px; transition: background-color 0.15s;';
+  toggle.textContent = '▼';
 
   const contentWrap = document.createElement('div');
   contentWrap.className = 'sql-notebook-output-content';
@@ -112,12 +162,10 @@ function createCollapsibleWrapper(contentEl) {
   contentWrap.style.minWidth = '0';
   contentWrap.appendChild(contentEl);
 
-  toggle.addEventListener('mouseenter', () => {
-    toggle.style.backgroundColor = 'var(--vscode-list-hoverBackground, rgba(128,128,128,0.2))';
-  });
-  toggle.addEventListener('mouseleave', () => {
-    toggle.style.backgroundColor = '';
-  });
+  toolbar.appendChild(toggle);
+
+  toggle.addEventListener('mouseenter', () => { toggle.style.backgroundColor = 'var(--vscode-list-hoverBackground)'; });
+  toggle.addEventListener('mouseleave', () => { toggle.style.backgroundColor = ''; });
 
   let expanded = true;
   toggle.addEventListener('click', () => {
@@ -126,12 +174,19 @@ function createCollapsibleWrapper(contentEl) {
     toggle.textContent = expanded ? '▼' : '▶';
   });
 
-  wrapper.appendChild(toggle);
+  wrapper.appendChild(toolbar);
   wrapper.appendChild(contentWrap);
   return wrapper;
 }
 
 export function activate(context) {
+  if (context.onDidReceiveMessage) {
+    context.onDidReceiveMessage((e) => {
+      const msg = (e && typeof e === 'object' && 'message' in e) ? e.message : e;
+      if (msg && msg.type === 'collapseAll') setAllOutputsExpanded(false);
+      else if (msg && msg.type === 'expandAll') setAllOutputsExpanded(true);
+    });
+  }
   return {
     renderOutputItem(outputItem, element) {
       try {
@@ -295,29 +350,51 @@ export function activate(context) {
         } else if (data.type === 'query-result') {
           // 渲染查询结果
           if (data.columns && data.columns.length > 0 && data.data && data.data.length > 0) {
-            // 创建表格
             const table = document.createElement('table');
-            table.className = 'sql-result-table';
-            table.style.width = '100%';
-            table.style.borderCollapse = 'collapse';
-            table.style.marginTop = '8px';
-            table.style.fontSize = '13px';
-            table.style.border = '1px solid var(--vscode-panel-border)';
-
-            // 表头
+            table.className = 'sql-result-table sql-result-table-resizable';
+            table.style.cssText = 'width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 8px; font-size: 13px; border: 1px solid var(--vscode-panel-border);';
+            const colgroup = document.createElement('colgroup');
+            const cols = [];
+            data.columns.forEach(() => {
+              const col = document.createElement('col');
+              col.style.minWidth = '60px';
+              col.style.width = '120px';
+              col.style.maxWidth = '400px';
+              colgroup.appendChild(col);
+              cols.push(col);
+            });
+            table.appendChild(colgroup);
             const thead = document.createElement('thead');
             const headerRow = document.createElement('tr');
-            headerRow.style.backgroundColor = 'var(--vscode-editor-background)';
-            headerRow.style.borderBottom = '2px solid var(--vscode-panel-border)';
-
-            data.columns.forEach((col) => {
+            headerRow.style.cssText = 'background: var(--vscode-editor-background); border-bottom: 2px solid var(--vscode-panel-border);';
+            data.columns.forEach((col, i) => {
               const th = document.createElement('th');
-              th.textContent = col.name;
-              th.style.padding = '8px 12px';
-              th.style.textAlign = 'left';
-              th.style.fontWeight = 'bold';
-              th.style.color = 'var(--vscode-foreground)';
-              th.style.borderRight = '1px solid var(--vscode-panel-border)';
+              th.style.position = 'relative';
+              th.style.cssText = 'padding: 8px 12px; text-align: left; font-weight: bold; color: var(--vscode-foreground); border-right: 1px solid var(--vscode-panel-border); overflow: hidden; text-overflow: ellipsis;';
+              th.appendChild(document.createTextNode(col.name));
+              if (i < data.columns.length - 1) {
+                const handle = document.createElement('div');
+                handle.title = '拖拽调节列宽';
+                handle.style.cssText = 'position:absolute; right:0; top:0; bottom:0; width:6px; cursor:col-resize; z-index:1;';
+                handle.addEventListener('mousedown', (e) => {
+                  e.preventDefault();
+                  const startX = e.clientX;
+                  const startW = parseInt(cols[i].style.width) || 120;
+                  const onMove = (ev) => {
+                    const newW = Math.min(400, Math.max(60, startW + (ev.clientX - startX)));
+                    cols[i].style.width = newW + 'px';
+                  };
+                  const onUp = () => {
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                    document.body.style.cursor = '';
+                  };
+                  document.body.style.cursor = 'col-resize';
+                  document.addEventListener('mousemove', onMove);
+                  document.addEventListener('mouseup', onUp);
+                });
+                th.appendChild(handle);
+              }
               headerRow.appendChild(th);
             });
             thead.appendChild(headerRow);
@@ -340,34 +417,9 @@ export function activate(context) {
               data.columns.forEach((col, colIndex) => {
                 const td = document.createElement('td');
                 const value = row[col.name];
-                
-                // 格式化显示值
-                if (value === null || value === undefined) {
-                  td.textContent = 'NULL';
-                  td.style.fontStyle = 'italic';
-                  td.style.color = 'var(--vscode-disabledForeground)';
-                } else if (typeof value === 'string' && value.includes('T') && value.includes('Z')) {
-                  // 可能是日期时间
-                  try {
-                    const date = new Date(value);
-                    td.textContent = date.toLocaleString('zh-CN', { 
-                      year: 'numeric', 
-                      month: '2-digit', 
-                      day: '2-digit',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      second: '2-digit'
-                    });
-                  } catch (e) {
-                    td.textContent = String(value);
-                  }
-                } else {
-                  td.textContent = String(value);
-                }
-                
-                td.style.padding = '6px 12px';
-                td.style.color = 'var(--vscode-foreground)';
-                td.style.borderRight = '1px solid var(--vscode-panel-border)';
+                const fmt = formatCellValue(value);
+                td.textContent = fmt.text;
+                td.style.cssText = 'padding: 6px 12px; color: ' + (fmt.muted ? 'var(--vscode-disabledForeground)' : 'var(--vscode-foreground)') + '; font-style: ' + (fmt.italic ? 'italic' : '') + '; border-right: 1px solid var(--vscode-panel-border); max-width: 220px; overflow: hidden; text-overflow: ellipsis;';
                 tr.appendChild(td);
               });
               tbody.appendChild(tr);

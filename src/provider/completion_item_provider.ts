@@ -50,11 +50,11 @@ export class CaCompletionItemProvider implements vscode.CompletionItemProvider {
     );
     
     if (notebookUri) {
+      const cell = notebookUri.getCells().find(c => c.document.uri.toString() === document.uri.toString());
+      const cellCadb = cell?.metadata?.cadb as { datasource?: string; database?: string } | undefined;
       const metadata = notebookUri.metadata;
-      const datasourceName = metadata?.datasource as string | undefined;
-      const databaseName = metadata?.database as string | undefined;
-      
-      // 如果有 metadata，创建临时的连接和数据库对象用于补全
+      const datasourceName = cellCadb?.datasource ?? (metadata?.datasource as string | undefined);
+      const databaseName = cellCadb?.database ?? (metadata?.database as string | undefined);
       if (datasourceName && databaseName) {
         currentConnection = { label: datasourceName, name: datasourceName };
         currentDatabase = { label: databaseName };

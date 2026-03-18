@@ -470,11 +470,34 @@ const indexMapping = FieldConfig.index;
     }
   });
 
+  let tableMeta = { connectionName: "", databaseName: "", tableName: "" };
+
+  document.addEventListener("click", (e) => {
+    const link = e.target.closest("[data-action]");
+    if (!link || link.dataset.action !== "switchToTableData") return;
+    e.preventDefault();
+    if (tableMeta.connectionName && tableMeta.databaseName && tableMeta.tableName && vscode) {
+      vscode.postMessage({
+        command: "switchToTableData",
+        connectionName: tableMeta.connectionName,
+        databaseName: tableMeta.databaseName,
+        tableName: tableMeta.tableName,
+      });
+    }
+  });
+
   // 监听来自 VSCode 的消息
   window.addEventListener("message", (event) => {
-    const { command, data } = event.data;
+    const { command, data } = event.data || {};
 
     if (command === "load" || command === "loadData") {
+      if (data) {
+        tableMeta = {
+          connectionName: data.connectionName ?? "",
+          databaseName: data.databaseName ?? "",
+          tableName: data.tableName ?? "",
+        };
+      }
       // 加载数据
       if (data && data.rowData) {
         // 从 DESC table 查询结果转换数据

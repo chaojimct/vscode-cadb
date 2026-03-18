@@ -16,12 +16,13 @@ import { DatabaseManager } from "./provider/component/database_manager";
 import { ResultWebviewProvider } from "./provider/result_provider";
 import { CaCompletionItemProvider } from "./provider/completion_item_provider";
 import { SqlCodeLensProvider } from "./provider/component/sql_codelens_provider";
-import { SqlHoverProvider } from "./provider/component/sql_hover_provider";
+import { SqlHoverProvider, lastHoveredTableInfo } from "./provider/component/sql_hover_provider";
 import { SqlExecutor } from "./provider/component/sql_executor";
 import { DatabaseStatusBar } from "./provider/component/database_status_bar";
 import {
   MySQLTableWorkspaceSymbolProvider,
   CadbTableDocumentContentProvider,
+  resolveTableDatasource,
 } from "./provider/workspace_symbol_provider";
 
 // This method is called when your extension is activated
@@ -175,57 +176,115 @@ export function activate(context: vscode.ExtensionContext) {
 
       if (datasourceName && databaseName) {
         console.log(`[Notebook] 检测到连接信息: ${datasourceName} / ${databaseName}`);
-        
-        // 查找对应的数据源和数据库
+        // 立即设置数据库状态，确保顶部工具栏/状态栏能回显（不依赖后续展开）
+        const ok = await databaseManager.setActiveDatabase(datasourceName, databaseName);
+        if (ok) {
+          console.log(`[Notebook] 已回显数据库: ${datasourceName} / ${databaseName}`);
+        }
+        // 可选：后台尝试用完整节点更新（用于依赖树结构的逻辑）
         try {
           const connections = provider.getConnections();
           const connectionData = connections.find(
             (conn) => conn.name === datasourceName
           );
-
           if (connectionData) {
             const connection = new Datasource(connectionData);
-            
-            // 展开连接获取数据库列表
-            await vscode.window.withProgress(
-              {
-                location: vscode.ProgressLocation.Notification,
-                title: `正在加载数据库连接...`,
-                cancellable: false,
-              },
-              async () => {
-                const objects = await connection.expand(context);
-                const datasourceTypeNode = objects.find(
-                  (obj) => obj.type === 'datasourceType'
-                );
-
-                if (datasourceTypeNode) {
-                  const databases = await datasourceTypeNode.expand(context);
-                  const database = databases.find(
-                    (db) => db.label === databaseName
-                  );
-
-                  if (database) {
-                    // 设置当前数据库（静默模式）
-                    databaseManager.setCurrentDatabase(database, true);
-                    console.log(
-                      `[Notebook] 已自动设置数据库: ${datasourceName} / ${databaseName}`
-                    );
-                  } else {
-                    console.warn(
-                      `[Notebook] 找不到数据库: ${databaseName}`
-                    );
-                  }
-                }
-              }
+            const objects = await connection.expand(context);
+            const datasourceTypeNode = objects.find(
+              (obj) => obj.type === 'datasourceType'
             );
-          } else {
-            console.warn(`[Notebook] 找不到数据源: ${datasourceName}`);
+            if (datasourceTypeNode) {
+              const databases = await datasourceTypeNode.expand(context);
+              const database = databases.find(
+                (db) => db.label === databaseName
+              );
+              if (database) {
+                databaseManager.setCurrentDatabase(database, true);
+              }
+            }
           }
         } catch (error) {
-          console.error('[Notebook] 自动设置数据库失败:', error);
+          console.error('[Notebook] 后台加载数据库节点失败:', error);
         }
       }
+    })
+  );
+
+  // 已选择数据库时显示的按钮，点击可更换（同 selectDatabase）
+  context.subscriptions.push(
+    vscode.commands.registerCommand('cadb.notebook.currentDatabase', async () => {
+      await databaseManager.selectDatabase();
+    })
+  );
+
+  // Cell 底部执行栏（kernel 选择器左侧）：展示该 cell 的数据源/库，点击可设置或切换
+  try {
+    const registerFn = (vscode.notebooks as any).registerNotebookCellStatusBarItemProvider;
+    if (typeof registerFn === 'function') {
+      const Right = (vscode as any).NotebookCellStatusBarAlignment?.Right ?? 1;
+      context.subscriptions.push(
+        registerFn.call(vscode.notebooks, { viewType: 'cadb.sqlNotebook' }, {
+          provideCellStatusBarItems: (cell: vscode.NotebookCell, _token: vscode.CancellationToken) => {
+            const cadb = cell.metadata?.cadb as { datasource?: string; database?: string } | undefined;
+            const ds = cadb?.datasource ?? '';
+            const db = cadb?.database ?? '';
+            const text = ds && db ? `${ds} / ${db}` : '$(database) 设置数据源';
+            return [{
+              text,
+              alignment: Right,
+              command: { command: 'cadb.notebook.setCellDatabase', arguments: [cell] },
+              tooltip: ds && db ? `点击更换数据源：${ds} / ${db}` : '点击设置该 Cell 的数据源',
+            }];
+          },
+        })
+      );
+    }
+  } catch (e) {
+    console.warn('[CADB] registerNotebookCellStatusBarItemProvider 不可用:', e);
+  }
+
+  // 为当前 Cell 单独设置数据库连接（保存到 cell.metadata）
+  context.subscriptions.push(
+    vscode.commands.registerCommand('cadb.notebook.setCellDatabase', async (cell?: vscode.NotebookCell) => {
+      const editor = vscode.window.activeNotebookEditor;
+      if (!editor || editor.notebook.notebookType !== 'cadb.sqlNotebook') return;
+      let targetCell: vscode.NotebookCell | undefined = cell;
+      if (!targetCell) {
+        const sel = (editor as any).selection;
+        if (sel && typeof sel.start === 'number') {
+          targetCell = editor.notebook.cellAt(sel.start);
+        }
+        targetCell ??= editor.notebook.getCells()[0];
+      }
+      if (!targetCell || !targetCell.notebook) return;
+      await databaseManager.selectDatabase();
+      const conn = databaseManager.getCurrentConnection();
+      const db = databaseManager.getCurrentDatabase();
+      if (!conn || !db) return;
+      const datasource = conn.label?.toString() ?? '';
+      const database = db.label?.toString() ?? '';
+      const edit = new vscode.WorkspaceEdit();
+      const newMetadata = { ...targetCell.metadata, cadb: { datasource, database } };
+      edit.set(targetCell.notebook.uri, [vscode.NotebookEdit.updateCellMetadata(targetCell.index, newMetadata)]);
+      await vscode.workspace.applyEdit(edit);
+      vscode.window.showInformationMessage(`已为 Cell 设置: ${datasource} / ${database}`);
+    })
+  );
+
+  // 收起/展开全部结果：通过 createRendererMessaging 发到 renderer
+  const rendererMessaging = vscode.notebooks.createRendererMessaging('cadb.sql-notebook-renderer');
+  context.subscriptions.push(
+    vscode.commands.registerCommand('cadb.notebook.collapseAllResults', () => {
+      const editor = vscode.window.activeNotebookEditor;
+      if (editor?.notebook?.notebookType !== 'cadb.sqlNotebook') return;
+      void rendererMessaging.postMessage({ type: 'collapseAll' }, editor);
+    })
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand('cadb.notebook.expandAllResults', () => {
+      const editor = vscode.window.activeNotebookEditor;
+      if (editor?.notebook?.notebookType !== 'cadb.sqlNotebook') return;
+      void rendererMessaging.postMessage({ type: 'expandAll' }, editor);
     })
   );
 
@@ -309,6 +368,44 @@ export function activate(context: vscode.ExtensionContext) {
   sqlHoverProvider.setDatabaseManager(databaseManager);
   context.subscriptions.push(
     vscode.languages.registerHoverProvider({ language: "sql" }, sqlHoverProvider)
+  );
+
+  // 表名悬浮弹窗的快捷命令：进入表数据、表编辑
+  // 使用无参 command 链接，点击时从 lastHoveredTableInfo 读取（hover 内传参在某些环境下不生效）
+  const resolveTableFromArgs = (args: unknown): [string, string, string] | null => {
+    if (Array.isArray(args) && args.length >= 3) {
+      return [String(args[0]), String(args[1]), String(args[2])];
+    }
+    if (typeof args === "string") {
+      try {
+        const arr = JSON.parse(args);
+        return Array.isArray(arr) && arr.length >= 3
+          ? [String(arr[0]), String(arr[1]), String(arr[2])]
+          : null;
+      } catch {
+        return null;
+      }
+    }
+    const last = lastHoveredTableInfo;
+    return last ? [last.conn, last.db, last.table] : null;
+  };
+  context.subscriptions.push(
+    vscode.commands.registerCommand("cadb.hover.openTableData", async (args: unknown) => {
+      const parsed = resolveTableFromArgs(args);
+      if (!parsed) return;
+      const [conn, db, table] = parsed;
+      const ds = await resolveTableDatasource(provider, context, conn, db, table);
+      if (ds) await vscode.commands.executeCommand("cadb.item.showData", ds);
+    })
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand("cadb.hover.editTable", async (args: unknown) => {
+      const parsed = resolveTableFromArgs(args);
+      if (!parsed) return;
+      const [conn, db, table] = parsed;
+      const ds = await resolveTableDatasource(provider, context, conn, db, table);
+      if (ds) await vscode.commands.executeCommand("cadb.datasource.edit", ds);
+    })
   );
 
   // 工作区符号：将 MySQL 数据表加入「转到工作区中的符号」(Ctrl/Cmd+T)，选择表可快速打开表数据

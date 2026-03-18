@@ -16,7 +16,8 @@
     "Other"
   ],
   "activationEvents": [
-    "onLanguage:sql"
+    "onLanguage:sql",
+    "onNotebook:cadb.sqlNotebook"
   ],
   "main": "./dist/extension.js",
   "icon": "logo.png",
@@ -161,6 +162,26 @@
         "icon": "$(database)"
       },
       {
+        "command": "cadb.notebook.currentDatabase",
+        "title": "更换数据库",
+        "icon": "$(database)"
+      },
+      {
+        "command": "cadb.notebook.setCellDatabase",
+        "title": "设置 Cell 数据库",
+        "icon": "$(database)"
+      },
+      {
+        "command": "cadb.notebook.collapseAllResults",
+        "title": "收起全部结果",
+        "icon": "$(collapse-all)"
+      },
+      {
+        "command": "cadb.notebook.expandAllResults",
+        "title": "展开全部结果",
+        "icon": "$(expand-all)"
+      },
+      {
         "command": "cadb.notebook.showDatabaseStatus",
         "title": "显示数据库状态",
         "icon": "$(info)"
@@ -174,6 +195,18 @@
         "command": "cadb.sql.explain",
         "title": "解释 SQL",
         "icon": "$(search)"
+      },
+      {
+        "command": "cadb.quickQuery",
+        "title": "快捷查询"
+      },
+      {
+        "command": "cadb.hover.openTableData",
+        "title": "进入表数据"
+      },
+      {
+        "command": "cadb.hover.editTable",
+        "title": "表编辑"
       }
     ],
     "notebooks": [
@@ -207,7 +240,8 @@
           "application/x.sql-results",
           "application/x.sql-error"
         ],
-        "entrypoint": "./resources/notebook/renderer.js"
+        "entrypoint": "./resources/notebook/renderer.js",
+        "requiresMessaging": "optional"
       }
     ],
     "menus": {
@@ -315,13 +349,35 @@
       "notebook/toolbar": [
         {
           "command": "cadb.sql.selectDatabase",
-          "when": "notebookType == cadb.sqlNotebook",
+          "when": "notebookType == cadb.sqlNotebook && !cadb.hasDatabaseSelected",
+          "group": "navigation"
+        },
+        {
+          "command": "cadb.notebook.currentDatabase",
+          "when": "notebookType == cadb.sqlNotebook && cadb.hasDatabaseSelected",
           "group": "navigation"
         },
         {
           "command": "cadb.notebook.showDatabaseStatus",
           "when": "notebookType == cadb.sqlNotebook",
           "group": "status"
+        },
+        {
+          "command": "cadb.notebook.collapseAllResults",
+          "when": "notebookType == cadb.sqlNotebook",
+          "group": "navigation"
+        },
+        {
+          "command": "cadb.notebook.expandAllResults",
+          "when": "notebookType == cadb.sqlNotebook",
+          "group": "navigation"
+        }
+      ],
+      "notebook/cell/title": [
+        {
+          "command": "cadb.notebook.setCellDatabase",
+          "when": "notebookType == cadb.sqlNotebook",
+          "group": "right"
         }
       ]
     },

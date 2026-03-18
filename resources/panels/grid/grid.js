@@ -12,6 +12,8 @@
 
   const $ = (sel, root = document) => root.querySelector(sel);
 
+  let tableMeta = { connectionName: "", databaseName: "", tableName: "" };
+
   const actions = {
     save: () => {
       const changed = dbTable.getChangedRows();
@@ -39,12 +41,33 @@
     "export-csv": () => dbTable.exportCSV(),
     "export-xlsx": () => dbTable.exportXLSX(),
     "export-json": () => dbTable.exportJSON(),
+    switchToTableEdit: () => {
+      if (tableMeta.connectionName && tableMeta.databaseName && tableMeta.tableName) {
+        vscode?.postMessage({
+          command: "switchToTableEdit",
+          connectionName: tableMeta.connectionName,
+          databaseName: tableMeta.databaseName,
+          tableName: tableMeta.tableName,
+        });
+      }
+    },
+    quickQuery: () => {
+      if (tableMeta.connectionName && tableMeta.databaseName && tableMeta.tableName) {
+        vscode?.postMessage({
+          command: "quickQuery",
+          connectionName: tableMeta.connectionName,
+          databaseName: tableMeta.databaseName,
+          tableName: tableMeta.tableName,
+        });
+      }
+    },
   };
 
   // 工具栏事件委托
   document.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-action]");
     if (!btn) return;
+    e.preventDefault();
     const action = actions[btn.dataset.action];
     if (action) action();
   });
@@ -55,6 +78,15 @@
     const payload = event.data?.data != null ? event.data.data : event.data;
 
     if (command === "load") {
+      tableMeta = {
+        connectionName: payload?.connectionName ?? "",
+        databaseName: payload?.databaseName ?? "",
+        tableName: payload?.tableName ?? "",
+      };
+      const hasMeta = tableMeta.connectionName && tableMeta.databaseName && tableMeta.tableName;
+      document.querySelectorAll("[data-action=switchToTableEdit], [data-action=quickQuery]").forEach((el) => {
+        el.style.display = hasMeta ? "" : "none";
+      });
       const columnDefs = payload?.columnDefs;
       const rowData = Array.isArray(payload?.rowData) ? payload.rowData : [];
       if (!columnDefs?.length) return;

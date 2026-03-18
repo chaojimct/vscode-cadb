@@ -13,6 +13,10 @@
   </head>
   <body>
     <header class="grid-toolbar">
+      <div class="grid-toolbar__nav" style="display:flex;align-items:center;gap:8px;margin-right:12px;">
+        <a href="#" data-action="switchToTableEdit" title="切换至表结构编辑" class="grid-nav-link">表编辑</a>
+        <a href="#" data-action="quickQuery" title="新建或选择查询文件，快速添加 SELECT 语句" class="grid-nav-link">快捷查询</a>
+      </div>
       <div class="grid-toolbar__actions">
         <button data-action="save" title="保存修改到数据库">
           <i class="codicon codicon-save" aria-hidden="true"></i>

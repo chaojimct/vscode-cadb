@@ -30,6 +30,19 @@ export class MySQLDataloader implements Dataloader {
       connectTimeout: 2000, // 连接超时缩短到 2 秒
       enableKeepAlive: true, // 启用 TCP keep-alive
       keepAliveInitialDelay: 10000, // keep-alive 初始延迟 10 秒
+      typeCast: (field: any, next: () => any) => {
+        // BIT 类型：mysql2 返回 Buffer，转为数字便于显示
+        if (field.type === "BIT" || field.type === 16) {
+          const buf = field.buffer();
+          if (buf && Buffer.isBuffer(buf)) {
+            if (buf.length === 1) return buf[0]; // BIT(1) -> 0 或 1
+            let n = 0;
+            for (let i = 0; i < buf.length; i++) n = (n << 8) | buf[i];
+            return n;
+          }
+        }
+        return next();
+      },
     };
     this.conn = createConnection(this.connectionConfig);
   }
@@ -822,7 +835,9 @@ ORDER BY
             return resolve([]);
           }
           return resolve(
-            (results as any[]).map((e) => e as Record<string, any>)
+            (results as any[]).map((e) =>
+              this._transformRowForDisplay(e as Record<string, any>, descTable)
+            )
           );
         }
       );
@@ -1037,6 +1052,38 @@ ORDER BY
     throw new Error(`不支持的 operation: ${operation}`);
   }
 
+  /**
+   * 转换行数据以便正确显示：Buffer -> 可读格式，处理 JSON/BLOB/GEOMETRY 等
+   */
+  private _transformRowForDisplay(
+    row: Record<string, any>,
+    columnDefs: ColDef[]
+  ): Record<string, any> {
+    const out = { ...row };
+    for (const col of columnDefs) {
+      const v = out[col.field];
+      if (v === null || v === undefined) continue;
+      if (Buffer.isBuffer(v)) {
+        const type = (col.type != null ? String(col.type) : "").toLowerCase();
+        if (/^bit\s*\(/.test(type) || type.startsWith("bit")) {
+          out[col.field] = v.length === 1 ? v[0] : parseInt(v.toString("hex"), 16);
+        } else {
+          out[col.field] = `0x${v.toString("hex").toUpperCase()}`;
+        }
+        continue;
+      }
+      if (typeof v === "object" && !Array.isArray(v) && v !== null) {
+        if (v.constructor?.name === "Object" || Array.isArray(v)) {
+          continue;
+        }
+        if (v.type === "Buffer" && Array.isArray(v.data)) {
+          out[col.field] = Buffer.from(v.data).toString("hex");
+        }
+      }
+    }
+    return out;
+  }
+
   private escapeId(id: string): string {
     return id.replace(/`/g, "``");
   }
@@ -1051,21 +1098,23 @@ ORDER BY
   }): string {
     const parts: string[] = [];
     const typeMap: Record<string, string> = {
-      varchar: "VARCHAR",
-      int: "INT",
-      bigint: "BIGINT",
-      text: "TEXT",
-      datetime: "DATETIME",
-      date: "DATE",
-      decimal: "DECIMAL",
-      float: "FLOAT",
-      double: "DOUBLE",
-      json: "JSON",
-      blob: "BLOB",
+      varchar: "VARCHAR", char: "CHAR", binary: "BINARY", varbinary: "VARBINARY",
+      tinytext: "TINYTEXT", text: "TEXT", mediumtext: "MEDIUMTEXT", longtext: "LONGTEXT",
+      tinyblob: "TINYBLOB", blob: "BLOB", mediumblob: "MEDIUMBLOB", longblob: "LONGBLOB",
+      int: "INT", integer: "INT", tinyint: "TINYINT", smallint: "SMALLINT", mediumint: "MEDIUMINT", bigint: "BIGINT",
+      decimal: "DECIMAL", numeric: "NUMERIC", float: "FLOAT", double: "DOUBLE",
+      bit: "BIT", boolean: "BOOLEAN",
+      date: "DATE", time: "TIME", datetime: "DATETIME", timestamp: "TIMESTAMP", year: "YEAR",
+      json: "JSON", enum: "ENUM", set: "SET",
+      geometry: "GEOMETRY", point: "POINT", linestring: "LINESTRING", polygon: "POLYGON",
+      multipoint: "MULTIPOINT", multilinestring: "MULTILINESTRING", multipolygon: "MULTIPOLYGON", geometrycollection: "GEOMETRYCOLLECTION",
     };
     const baseType = typeMap[field.type.toLowerCase()] || field.type.toUpperCase();
-    if (field.length != null && field.length > 0 && ["VARCHAR", "CHAR", "DECIMAL", "NUMERIC"].includes(baseType)) {
+    const needsLength = ["VARCHAR", "CHAR", "DECIMAL", "NUMERIC", "BINARY", "VARBINARY", "BIT"].includes(baseType);
+    if (field.length != null && field.length > 0 && needsLength) {
       parts.push(`${baseType}(${field.length})`);
+    } else if (baseType === "BIT" && (field.length == null || field.length === 0)) {
+      parts.push("BIT(1)");
     } else {
       parts.push(baseType);
     }
