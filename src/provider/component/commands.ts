@@ -12,26 +12,13 @@ import { DatabaseSelector } from "./database_selector";
 import { createWebview } from "../webview_helper";
 import type { RedisClientType } from "redis";
 import { resolveTableDatasource } from "../workspace_symbol_provider";
+import { fuzzyMatch } from "../utils";
 
 /**
  * 将 unknown 错误转换为可展示的消息文本
  */
 function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-/**
- * 模糊匹配：pattern 的字符按顺序出现在 text 中即视为匹配（忽略大小写）
- */
-function fuzzyMatch(pattern: string, text: string): boolean {
-  if (!pattern.trim()) return true;
-  const p = pattern.toLowerCase().trim();
-  const t = text.toLowerCase();
-  let i = 0;
-  for (let j = 0; j < t.length && i < p.length; j++) {
-    if (t[j] === p[i]) i++;
-  }
-  return i === p.length;
 }
 
 /**
@@ -766,7 +753,6 @@ async function saveOssDatasourceConfig(
   payload: any,
   options: { originalName?: string }
 ): Promise<void> {
-  console.log(payload);
   // TODO: 实现 OSS 数据源保存逻辑（新建/编辑共用此入口）
   void provider;
   void payload;
@@ -855,6 +841,7 @@ export function registerDatasourceCommands(
       createWebview(provider, viewType as "settings", title),
     refresh: (item?) => provider.refresh(item),
     loadCollectionChildren: (node) => provider.loadCollectionChildren(node),
+    getConnectionFilesDirUri: (name) => provider.getConnectionFilesDirUri(name),
   };
 
   // 注册刷新命令，支持完整加载
@@ -862,7 +849,6 @@ export function registerDatasourceCommands(
     vscode.commands.registerCommand(
       "cadb.datasource.refresh",
       async (item?: Datasource) => {
-        console.log(item?.type);
         if (item && item.type === "datasource") {
           // 如果指定了数据源，则完整加载该数据源
           await vscode.window.withProgress(
@@ -1872,10 +1858,7 @@ export function registerDatasourceItemCommands(
 
       await databaseManager.setActiveDatabase(connectionName, databaseName);
 
-      const connDir = vscode.Uri.joinPath(
-        provider.context.globalStorageUri,
-        connectionName
-      );
+      const connDir = provider.getConnectionFilesDirUri(connectionName);
 
       const appendToFile = async (uri: vscode.Uri) => {
         const ext = uri.fsPath.toLowerCase().endsWith(".jsql") ? "jsql" : "sql";
@@ -2174,13 +2157,12 @@ export function registerDatasourceItemCommands(
       return;
     }
 
-    // 构建文件路径
+    // 构建文件路径（随数据源保存位置：工作区 .cadb/连接名 或 globalStorage/连接名）
     const fileName = fileItem.label?.toString() || "";
-    const dsPath = vscode.Uri.joinPath(
-      provider.context.globalStorageUri,
-      fileItem.parent.label.toString(),
-      fileName
+    const connDir = provider.getConnectionFilesDirUri(
+      fileItem.parent.label?.toString() || ""
     );
+    const dsPath = vscode.Uri.joinPath(connDir, fileName);
 
     try {
       // 判断文件扩展名是否为 .jsql
@@ -2203,7 +2185,6 @@ export function registerDatasourceItemCommands(
         // 如果找到了数据库节点，自动设置数据库（静默模式）
         if (databaseNode && databaseManager) {
           databaseManager.setCurrentDatabase(databaseNode, true);
-          console.log(`[File Open] 自动设置数据库: ${databaseNode.label}`);
         }
       } else {
         // 使用普通文本编辑器打开

@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { DataSourceProvider } from "./database_provider";
 import { Datasource } from "./entity/datasource";
+import { fuzzyMatch } from "./utils";
 
 const CADB_TABLE_URI_SCHEME = "cadb";
 const CADB_TABLE_URI_AUTHORITY = "table";
@@ -81,20 +82,6 @@ export function buildTableUri(
   return vscode.Uri.parse(
     `${CADB_TABLE_URI_SCHEME}://${CADB_TABLE_URI_AUTHORITY}/${path}`
   );
-}
-
-/**
- * 模糊匹配：query 的字符按顺序出现在 text 中即视为匹配（忽略大小写）。
- */
-function fuzzyMatch(query: string, text: string): boolean {
-  if (!query.trim()) return true;
-  const q = query.toLowerCase().trim();
-  const t = text.toLowerCase();
-  let i = 0;
-  for (let j = 0; j < t.length && i < q.length; j++) {
-    if (t[j] === q[i]) i++;
-  }
-  return i === q.length;
 }
 
 /**

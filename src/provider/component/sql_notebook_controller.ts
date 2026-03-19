@@ -427,8 +427,6 @@ export class SqlNotebookController {
       ]);
       
       await vscode.workspace.applyEdit(edit);
-      
-      console.log(`[Notebook] 已保存连接信息: ${datasource} / ${database}`);
     } catch (error) {
       console.error('[Notebook] 保存元数据失败:', error);
     }

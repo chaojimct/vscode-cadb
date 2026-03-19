@@ -78,6 +78,11 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
     this.initialize();
   }
 
+  /** 供扩展恢复展开状态等使用，只读 */
+  public getTreeState(): TreeState {
+    return this.treeState;
+  }
+
   public getConnections(): DatasourceInputData[] {
     const userConnections =
       this.context.globalState.get<DatasourceInputData[]>("cadb.connections", []) ||
@@ -138,29 +143,93 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
     await this.context.globalState.update("cadb.connections", existing);
   }
 
+  /**
+   * 更新连接配置。若表单中修改了「保存位置」，会将该数据源从当前存储移除并写入目标存储
+   * （用户 ↔ 工作区），树状态（过滤显示的库/表、展开路径）会保留（仍按连接名关联）。
+   */
   public async updateConnectionByName(
     originalName: string,
     payload: DatasourceInputData
   ): Promise<void> {
+    const wantWorkspace = payload.saveLocation === "workspace";
     const idxWorkspace = this.workspaceConnections.findIndex(
       (c) => c.name === originalName
     );
-    if (idxWorkspace !== -1) {
-      this.workspaceConnections[idxWorkspace] = {
-        ...payload,
-        saveLocation: "workspace",
-      };
-      await this.persistWorkspaceConnections(this.workspaceConnections);
-      return;
-    }
+    const inWorkspace = idxWorkspace !== -1;
 
     const userConnections = this.getUserConnections();
     const idxUser = userConnections.findIndex((c) => c.name === originalName);
-    if (idxUser === -1) {
+    const inUser = idxUser !== -1;
+
+    if (!inWorkspace && !inUser) {
       throw new Error("未找到要更新的连接配置");
     }
-    userConnections[idxUser] = { ...payload, saveLocation: "user" };
-    await this.context.globalState.update("cadb.connections", userConnections);
+
+    const nameChanged = (payload.name || originalName) !== originalName;
+    const finalName = (payload.name || originalName).trim() || originalName;
+    const moveToWorkspace = wantWorkspace && !inWorkspace;
+    const moveToUser = !wantWorkspace && inWorkspace;
+
+    if (moveToWorkspace || moveToUser) {
+      // 从当前存储移除
+      if (inWorkspace) {
+        this.workspaceConnections = this.workspaceConnections.filter(
+          (c) => c.name !== originalName
+        );
+        await this.persistWorkspaceConnections(this.workspaceConnections);
+      } else {
+        const nextUser = userConnections.filter((c) => c.name !== originalName);
+        await this.context.globalState.update("cadb.connections", nextUser);
+      }
+      // 写入目标存储
+      const normalized: DatasourceInputData = {
+        ...payload,
+        name: finalName,
+        type: "datasource",
+        saveLocation: wantWorkspace ? "workspace" : "user",
+      };
+      if (wantWorkspace) {
+        if (!this.getWorkspaceConnectionsFileUri()) {
+          const existing = this.getUserConnections();
+          existing.push({ ...normalized, saveLocation: "user" });
+          await this.context.globalState.update("cadb.connections", existing);
+        } else {
+          const existing = this.getWorkspaceConnections();
+          this.workspaceConnections = [...existing, normalized];
+          await this.persistWorkspaceConnections(this.workspaceConnections);
+        }
+      } else {
+        const existing = this.getUserConnections();
+        existing.push(normalized);
+        await this.context.globalState.update("cadb.connections", existing);
+      }
+      if (nameChanged) {
+        this.renameConnection(originalName, finalName);
+      }
+      return;
+    }
+
+    // 未更换保存位置：原地更新
+    if (inWorkspace) {
+      this.workspaceConnections[idxWorkspace] = {
+        ...payload,
+        name: finalName,
+        type: "datasource",
+        saveLocation: "workspace",
+      };
+      await this.persistWorkspaceConnections(this.workspaceConnections);
+    } else {
+      userConnections[idxUser] = {
+        ...payload,
+        name: finalName,
+        type: "datasource",
+        saveLocation: "user",
+      };
+      await this.context.globalState.update("cadb.connections", userConnections);
+    }
+    if (nameChanged) {
+      this.renameConnection(originalName, finalName);
+    }
   }
 
   public async renameConnectionRecord(
@@ -220,6 +289,28 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
     const dir = this.getWorkspaceCadbDirUri();
     if (!dir) return null;
     return vscode.Uri.joinPath(dir, "connections.json");
+  }
+
+  /**
+   * 获取某连接下 JSQL/查询文件的根目录，随该连接的保存位置变化：
+   * - 若连接保存在工作区：返回工作区 .cadb/<连接名>
+   * - 若保存在用户或无法使用工作区：返回 globalStorageUri/<连接名>
+   */
+  public getConnectionFilesDirUri(connectionName: string): vscode.Uri {
+    const connections = this.getConnections();
+    const conn = connections.find(
+      (c) => (c.name || "").trim() === (connectionName || "").trim()
+    );
+    const useWorkspace =
+      conn?.saveLocation === "workspace" && this.getWorkspaceCadbDirUri();
+    if (useWorkspace) {
+      const cadbDir = this.getWorkspaceCadbDirUri()!;
+      return vscode.Uri.joinPath(cadbDir, connectionName.trim());
+    }
+    return vscode.Uri.joinPath(
+      this.context.globalStorageUri,
+      connectionName.trim()
+    );
   }
 
   private async loadWorkspaceConnections(): Promise<DatasourceInputData[]> {

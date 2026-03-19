@@ -45,9 +45,6 @@ class CadbColorDecorationProvider implements vscode.FileDecorationProvider {
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
-  // 清除数据
-  // context.globalState.update("cadb.connections", undefined);
-
   // 创建输出通道用于显示 SQL 执行日志
   const outputChannel = vscode.window.createOutputChannel("CADB SQL");
   context.subscriptions.push(outputChannel);
@@ -81,8 +78,8 @@ export function activate(context: vscode.ExtensionContext) {
   setTimeout(() => {
     (async () => {
       try {
-        const treeState = (provider as any).treeState;
-        if (treeState && treeState.expandedNodes && treeState.expandedNodes.length > 0) {
+        const treeState = provider.getTreeState();
+        if (treeState?.expandedNodes?.length) {
           // 递归恢复展开状态
           const restoreExpandedState = async (
             element: Datasource,
@@ -195,12 +192,7 @@ export function activate(context: vscode.ExtensionContext) {
       const databaseName = metadata?.database;
 
       if (datasourceName && databaseName) {
-        console.log(`[Notebook] 检测到连接信息: ${datasourceName} / ${databaseName}`);
-        // 立即设置数据库状态，确保顶部工具栏/状态栏能回显（不依赖后续展开）
-        const ok = await databaseManager.setActiveDatabase(datasourceName, databaseName);
-        if (ok) {
-          console.log(`[Notebook] 已回显数据库: ${datasourceName} / ${databaseName}`);
-        }
+        await databaseManager.setActiveDatabase(datasourceName, databaseName);
         // 可选：后台尝试用完整节点更新（用于依赖树结构的逻辑）
         try {
           const connections = provider.getConnections();

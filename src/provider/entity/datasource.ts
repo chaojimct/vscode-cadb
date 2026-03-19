@@ -111,6 +111,8 @@ export class Datasource extends vscode.TreeItem {
     createWebview(viewType: string, title: string): vscode.WebviewPanel;
     refresh(item?: Datasource): void;
     loadCollectionChildren(node: Datasource): Promise<void>;
+    /** 获取某连接下 JSQL/查询文件根目录（随连接保存位置：工作区 .cadb/连接名 或 globalStorage/连接名） */
+    getConnectionFilesDirUri?(connectionName: string): vscode.Uri;
   };
 
   public create = async (
@@ -182,10 +184,10 @@ export class Datasource extends vscode.TreeItem {
         if (!this.parent || !this.parent.label) {
           return Promise.resolve();
         }
-        const dsPath = vscode.Uri.joinPath(
-          context.globalStorageUri,
-          this.parent.label.toString()
-        );
+        const connectionNameForPath = this.parent.label.toString();
+        const dsPath =
+          Datasource.createDatabaseHost?.getConnectionFilesDirUri?.(connectionNameForPath) ??
+          vscode.Uri.joinPath(context.globalStorageUri, connectionNameForPath);
 
         // 创建新的 .jsql 文件（SQL Notebook）
         const dayjs = require("dayjs");
@@ -216,7 +218,7 @@ export class Datasource extends vscode.TreeItem {
         };
         const content = JSON.stringify(emptyNotebook, null, 2);
 
-        // 写入文件
+        await vscode.workspace.fs.createDirectory(dsPath);
         await vscode.workspace.fs.writeFile(
           fileUri,
           Buffer.from(content, "utf-8")
@@ -266,13 +268,11 @@ export class Datasource extends vscode.TreeItem {
         if (!this.parent || !this.parent.label) {
           return Promise.resolve([]);
         }
-        return this.dataloader.listFiles(
-          this,
-          vscode.Uri.joinPath(
-            context.globalStorageUri,
-            this.parent.label.toString()
-          )
-        );
+        const connName = this.parent.label.toString();
+        const listFilesBase =
+          Datasource.createDatabaseHost?.getConnectionFilesDirUri?.(connName) ??
+          vscode.Uri.joinPath(context.globalStorageUri, connName);
+        return this.dataloader.listFiles(this, listFilesBase);
       case "collection":
       case "datasource":
       case "document":
