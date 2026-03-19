@@ -85,7 +85,6 @@ class DatabaseTableData {
         resizable: true,
         filter: true,
         editable: true,
-        maxWidth: 220,
         valueFormatter: (params) => {
           const v = params.value;
           if (v == null) return "";
@@ -162,9 +161,10 @@ class DatabaseTableData {
       const colDef = {
         field: c.field,
         headerName: (c.headerName != null ? c.headerName : c.field.toUpperCase()),
+        ...(c.comment != null && String(c.comment).trim() !== "" && { headerTooltip: String(c.comment) }),
         width: c.width != null ? c.width : 120,
         minWidth: c.minWidth != null ? c.minWidth : 60,
-        maxWidth: c.maxWidth != null ? c.maxWidth : 220,
+        ...(c.maxWidth != null && { maxWidth: c.maxWidth }),
         ...this._getFilterConfig(c, type),
         ...this._getComparatorConfig(c, type),
         // 透传 AG Grid 列扩展配置（如 cellEditor、cellEditorPopup 等）

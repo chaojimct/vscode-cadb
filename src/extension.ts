@@ -3,6 +3,7 @@
 import * as vscode from "vscode";
 import { DataSourceProvider } from "./provider/database_provider";
 import { Datasource } from "./provider/entity/datasource";
+import { format as formatSql } from "sql-formatter";
 import {
   registerDatasourceCommands,
   registerDatasourceItemCommands,
@@ -42,6 +43,29 @@ class CadbColorDecorationProvider implements vscode.FileDecorationProvider {
   }
 }
 
+class SqlDocumentFormattingProvider implements vscode.DocumentFormattingEditProvider {
+  provideDocumentFormattingEdits(
+    document: vscode.TextDocument,
+    options: vscode.FormattingOptions,
+    _token: vscode.CancellationToken
+  ): vscode.ProviderResult<vscode.TextEdit[]> {
+    const text = document.getText();
+    const formatted = formatSql(text, {
+      language: "mysql",
+      tabWidth: typeof options.tabSize === "number" ? options.tabSize : 2,
+      useTabs: options.insertSpaces === false,
+    });
+    if (formatted === text) {
+      return [];
+    }
+    const fullRange = new vscode.Range(
+      document.positionAt(0),
+      document.positionAt(text.length)
+    );
+    return [vscode.TextEdit.replace(fullRange, formatted)];
+  }
+}
+
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
@@ -50,6 +74,12 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(outputChannel);
   context.subscriptions.push(
     vscode.window.registerFileDecorationProvider(new CadbColorDecorationProvider())
+  );
+  context.subscriptions.push(
+    vscode.languages.registerDocumentFormattingEditProvider(
+      [{ language: "sql" }],
+      new SqlDocumentFormattingProvider()
+    )
   );
 
   const provider = new DataSourceProvider(context);
