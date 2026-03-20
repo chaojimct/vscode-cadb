@@ -4,6 +4,10 @@
 :root {
   --grid-toolbar-height: 48px;
   --grid-control-gap: 8px;
+  --grid-side-panel-width: 280px;
+  --grid-side-panel-min-width: 180px;
+  --grid-side-panel-max-width: 50%;
+  --grid-resizer-width: 5px;
   /* 确保有 table.css 未定义时的回退 */
   --grid-bg: var(--vscode-editor-background, var(--vscode-bg, #1e1e1e));
   --grid-fg: var(--vscode-editor-foreground, var(--vscode-fg, #d4d4d4));
@@ -11,6 +15,234 @@
   --grid-desc-fg: var(--vscode-descriptionForeground, #888888);
   --grid-hover: var(--vscode-list-hoverBackground, var(--vscode-hover, #2d2d30));
   --grid-select-bg: var(--vscode-list-activeSelectionBackground, var(--vscode-select-bg, #094771));
+}
+
+/* ---------- 整体布局：左侧主区域 + 拖拽条 + 右侧侧边面板 ---------- */
+.grid-body {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+}
+
+.grid-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.grid-resizer {
+  flex: 0 0 var(--grid-resizer-width);
+  width: var(--grid-resizer-width);
+  min-width: var(--grid-resizer-width);
+  background: var(--grid-border);
+  cursor: col-resize;
+  transition: background 0.15s;
+}
+.grid-resizer:hover,
+.grid-resizer:active {
+  background: var(--vscode-focusBorder, var(--grid-fg));
+}
+.grid-body.grid-side-panel-collapsed .grid-resizer {
+  display: none;
+}
+
+.grid-side-panel {
+  flex: 0 0 var(--grid-side-panel-width);
+  width: var(--grid-side-panel-width);
+  min-width: var(--grid-side-panel-min-width);
+  max-width: var(--grid-side-panel-max-width);
+  display: flex;
+  flex-direction: column;
+  background: var(--grid-bg);
+  border-left: 1px solid var(--grid-border);
+  overflow: hidden;
+  transition: width 0.2s ease, min-width 0.2s ease, flex 0.2s ease;
+}
+.grid-body.grid-side-panel-collapsed .grid-side-panel {
+  width: 0 !important;
+  min-width: 0;
+  flex: 0 0 0;
+  border-left: none;
+  overflow: hidden;
+}
+
+.grid-side-panel__header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 36px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--grid-border);
+  background: var(--grid-bg);
+}
+.grid-side-panel__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--grid-fg);
+}
+.grid-side-panel__toggle {
+  background: transparent;
+  border: none;
+  color: var(--grid-fg);
+  padding: 4px;
+  cursor: pointer;
+  border-radius: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.grid-side-panel__toggle:hover {
+  background: var(--grid-hover);
+  color: var(--vscode-focusBorder);
+}
+.grid-side-panel__toggle .codicon {
+  font-size: 16px;
+}
+
+.grid-side-panel__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.grid-side-panel__tabs {
+  flex-shrink: 0;
+  display: flex;
+  gap: 2px;
+  padding: 8px 12px 0;
+  border-bottom: 1px solid var(--grid-border);
+}
+.grid-side-panel__tab-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--grid-desc-fg);
+  background: transparent;
+  border: none;
+  border-radius: 4px 4px 0 0;
+  cursor: pointer;
+}
+.grid-side-panel__tab-btn:hover {
+  color: var(--grid-fg);
+  background: var(--grid-hover);
+}
+.grid-side-panel__tab-btn.is-active {
+  color: var(--grid-fg);
+  background: var(--grid-bg);
+  border: 1px solid var(--grid-border);
+  border-bottom: 1px solid transparent;
+  margin-bottom: -1px;
+}
+
+.grid-side-panel__tab-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+}
+
+.grid-side-panel__toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.grid-side-panel__btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--vscode-button-secondaryForeground);
+  background: var(--vscode-button-secondaryBackground);
+  border: 1px solid var(--vscode-button-border, var(--grid-border));
+  border-radius: 4px;
+  cursor: pointer;
+}
+.grid-side-panel__btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.grid-side-panel__column-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.grid-side-panel__column-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+  color: var(--grid-fg);
+}
+.grid-side-panel__column-list li label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  width: 100%;
+  min-width: 0;
+}
+.grid-side-panel__column-list input[type="checkbox"] {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  accent-color: var(--vscode-focusBorder);
+  cursor: pointer;
+}
+.grid-side-panel__column-list .grid-side-panel__column-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grid-side-panel__empty {
+  font-size: 12px;
+  color: var(--grid-desc-fg);
+  margin: 0;
+  padding: 8px 0;
+}
+.grid-side-panel__column-list:not(:empty) + .grid-side-panel__empty,
+.grid-side-panel__empty:first-child {
+  display: none;
+}
+.grid-side-panel__column-list:empty + .grid-side-panel__empty {
+  display: block;
+}
+
+/* 侧边面板收起时，在右侧边缘显示的展开标签 */
+.grid-side-panel__tab {
+  display: none;
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 48px;
+  padding: 0;
+  border: 1px solid var(--grid-border);
+  border-right: none;
+  border-radius: 4px 0 0 4px;
+  background: var(--grid-bg);
+  color: var(--grid-fg);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  box-shadow: -2px 0 6px rgba(0, 0, 0, 0.15);
+}
+.grid-side-panel__tab:hover {
+  background: var(--grid-hover);
+  color: var(--vscode-focusBorder);
+}
+.grid-side-panel__tab .codicon {
+  font-size: 14px;
+}
+.grid-body.grid-side-panel-collapsed .grid-side-panel__tab {
+  display: inline-flex;
 }
 
 /* ---------- 工具栏 ---------- */

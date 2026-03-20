@@ -11,7 +11,8 @@
     <link rel="stylesheet" href="{{resources-uri}}/common/table.css" />
     <link rel="stylesheet" href="{{resources-uri}}/grid/grid.css" />
   </head>
-  <body>
+  <body class="grid-body">
+    <div class="grid-main">
     <header class="grid-toolbar">
       <div class="grid-toolbar__nav" style="display:flex;align-items:center;gap:8px;margin-right:12px;">
         <a href="#" data-action="switchToTableEdit" title="切换至表结构编辑" class="grid-nav-link">表编辑</a>
@@ -79,6 +80,35 @@
     <main class="grid-table-wrapper">
       <div id="grid" class="ag-theme-quartz" role="grid"></div>
     </main>
+    </div>
+
+    <div class="grid-resizer" data-resizer title="拖拽调整工具栏宽度" aria-label="调整工具栏宽度"></div>
+    <aside class="grid-side-panel" id="grid-side-panel" data-side-panel>
+      <div class="grid-side-panel__header">
+        <span class="grid-side-panel__title">工具栏</span>
+        <button type="button" class="grid-side-panel__toggle" data-action="toggleSidePanel" title="收起面板" aria-label="收起侧边面板">
+          <i class="codicon codicon-chevron-right" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="grid-side-panel__body">
+        <div class="grid-side-panel__tabs">
+          <button type="button" class="grid-side-panel__tab-btn is-active" data-tab="fields" aria-selected="true">字段</button>
+        </div>
+        <div class="grid-side-panel__tab-content" data-tab-content="fields">
+          <div class="grid-side-panel__toolbar">
+            <button type="button" class="grid-side-panel__btn" data-action="selectAllFields" title="全选">全选</button>
+            <button type="button" class="grid-side-panel__btn" data-action="invertFields" title="反选">反选</button>
+          </div>
+          <ul class="grid-side-panel__column-list" id="grid-column-list" role="listbox" aria-label="列显示开关">
+            <!-- 由 JS 根据 columnDefs 动态填充 -->
+          </ul>
+          <p class="grid-side-panel__empty" id="grid-column-list-empty">暂无列数据，请先加载表格。</p>
+        </div>
+      </div>
+    </aside>
+    <button type="button" class="grid-side-panel__tab" data-action="toggleSidePanel" title="展开侧边面板" aria-label="展开侧边面板" aria-expanded="false">
+      <i class="codicon codicon-chevron-left" aria-hidden="true"></i>
+    </button>
 
     <script nonce="{{resource-nonce}}" src="{{node-resources-uri}}/jquery/dist/jquery.min.js"></script>
     <script nonce="{{resource-nonce}}" src="{{node-resources-uri}}/layui/dist/layui.js"></script>

@@ -404,6 +404,11 @@
           "maximum": 3,
           "description": "SQL Notebook 编辑器行高"
         },
+        "cadb.sqlNotebook.autoFormat": {
+          "type": "boolean",
+          "default": false,
+          "description": "保存 SQL Notebook（.jsql）时自动格式化所有 SQL 单元格"
+        },
         "cadb.grid.pageSize": {
           "type": "number",
           "default": 2000,

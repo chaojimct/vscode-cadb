@@ -1,10 +1,12 @@
 import * as vscode from 'vscode';
 import type { DatabaseManager } from './database_manager';
 
-/**
- * SQL CodeLens 提供者
- * 在 SQL 语句上方显示 "Run" 和 "Explain" 命令
- */
+/** 可执行 SQL 语句的关键字（行首、词边界匹配，用于 CodeLens） */
+const SQL_STATEMENT_KEYWORDS =
+  'SELECT|CREATE|DROP|UPDATE|ALTER|DESC|SHOW|INSERT|DELETE|TRUNCATE|REPLACE|MERGE';
+/** 支持 Explain 的语句（查询类） */
+const QUERY_KEYWORDS = /^(SELECT|DESC|SHOW)\b/i;
+
 export class SqlCodeLensProvider implements vscode.CodeLensProvider {
   private readonly _databaseManager: DatabaseManager;
   private _onDidChangeCodeLenses: vscode.EventEmitter<void> = new vscode.EventEmitter<void>();
@@ -22,58 +24,38 @@ export class SqlCodeLensProvider implements vscode.CodeLensProvider {
     const text = document.getText();
     const lines = text.split('\n');
 
-    // 正则表达式匹配 SQL 语句
-    // 匹配 SELECT 语句（包括 SELECT ... FROM）
-    const selectRegex = /^\s*SELECT\s+/i;
-    // 匹配其他 SQL 语句（INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, etc.）
-    const otherSqlRegex = /^\s*(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|REPLACE|MERGE)\s+/i;
+    // 行首匹配任意可执行语句关键字（\b 保证 "select" 单独一行也匹配）
+    const statementRegex = new RegExp(`^\\s*(${SQL_STATEMENT_KEYWORDS})\\b`, 'i');
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const trimmedLine = line.trim();
 
-      // 跳过空行和注释
       if (!trimmedLine || trimmedLine.startsWith('--') || trimmedLine.startsWith('/*')) {
         continue;
       }
 
-      // 检测 SELECT 语句
-      if (selectRegex.test(trimmedLine)) {
-        // 找到 SELECT 语句的结束位置（可能是多行）
-        const sqlRange = this._findSqlStatementRange(document, i, lines);
-        
-        if (sqlRange) {
-          // 为 SELECT 语句添加 "Run" 和 "Explain" 命令
-          const runCommand: vscode.CodeLens = new vscode.CodeLens(sqlRange, {
-            title: '$(play) Run',
-            command: 'cadb.sql.run',
-            arguments: [document.uri.toString(), sqlRange],
-          });
+      const match = trimmedLine.match(statementRegex);
+      if (!match) continue;
 
-          const explainCommand: vscode.CodeLens = new vscode.CodeLens(sqlRange, {
+      const sqlRange = this._findSqlStatementRange(document, i, lines);
+      if (!sqlRange) continue;
+
+      const runCommand: vscode.CodeLens = new vscode.CodeLens(sqlRange, {
+        title: '$(play) Run',
+        command: 'cadb.sql.run',
+        arguments: [document.uri.toString(), sqlRange],
+      });
+      codeLenses.push(runCommand);
+
+      if (QUERY_KEYWORDS.test(match[1])) {
+        codeLenses.push(
+          new vscode.CodeLens(sqlRange, {
             title: '$(search) Explain',
             command: 'cadb.sql.explain',
             arguments: [document.uri.toString(), sqlRange],
-          });
-
-          codeLenses.push(runCommand, explainCommand);
-        }
-      }
-      // 检测其他 SQL 语句
-      else if (otherSqlRegex.test(trimmedLine)) {
-        // 找到 SQL 语句的结束位置
-        const sqlRange = this._findSqlStatementRange(document, i, lines);
-        
-        if (sqlRange) {
-          // 为其他语句只添加 "Run" 命令
-          const runCommand: vscode.CodeLens = new vscode.CodeLens(sqlRange, {
-            title: '$(play) Run',
-            command: 'cadb.sql.run',
-            arguments: [document.uri.toString(), sqlRange],
-          });
-
-          codeLenses.push(runCommand);
-        }
+          })
+        );
       }
     }
 
@@ -81,28 +63,78 @@ export class SqlCodeLensProvider implements vscode.CodeLensProvider {
   }
 
   /**
-   * 查找 SQL 语句的范围（可能跨多行）
+   * 从文档开头到 (line, 0) 的括号深度（忽略字符串与注释）
+   */
+  private _parenDepthBefore(lines: string[], line: number): number {
+    let depth = 0;
+    let inString = false;
+    let stringChar = '';
+    let inComment = false;
+    let commentType: 'single' | 'multi' | null = null;
+    for (let i = 0; i < line && i < lines.length; i++) {
+      const lineStr = lines[i];
+      for (let j = 0; j < lineStr.length; j++) {
+        const char = lineStr[j];
+        const nextChar = j < lineStr.length - 1 ? lineStr[j + 1] : '';
+        if (!inComment) {
+          if ((char === '"' || char === "'" || char === '`') && (j === 0 || lineStr[j - 1] !== '\\')) {
+            if (!inString) {
+              inString = true;
+              stringChar = char;
+            } else if (char === stringChar) {
+              inString = false;
+              stringChar = '';
+            }
+            continue;
+          }
+        }
+        if (!inString) {
+          if (!inComment && char === '-' && nextChar === '-') break;
+          if (!inComment && char === '/' && nextChar === '*') {
+            inComment = true;
+            commentType = 'multi';
+            j++;
+            continue;
+          }
+          if (inComment && commentType === 'multi' && char === '*' && nextChar === '/') {
+            inComment = false;
+            commentType = null;
+            j++;
+            continue;
+          }
+        }
+        if (!inString && !inComment) {
+          if (char === '(') depth++;
+          else if (char === ')') depth--;
+        }
+      }
+    }
+    return depth;
+  }
+
+  /**
+   * 查找 SQL 语句的范围（可能跨多行）；对嵌套子查询用括号深度区分，避免多个 SELECT 共用一个范围
    */
   private _findSqlStatementRange(
     document: vscode.TextDocument,
     startLine: number,
     lines: string[]
   ): vscode.Range | null {
+    const startParenDepth = this._parenDepthBefore(lines, startLine);
     let endLine = startLine;
     let inString = false;
     let stringChar = '';
     let inComment = false;
     let commentType: 'single' | 'multi' | null = null;
+    let depth = startParenDepth;
 
-    // 从起始行开始查找，直到找到语句结束（分号或文件结束）
     for (let i = startLine; i < lines.length; i++) {
       const line = lines[i];
-      
+
       for (let j = 0; j < line.length; j++) {
         const char = line[j];
         const nextChar = j < line.length - 1 ? line[j + 1] : '';
 
-        // 处理字符串
         if (!inComment) {
           if ((char === '"' || char === "'" || char === '`') && (j === 0 || line[j - 1] !== '\\')) {
             if (!inString) {
@@ -116,40 +148,49 @@ export class SqlCodeLensProvider implements vscode.CodeLensProvider {
           }
         }
 
-        // 处理注释
         if (!inString) {
           if (!inComment && char === '-' && nextChar === '-') {
-            // 单行注释，该行剩余部分都是注释
             break;
-          } else if (!inComment && char === '/' && nextChar === '*') {
+          }
+          if (!inComment && char === '/' && nextChar === '*') {
             inComment = true;
             commentType = 'multi';
-            j++; // 跳过下一个字符
+            j++;
             continue;
-          } else if (inComment && commentType === 'multi' && char === '*' && nextChar === '/') {
+          }
+          if (inComment && commentType === 'multi' && char === '*' && nextChar === '/') {
             inComment = false;
             commentType = null;
-            j++; // 跳过下一个字符
+            j++;
             continue;
           }
         }
 
-        // 如果不在字符串和注释中，检查分号
+        if (!inString && !inComment) {
+          if (char === '(') depth++;
+          else if (char === ')') {
+            depth--;
+            // 子查询：当前语句在括号内开始时，在匹配的 ) 处结束
+            if (depth === startParenDepth - 1) {
+              const startPos = new vscode.Position(startLine, 0);
+              const endPos = new vscode.Position(i, j + 1);
+              return new vscode.Range(startPos, endPos);
+            }
+          }
+        }
+
         if (!inString && !inComment && char === ';') {
-          // 找到分号，语句结束
           const startPos = new vscode.Position(startLine, 0);
           const endPos = new vscode.Position(i, j + 1);
           return new vscode.Range(startPos, endPos);
         }
       }
 
-      // 如果当前行不在字符串或注释中，且下一行不是 SQL 语句的延续（简单的启发式判断）
-      if (!inString && !inComment && i > startLine) {
+      // 仅顶层：下一行为同级新语句时在此行末结束
+      if (!inString && !inComment && i > startLine && startParenDepth === 0 && depth === 0) {
         const nextLine = i < lines.length - 1 ? lines[i + 1] : '';
-        const trimmedNextLine = nextLine.trim();
-        
-        // 如果下一行是新的 SQL 语句（以关键字开头），则当前语句结束
-        if (trimmedNextLine && /^\s*(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|REPLACE|MERGE)\s+/i.test(trimmedNextLine)) {
+        const trimmedNext = nextLine.trim();
+        if (trimmedNext && new RegExp(`^\\s*(${SQL_STATEMENT_KEYWORDS})\\b`, 'i').test(trimmedNext)) {
           const startPos = new vscode.Position(startLine, 0);
           const endPos = new vscode.Position(i, lines[i].length);
           return new vscode.Range(startPos, endPos);
@@ -159,13 +200,11 @@ export class SqlCodeLensProvider implements vscode.CodeLensProvider {
       endLine = i;
     }
 
-    // 如果没有找到分号，返回到文件末尾的范围
     if (endLine >= startLine) {
       const startPos = new vscode.Position(startLine, 0);
       const endPos = new vscode.Position(endLine, lines[endLine].length);
       return new vscode.Range(startPos, endPos);
     }
-
     return null;
   }
 

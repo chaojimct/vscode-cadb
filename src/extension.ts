@@ -50,17 +50,23 @@ class SqlDocumentFormattingProvider implements vscode.DocumentFormattingEditProv
     _token: vscode.CancellationToken
   ): vscode.ProviderResult<vscode.TextEdit[]> {
     const text = document.getText();
-    const formatted = formatSql(text, {
-      language: "mysql",
-      tabWidth: typeof options.tabSize === "number" ? options.tabSize : 2,
-      useTabs: options.insertSpaces === false,
-    });
+    let formatted: string;
+    try {
+      formatted = formatSql(text, {
+        language: "mysql",
+        tabWidth: typeof options.tabSize === "number" ? options.tabSize : 2,
+        useTabs: options.insertSpaces === false,
+      });
+    } catch {
+      return [];
+    }
+
     if (formatted === text) {
       return [];
     }
-    const fullRange = new vscode.Range(
-      document.positionAt(0),
-      document.positionAt(text.length)
+    // Notebook 单元格上避免 positionAt(length) 与宿主范围不一致
+    const fullRange = document.validateRange(
+      new vscode.Range(0, 0, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER)
     );
     return [vscode.TextEdit.replace(fullRange, formatted)];
   }
@@ -75,10 +81,19 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.window.registerFileDecorationProvider(new CadbColorDecorationProvider())
   );
+  const sqlFormattingProvider = new SqlDocumentFormattingProvider();
+  // .sql 文件：整档格式化
   context.subscriptions.push(
     vscode.languages.registerDocumentFormattingEditProvider(
-      [{ language: "sql" }],
-      new SqlDocumentFormattingProvider()
+      [{ language: "sql", scheme: "file" }],
+      sqlFormattingProvider
+    )
+  );
+  // JSQL Notebook 中的 SQL Cell：支持格式化
+  context.subscriptions.push(
+    vscode.languages.registerDocumentFormattingEditProvider(
+      [{ language: "sql", notebookType: "cadb.sqlNotebook" }],
+      sqlFormattingProvider
     )
   );
 
@@ -192,6 +207,47 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.workspace.registerNotebookSerializer('cadb.sqlNotebook', notebookSerializer)
   );
+
+  // 保存 .jsql 前按配置自动格式化所有 SQL 单元格
+  const onWillSaveNotebook = (vscode.workspace as any).onWillSaveNotebookDocument;
+  if (typeof onWillSaveNotebook === "function") {
+    context.subscriptions.push(
+      onWillSaveNotebook.call(vscode.workspace, (e: { notebook: vscode.NotebookDocument; waitUntil: (p: Thenable<void>) => void }) => {
+        if (e.notebook.notebookType !== "cadb.sqlNotebook") return;
+        const enabled = vscode.workspace.getConfiguration("cadb").get<boolean>("sqlNotebook.autoFormat", false);
+        if (!enabled) return;
+        const edit = new vscode.WorkspaceEdit();
+        let hasEdits = false;
+        for (const cell of e.notebook.getCells()) {
+          if (cell.kind !== vscode.NotebookCellKind.Code || cell.document.languageId !== "sql") continue;
+          const doc = cell.document;
+          const text = doc.getText();
+          const opts = vscode.workspace.getConfiguration("editor", doc.uri);
+          const tabSize = opts.get<number>("tabSize", 2);
+          const insertSpaces = opts.get<boolean>("insertSpaces", true);
+          let formatted: string;
+          try {
+            formatted = formatSql(text, {
+              language: "mysql",
+              tabWidth: tabSize,
+              useTabs: !insertSpaces,
+            });
+          } catch {
+            continue;
+          }
+          if (formatted === text) continue;
+          const fullRange = doc.validateRange(
+            new vscode.Range(0, 0, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER)
+          );
+          edit.replace(doc.uri, fullRange, formatted);
+          hasEdits = true;
+        }
+        if (hasEdits) {
+          e.waitUntil(vscode.workspace.applyEdit(edit).then(() => {}));
+        }
+      })
+    );
+  }
 
   // SQL Notebook 控制器（执行 SQL 代码单元格）
   const notebookController = new SqlNotebookController(
@@ -395,13 +451,22 @@ export function activate(context: vscode.ExtensionContext) {
     )
   );
 
-  // SQL CodeLens 提供者（在 SQL 语句上方显示 Run 和 Explain）
+  // SQL CodeLens 提供者（仅在 .sql 文件中显示 Run/Explain，Notebook 中不显示）
   const sqlCodeLensProvider = new SqlCodeLensProvider(databaseManager);
+  const sqlCodeLensSelector = [{ language: "sql" }];
   context.subscriptions.push(
     vscode.languages.registerCodeLensProvider(
       { language: "sql", scheme: "file" },
       sqlCodeLensProvider
     )
+  );
+  // 文档内容变更后延迟刷新 CodeLens（格式化后等编辑应用再刷新）
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeTextDocument((e) => {
+      if (e.document.languageId === "sql" && e.document.uri.scheme === "file") {
+        setTimeout(() => sqlCodeLensProvider.refresh(), 80);
+      }
+    })
   );
 
   // SQL 悬浮提示（表名展示 DDL，字段名展示类型、备注等）
