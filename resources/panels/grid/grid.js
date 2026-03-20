@@ -13,6 +13,8 @@
   const $ = (sel, root = document) => root.querySelector(sel);
 
   let tableMeta = { connectionName: "", databaseName: "", tableName: "" };
+  let hideMatchedFields = false;
+  let userColumnVisibility = new Map();
 
   const actions = {
     save: () => {
@@ -61,23 +63,18 @@
         });
       }
     },
-    selectAllFields: () => {
-      const list = document.getElementById("grid-column-list");
-      if (!list) return;
-      list.querySelectorAll('input[type="checkbox"][data-field]').forEach((cb) => {
-        cb.checked = true;
-        const field = cb.getAttribute("data-field");
-        if (field) dbTable.setColumnVisible(field, true);
-      });
+    clearFieldSearch: () => {
+      const input = document.getElementById("grid-field-search");
+      if (input) {
+        input.value = "";
+        input.focus();
+      }
+      applyFieldSearch();
     },
-    invertFields: () => {
-      const list = document.getElementById("grid-column-list");
-      if (!list) return;
-      list.querySelectorAll('input[type="checkbox"][data-field]').forEach((cb) => {
-        cb.checked = !cb.checked;
-        const field = cb.getAttribute("data-field");
-        if (field) dbTable.setColumnVisible(field, cb.checked);
-      });
+    toggleFieldSearch: () => {
+      hideMatchedFields = !hideMatchedFields;
+      updateFieldSearchToggleUI();
+      applyFieldSearch();
     },
     toggleSidePanel: () => {
       const body = document.body;
@@ -169,12 +166,16 @@
     const listEl = document.getElementById("grid-column-list");
     if (!listEl) return;
     listEl.innerHTML = "";
+    const emptyEl = document.getElementById("grid-column-list-empty");
     const columns = dbTable.columns || [];
     columns.forEach((col) => {
       const field = col.field;
       if (field == null || String(field).trim() === "") return;
+      if (!shouldIncludeField(field, col)) return;
       const headerName = col.headerName != null ? col.headerName : String(field);
-      const visible = typeof dbTable.getColumnVisible === "function" ? dbTable.getColumnVisible(field) : true;
+      const visible = userColumnVisibility.has(field)
+        ? !!userColumnVisibility.get(field)
+        : (typeof dbTable.getColumnVisible === "function" ? dbTable.getColumnVisible(field) : true);
       const li = document.createElement("li");
       li.innerHTML = `
         <label>
@@ -183,6 +184,13 @@
         </label>`;
       listEl.appendChild(li);
     });
+    if (emptyEl) {
+      if (listEl.childElementCount === 0) {
+        emptyEl.textContent = "暂无可显示字段";
+      } else {
+        emptyEl.textContent = "暂无列数据，请先加载表格。";
+      }
+    }
   }
 
   function escapeHtml(s) {
@@ -196,8 +204,115 @@
     const cb = e.target.closest('input[type="checkbox"][data-field]');
     if (!cb) return;
     const field = cb.getAttribute("data-field");
-    if (field) dbTable.setColumnVisible(field, cb.checked);
+    if (!field) return;
+    userColumnVisibility.set(field, cb.checked);
+    applyFieldSearch();
   });
+
+  document.getElementById("grid-field-search")?.addEventListener("input", () => {
+    applyFieldSearch();
+  });
+  document.getElementById("grid-field-search")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      actions.toggleFieldSearch();
+    }
+  });
+
+  function updateFieldSearchToggleUI() {
+    const btn = document.querySelector('[data-action="toggleFieldSearch"]');
+    const icon = btn?.querySelector(".codicon");
+    if (icon) {
+      icon.classList.toggle("codicon-eye", !hideMatchedFields);
+      icon.classList.toggle("codicon-eye-closed", hideMatchedFields);
+    }
+    if (btn) {
+      const q = getSearchQuery();
+      if (!q) {
+        btn.title = hideMatchedFields ? "隐藏所有字段" : "显示所有字段";
+        btn.setAttribute("aria-label", hideMatchedFields ? "隐藏所有字段" : "显示所有字段");
+      } else {
+        btn.title = hideMatchedFields ? "隐藏匹配字段" : "显示匹配字段";
+        btn.setAttribute("aria-label", hideMatchedFields ? "隐藏匹配字段" : "显示匹配字段");
+      }
+    }
+  }
+
+  function normalizeText(v) {
+    return String(v ?? "").toLowerCase();
+  }
+
+  function updateClearButtonUI() {
+    const input = document.getElementById("grid-field-search");
+    const btn = document.querySelector('[data-action="clearFieldSearch"]');
+    if (!btn) return;
+    const hasValue = !!(input && String(input.value ?? "").trim());
+    btn.classList.toggle("is-hidden", !hasValue);
+  }
+
+  function getSearchQuery() {
+    const input = document.getElementById("grid-field-search");
+    return input ? String(input.value ?? "").trim() : "";
+  }
+
+  function shouldIncludeField(field, col) {
+    const q = getSearchQuery();
+    if (!q) return true;
+    const needle = normalizeText(q);
+    const fieldName = normalizeText(field);
+    const headerName = normalizeText(col?.headerName ?? "");
+    const matched = fieldName.includes(needle) || headerName.includes(needle);
+    return hideMatchedFields ? !matched : matched;
+  }
+
+  function applyFieldSearch() {
+    const columns = dbTable.columns || [];
+    if (!Array.isArray(columns) || columns.length === 0) {
+      refreshColumnList();
+      updateClearButtonUI();
+      return;
+    }
+
+    if (userColumnVisibility.size === 0) {
+      columns.forEach((col) => {
+        const field = col.field;
+        if (field == null || String(field).trim() === "") return;
+        userColumnVisibility.set(field, true);
+      });
+    }
+
+    const state = [];
+    const q = getSearchQuery();
+    if (!q) {
+      const visibleAll = !hideMatchedFields;
+      columns.forEach((col) => {
+        const field = col.field;
+        if (field == null || String(field).trim() === "") return;
+        userColumnVisibility.set(field, visibleAll);
+        state.push({ colId: field, hide: !visibleAll });
+      });
+    } else {
+    columns.forEach((col) => {
+      const field = col.field;
+      if (field == null || String(field).trim() === "") return;
+      const manualVisible = userColumnVisibility.has(field) ? !!userColumnVisibility.get(field) : true;
+      const matchVisible = shouldIncludeField(field, col);
+      const visible = manualVisible && matchVisible;
+      state.push({ colId: field, hide: !visible });
+    });
+    }
+
+    try {
+      if (dbTable.gridApi && typeof dbTable.gridApi.applyColumnState === "function") {
+        dbTable.gridApi.applyColumnState({ state, applyOrder: false });
+      } else {
+        state.forEach((s) => dbTable.setColumnVisible(s.colId, !s.hide));
+      }
+    } catch (_) {}
+
+    refreshColumnList();
+    updateClearButtonUI();
+  }
 
   // 工具栏事件委托
   document.addEventListener("click", (e) => {
@@ -232,7 +347,11 @@
           : undefined;
       dbTable.init(columnDefs, rowData, payload?.queryTime ?? 0, options);
       dbTable.updatePaginationUI?.();
-      setTimeout(refreshColumnList, 0);
+      userColumnVisibility = new Map();
+      updateFieldSearchToggleUI();
+      setTimeout(() => {
+        applyFieldSearch();
+      }, 0);
       return;
     }
 

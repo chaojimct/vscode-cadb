@@ -262,6 +262,23 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
     await this.context.globalState.update("cadb.connections", userConnections);
   }
 
+  public async deleteConnectionRecord(name: string): Promise<void> {
+    const idxWorkspace = this.workspaceConnections.findIndex((c) => c.name === name);
+    if (idxWorkspace !== -1) {
+      this.workspaceConnections = this.workspaceConnections.filter((c) => c.name !== name);
+      await this.persistWorkspaceConnections(this.workspaceConnections);
+      return;
+    }
+
+    const userConnections = this.getUserConnections();
+    const idxUser = userConnections.findIndex((c) => c.name === name);
+    if (idxUser === -1) {
+      throw new Error("未找到要删除的连接");
+    }
+    const next = userConnections.filter((c) => c.name !== name);
+    await this.context.globalState.update("cadb.connections", next);
+  }
+
   private async initialize() {
     this.workspaceConnections = await this.loadWorkspaceConnections();
     const connections = this.getConnections();
