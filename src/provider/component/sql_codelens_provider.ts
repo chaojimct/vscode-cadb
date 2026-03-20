@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import type { DatabaseManager } from './database_manager';
+import { normalizeSqlLinePrefix } from './sql_limit_guard';
 
 /** 可执行 SQL 语句的关键字（行首、词边界匹配，用于 CodeLens） */
 const SQL_STATEMENT_KEYWORDS =
@@ -29,7 +30,7 @@ export class SqlCodeLensProvider implements vscode.CodeLensProvider {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      const trimmedLine = line.trim();
+      const trimmedLine = normalizeSqlLinePrefix(line);
 
       if (!trimmedLine || trimmedLine.startsWith('--') || trimmedLine.startsWith('/*')) {
         continue;
@@ -170,8 +171,8 @@ export class SqlCodeLensProvider implements vscode.CodeLensProvider {
           if (char === '(') depth++;
           else if (char === ')') {
             depth--;
-            // 子查询：当前语句在括号内开始时，在匹配的 ) 处结束
-            if (depth === startParenDepth - 1) {
+            // 子查询：仅在「从外层括号内开始的 SELECT」时，在匹配的 ) 处结束；顶层 stray ) 不提前截断
+            if (startParenDepth > 0 && depth === startParenDepth - 1) {
               const startPos = new vscode.Position(startLine, 0);
               const endPos = new vscode.Position(i, j + 1);
               return new vscode.Range(startPos, endPos);

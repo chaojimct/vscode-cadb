@@ -414,7 +414,12 @@
           "default": 2000,
           "minimum": 1,
           "maximum": 10000,
-          "description": "表格每页查询条数（上一页/下一页按此数量翻页，单次查询最多返回该条数）"
+          "description": "表格每页查询条数；亦为 SELECT 自动追加 LIMIT 时的默认条数"
+        },
+        "cadb.query.autoAppendSelectLimit": {
+          "type": "boolean",
+          "default": true,
+          "description": "执行 SELECT/WITH 时若语句末尾未写 LIMIT，则自动追加 LIMIT（条数见 cadb.grid.pageSize）"
         }
       }
     },

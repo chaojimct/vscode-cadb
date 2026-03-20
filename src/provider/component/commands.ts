@@ -13,6 +13,7 @@ import { createWebview } from "../webview_helper";
 import type { RedisClientType } from "redis";
 import { resolveTableDatasource } from "../workspace_symbol_provider";
 import { fuzzyMatch } from "../utils";
+import { ensureSelectRowLimit } from "./sql_limit_guard";
 
 /**
  * 将 unknown 错误转换为可展示的消息文本
@@ -2438,6 +2439,10 @@ async function executeSqlFileWithTransaction(
       let errorOccurred = false;
       let errorMessage = "";
 
+      const cadbCfg = vscode.workspace.getConfiguration("cadb");
+      const autoLimit = cadbCfg.get<boolean>("query.autoAppendSelectLimit", true);
+      const limitRows = cadbCfg.get<number>("grid.pageSize", 2000);
+
       // 执行每个 SQL 语句
       for (const sql of sqlStatements) {
         const trimmedSql = sql.trim();
@@ -2445,11 +2450,13 @@ async function executeSqlFileWithTransaction(
           continue; // 跳过空语句
         }
 
+        const toRun = autoLimit ? ensureSelectRowLimit(trimmedSql, limitRows) : trimmedSql;
+
         const statementTimestamp = formatTimestamp(new Date());
         const startTime = Date.now();
 
         // 显示正在执行的语句
-        const sqlOneLine = trimmedSql.replace(/\s+/g, " ").trim();
+        const sqlOneLine = toRun.replace(/\s+/g, " ").trim();
         outputChannel.appendLine(
           `[${statementTimestamp} ${databaseName}] 执行: ${sqlOneLine}`
         );
@@ -2457,7 +2464,7 @@ async function executeSqlFileWithTransaction(
 
         try {
           await new Promise<void>((resolve, reject) => {
-            connectionObj.query(trimmedSql, (error: any, results: any) => {
+            connectionObj.query(toRun, (error: any, results: any) => {
               const executionTime = (Date.now() - startTime) / 1000;
               const spendTime =
                 executionTime < 0.001

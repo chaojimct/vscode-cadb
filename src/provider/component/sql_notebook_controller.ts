@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { ensureSelectRowLimit } from './sql_limit_guard';
 import { DataSourceProvider } from '../database_provider';
 import { Datasource } from '../entity/datasource';
 import type { DatabaseManager } from './database_manager';
@@ -201,11 +202,16 @@ export class SqlNotebookController {
       if (!finalConnection || !finalDatabase) return;
 
       const connection = await this._getConnection(datasourceName, databaseName);
-      const sql = cell.document.getText().trim();
+      const rawSql = cell.document.getText().trim();
 
-      if (!sql) {
+      if (!rawSql) {
         return;
       }
+
+      const cadbCfg = vscode.workspace.getConfiguration('cadb');
+      const autoLimit = cadbCfg.get<boolean>('query.autoAppendSelectLimit', true);
+      const limitRows = cadbCfg.get<number>('grid.pageSize', 2000);
+      const sql = autoLimit ? ensureSelectRowLimit(rawSql, limitRows) : rawSql;
 
       const result = await new Promise<any>((resolve, reject) => {
         connection.query(sql, (err: any, results: any) => {

@@ -184,21 +184,33 @@ export class Datasource extends vscode.TreeItem {
         if (!this.parent || !this.parent.label) {
           return Promise.resolve();
         }
+        const kind = await vscode.window.showQuickPick(
+          [
+            { label: "创建 SQL 文件 (.sql)", description: "纯文本，支持 CodeLens Run/Explain", value: "sql" as const },
+            { label: "创建 JSQL Notebook (.jsql)", description: "笔记本，按单元格执行", value: "jsql" as const },
+          ],
+          { placeHolder: "选择：创建 SQL 文件 或 JSQL Notebook" }
+        );
+        if (!kind) {
+          return Promise.resolve();
+        }
+
+        const fileKind = kind.value;
+
         const connectionNameForPath = this.parent.label.toString();
         const dsPath =
           Datasource.createDatabaseHost?.getConnectionFilesDirUri?.(connectionNameForPath) ??
           vscode.Uri.joinPath(context.globalStorageUri, connectionNameForPath);
 
-        // 创建新的 .jsql 文件（SQL Notebook）
         const dayjs = require("dayjs");
-        const filename = dayjs().format("YYYYMMDDHHmmss") + ".jsql";
+        const stamp = dayjs().format("YYYYMMDDHHmmss");
+        const ext = fileKind === "jsql" ? ".jsql" : ".sql";
+        const filename = stamp + ext;
         const fileUri = vscode.Uri.joinPath(dsPath, filename);
 
-        // 查找当前数据库和数据源信息
         let datasourceName: string | null = null;
         let databaseName: string | null = null;
 
-        // 向上查找连接和数据库节点
         let current: Datasource | undefined = this.parent;
         while (current) {
           if (current.type === "collection") {
@@ -210,29 +222,26 @@ export class Datasource extends vscode.TreeItem {
           current = current.parent;
         }
 
-        // 创建空的 notebook 内容，包含数据库连接信息
-        const emptyNotebook = {
-          datasource: datasourceName,
-          database: databaseName,
-          cells: [],
-        };
-        const content = JSON.stringify(emptyNotebook, null, 2);
-
         await vscode.workspace.fs.createDirectory(dsPath);
-        await vscode.workspace.fs.writeFile(
-          fileUri,
-          Buffer.from(content, "utf-8")
-        );
 
-        // 打开文件作为 Notebook
-        const notebookDocument = await vscode.workspace.openNotebookDocument(
-          fileUri
-        );
-        await vscode.window.showNotebookDocument(notebookDocument);
+        if (fileKind === "jsql") {
+          const emptyNotebook = {
+            datasource: datasourceName,
+            database: databaseName,
+            cells: [],
+          };
+          const content = JSON.stringify(emptyNotebook, null, 2);
+          await vscode.workspace.fs.writeFile(fileUri, Buffer.from(content, "utf-8"));
 
-        // 如果有 databaseManager，自动设置数据库
+          const notebookDocument = await vscode.workspace.openNotebookDocument(fileUri);
+          await vscode.window.showNotebookDocument(notebookDocument);
+        } else {
+          await vscode.workspace.fs.writeFile(fileUri, Buffer.from("", "utf-8"));
+          const textDoc = await vscode.workspace.openTextDocument(fileUri);
+          await vscode.window.showTextDocument(textDoc);
+        }
+
         if (databaseManager && databaseName) {
-          // 查找当前数据库节点
           let dbNode: Datasource | undefined = this.parent;
           while (dbNode) {
             if (dbNode.type === "collection" && dbNode.label === databaseName) {
@@ -243,7 +252,6 @@ export class Datasource extends vscode.TreeItem {
           }
         }
 
-        // 刷新文件列表
         this.dataloader?.listFiles(this, dsPath);
         break;
     }

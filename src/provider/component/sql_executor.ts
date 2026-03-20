@@ -3,6 +3,7 @@ import { DataSourceProvider } from '../database_provider';
 import { Datasource } from '../entity/datasource';
 import type { DatabaseManager } from './database_manager';
 import { ResultWebviewProvider } from '../result_provider';
+import { ensureSelectRowLimit } from './sql_limit_guard';
 
 interface ConnectionCache {
   datasourceName: string;
@@ -84,8 +85,13 @@ export class SqlExecutor {
       // 获取或创建连接
       const connection = await this._getConnection(datasourceName, databaseName);
 
-      // 判断 SQL 类型
-      const trimmedSql = sql.trim().toUpperCase();
+      const cadbCfg = vscode.workspace.getConfiguration('cadb');
+      const autoLimit = cadbCfg.get<boolean>('query.autoAppendSelectLimit', true);
+      const limitRows = cadbCfg.get<number>('grid.pageSize', 2000);
+      const sqlEffective = autoLimit ? ensureSelectRowLimit(sql, limitRows) : sql;
+
+      // 判断 SQL 类型（按实际执行的语句）
+      const trimmedSql = sqlEffective.trim().toUpperCase();
       const isSelectQuery = trimmedSql.startsWith('SELECT');
       const isModifyingQuery = /^(INSERT|UPDATE|DELETE|REPLACE|MERGE|CREATE|DROP|ALTER|TRUNCATE)/i.test(trimmedSql);
 
@@ -108,7 +114,7 @@ export class SqlExecutor {
 
       try {
         const result = await new Promise<any>((resolve, reject) => {
-          connection.query(sql, (err: any, results: any, fields: any) => {
+          connection.query(sqlEffective, (err: any, results: any, fields: any) => {
             if (err) {
               reject(err);
             } else {
@@ -138,7 +144,7 @@ export class SqlExecutor {
         // 记录 SQL 执行日志到输出通道
         const timestamp = this._formatTimestamp(new Date(startTime));
         const rowCount = Array.isArray(results) ? results.length : (results as any)?.affectedRows || 0;
-        const logMessage = `[${timestamp} ${databaseName}, ${executionTime.toFixed(3)}s] (${rowCount} rows) ${sql.replace(/\s+/g, ' ').trim()}`;
+        const logMessage = `[${timestamp} ${databaseName}, ${executionTime.toFixed(3)}s] (${rowCount} rows) ${sqlEffective.replace(/\s+/g, ' ').trim()}`;
         this._outputChannel.appendLine(logMessage);
 
         // 判断是查询结果还是非查询语句
@@ -156,7 +162,7 @@ export class SqlExecutor {
               fields,
               executionTime,
             },
-            sql
+            sqlEffective
           );
         } else if (results && typeof results === 'object') {
           // 非查询语句（INSERT, UPDATE, DELETE 等）
@@ -184,7 +190,7 @@ export class SqlExecutor {
 
         const errorMessage = error instanceof Error ? error.message : String(error);
         console.error('[SQL Executor] 执行出错:', errorMessage);
-        this._resultProvider.showError(errorMessage, sql);
+        this._resultProvider.showError(errorMessage, sqlEffective);
         vscode.window.showErrorMessage(`SQL 执行失败: ${errorMessage}`);
       }
     } catch (error) {
@@ -224,8 +230,13 @@ export class SqlExecutor {
       // 获取或创建连接
       const connection = await this._getConnection(datasourceName, databaseName);
 
+      const cadbCfg = vscode.workspace.getConfiguration('cadb');
+      const autoLimit = cadbCfg.get<boolean>('query.autoAppendSelectLimit', true);
+      const limitRows = cadbCfg.get<number>('grid.pageSize', 2000);
+      const sqlForExplain = autoLimit ? ensureSelectRowLimit(sql, limitRows) : sql;
+
       // 构建 EXPLAIN 查询
-      const explainSql = `EXPLAIN ${sql}`;
+      const explainSql = `EXPLAIN ${sqlForExplain}`;
 
       // 执行 EXPLAIN
       const startTime = Date.now();
