@@ -1,5 +1,11 @@
 # 更新日志
 
+## [0.0.8]
+
+### 新增
+
+- **SELECT 自动 LIMIT**：执行 SELECT/WITH 查询时，若语句末尾未写 LIMIT，自动追加（条数取 `cadb.grid.pageSize`），防止一次拉取过多行导致卡顿。可通过 `cadb.query.autoAppendSelectLimit` 配置开关。
+
 ## [0.0.7]
 
 ### 新增
