@@ -16,6 +16,7 @@ export interface DatasourceInputData {
   type:
     | "datasourceType" // 数据源
     | "datasource"
+    | "group" // 分组
     | "collectionType" // 数据库
     | "collection"
     | "documentType"
@@ -39,6 +40,7 @@ export interface DatasourceInputData {
 
   /** 数据库驱动 id，与驱动注册表一致（如 mysql、redis、oss） */
   dbType?: string;
+  group?: string;
   saveLocation?: "workspace" | "user";
   markColor?: "red" | "yellow" | "blue" | "green" | "cyan" | "purple" | "gray" | "orange" | "pink" | "none";
   database?: string;
@@ -252,6 +254,9 @@ export class Datasource extends vscode.TreeItem {
   };
 
   public expand = (context: vscode.ExtensionContext): Promise<Datasource[]> => {
+    if (this.type === "group") {
+      return Promise.resolve(this.children || []);
+    }
     if (!this.dataloader) {
       return Promise.resolve([]);
     }
@@ -323,6 +328,9 @@ export class Datasource extends vscode.TreeItem {
         break;
       case "folder":
         this.initFolder(input);
+        break;
+      case "group":
+        this.initGroup(input);
         break;
       case "datasource":
       case "datasourceType":
@@ -428,6 +436,11 @@ export class Datasource extends vscode.TreeItem {
 
   private initFolder(_: DatasourceInputData): void {
     this.iconPath = new vscode.ThemeIcon("folder");
+  }
+
+  private initGroup(input: DatasourceInputData): void {
+    this.iconPath = new vscode.ThemeIcon("folder");
+    this.description = input.extra;
   }
 
   private initDatasource(input: DatasourceInputData): void {

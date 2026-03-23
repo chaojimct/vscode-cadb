@@ -21,6 +21,14 @@ const CONFIG_TYPES = {
 
 /** 新建/编辑连接时由扩展下发的可选驱动列表（保持到切换其它配置页） */
 let datasourceDriverOptions = null;
+/** 分组固定选项 */
+const FIXED_GROUP_OPTIONS = [
+  { value: "本地", label: "本地" },
+  { value: "开发", label: "开发" },
+  { value: "测试", label: "测试" },
+  { value: "生产", label: "生产" },
+  { value: "其它", label: "其它" },
+];
 
 // ==================== 从全局配置获取字段映射 ====================
 
@@ -121,6 +129,7 @@ function initDatasourceForm(data = {}, driverOptionsFromHost) {
     filteredData = {
       dbType: filteredData.dbType,
       name: data.name,
+      group: data.group,
       saveLocation: data.saveLocation,
       markColor: data.markColor,
       sqlitePath: data.database || data.sqlitePath,
@@ -139,6 +148,9 @@ function initDatasourceForm(data = {}, driverOptionsFromHost) {
         label: o.label,
       })),
     };
+  }
+  if (mapping.group) {
+    mapping.group = { ...mapping.group, options: FIXED_GROUP_OPTIONS };
   }
 
   dynamicForm = new DynamicForm({

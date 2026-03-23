@@ -23,6 +23,7 @@ export class MySQLDataloader implements Dataloader {
   private conn: Connection;
   private ds: Datasource;
   private connectionConfig: any;
+  private reconnecting: Promise<void> | null = null;
 
   constructor(ds: Datasource, input: DatasourceInputData) {
     this.ds = ds;
@@ -109,22 +110,41 @@ export class MySQLDataloader implements Dataloader {
    */
   private async ensureConnection(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      // 设置 ping 超时
+      const conn = this.conn;
+      let settled = false;
+
+      const finish = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        fn();
+      };
+
       const pingTimeout = setTimeout(() => {
-        this.reconnect().then(resolve).catch(reject);
-      }, 1000); // 1 秒超时
-      
-      // 使用 ping 检查连接是否活跃
-      this.conn.ping((err) => {
+        if (conn !== this.conn) return;
+        finish(() => {
+          void this.reconnect().then(resolve).catch(reject);
+        });
+      }, 2000);
+
+      try {
+        conn.ping((err) => {
+          if (conn !== this.conn) return;
+          clearTimeout(pingTimeout);
+          if (err) {
+            finish(() => {
+              void this.reconnect().then(resolve).catch(reject);
+            });
+          } else {
+            finish(resolve);
+          }
+        });
+      } catch (e) {
+        if (conn !== this.conn) return;
         clearTimeout(pingTimeout);
-        
-        if (err) {
-          this.reconnect().then(resolve).catch(reject);
-        } else {
-          // 连接正常
-          resolve();
-        }
-      });
+        finish(() => {
+          void this.reconnect().then(resolve).catch(reject);
+        });
+      }
     });
   }
   
@@ -132,34 +152,39 @@ export class MySQLDataloader implements Dataloader {
    * 重新连接到数据库
    */
   private async reconnect(): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      // 销毁旧连接
+    if (this.reconnecting) {
+      return this.reconnecting;
+    }
+    this.reconnecting = new Promise<void>((resolve, reject) => {
+      const oldConn = this.conn;
       try {
-        this.conn.destroy();
-      } catch (e) {
-        // 忽略销毁错误
-      }
-      
-      // 创建新连接
-      this.conn = createConnection(this.connectionConfig);
-      
-      // 设置连接超时
+        oldConn.destroy();
+      } catch (_) {}
+
+      const nextConn = createConnection(this.connectionConfig);
+      this.conn = nextConn;
+
       const connectTimeout = setTimeout(() => {
-        this.conn.destroy();
-        reject(new Error('连接超时'));
-      }, 2000); // 2 秒超时
-      
-      this.conn.connect((connectErr) => {
+        if (this.conn === nextConn) {
+          try {
+            nextConn.destroy();
+          } catch (_) {}
+        }
+        this.reconnecting = null;
+        reject(new Error("连接超时"));
+      }, 4000);
+
+      nextConn.connect((connectErr) => {
         clearTimeout(connectTimeout);
-        
+        this.reconnecting = null;
         if (connectErr) {
-          console.error('重新连接失败:', connectErr.message);
           reject(connectErr);
         } else {
           resolve();
         }
       });
     });
+    return this.reconnecting;
   }
   descStructure(): string[] {
     return ["Field", "Type", "Null", "Key", "Default", "Extra"];

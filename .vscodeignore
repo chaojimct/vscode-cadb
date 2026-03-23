@@ -1,11 +1,13 @@
 .vscode/**
 .vscode-test/**
 out/**
+examples/**
+.git/**
+*.vsix
 node_modules/**
-!node_modules/jquery/**
-!node_modules/layui/**
-!node_modules/tabulator-tables/**
-!node_modules/@vscode/codicons/**
+!node_modules/jquery/dist/**
+!node_modules/layui/dist/**
+!node_modules/@vscode/codicons/dist/**
 src/**
 .gitignore
 .yarnrc
@@ -17,3 +19,4 @@ vsc-extension-quickstart.md
 **/*.ts
 **/.vscode-test.*
 .env
+package-lock.json

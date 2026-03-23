@@ -76,6 +76,16 @@
     toggleFieldSearch: () => {
       hideMatchedFields = !hideMatchedFields;
       updateFieldSearchToggleUI();
+      const q = getSearchQuery();
+      if (!q) {
+        const columns = dbTable.columns || [];
+        const visibleAll = !hideMatchedFields;
+        columns.forEach((col) => {
+          const field = col.field;
+          if (field == null || String(field).trim() === "") return;
+          userColumnVisibility.set(field, visibleAll);
+        });
+      }
       applyFieldSearch();
     },
     toggleSidePanel: () => {
@@ -315,24 +325,14 @@
 
     const state = [];
     const q = getSearchQuery();
-    if (!q) {
-      const visibleAll = !hideMatchedFields;
-      columns.forEach((col) => {
-        const field = col.field;
-        if (field == null || String(field).trim() === "") return;
-        userColumnVisibility.set(field, visibleAll);
-        state.push({ colId: field, hide: !visibleAll });
-      });
-    } else {
     columns.forEach((col) => {
       const field = col.field;
       if (field == null || String(field).trim() === "") return;
       const manualVisible = userColumnVisibility.has(field) ? !!userColumnVisibility.get(field) : true;
-      const matchVisible = shouldIncludeField(field, col);
+      const matchVisible = q ? shouldIncludeField(field, col) : true;
       const visible = manualVisible && matchVisible;
       state.push({ colId: field, hide: !visible });
     });
-    }
 
     try {
       if (dbTable.gridApi && typeof dbTable.gridApi.applyColumnState === "function") {

@@ -402,7 +402,7 @@ layui.use(["tabs", "layer"], function () {
   }
 
   /**
-   * 创建表格内容（使用 Tabulator）
+   * 创建表格内容（使用 AG Grid）
    * @param {Array} columns - 列定义
    * @param {Array} data - 数据
    * @param {string} tabId - 标签ID
@@ -418,60 +418,61 @@ layui.use(["tabs", "layer"], function () {
       `;
     }
 
-    // 创建 Tabulator 容器
-    const containerId = `tabulator-${tabId}`;
-    const html = `<div id="${containerId}" class="tabulator-container"></div>`;
+    const containerId = `aggrid-${tabId}`;
+    const html = `<div id="${containerId}" class="result-grid ag-theme-quartz" role="grid"></div>`;
 
-    // 延迟初始化 Tabulator（等待 DOM 渲染）
     setTimeout(() => {
-      initTabulator(containerId, columns, data);
-    }, 100);
+      initAgGrid(containerId, columns, data);
+    }, 0);
 
     return html;
   }
 
   /**
-   * 初始化 Tabulator 表格
+   * 初始化 AG Grid
    */
-  function initTabulator(containerId, columns, data) {
+  function initAgGrid(containerId, columns, data) {
     const container = document.getElementById(containerId);
     if (!container) {
       console.error("容器不存在:", containerId);
       return;
     }
 
-    // 转换列定义为 Tabulator 格式
-    const tabulatorColumns = columns.map((col) => ({
-      title: (col.field || col.name || col).toString().toUpperCase(),
-      field: col.field || col.name,
-      headerSort: true,
-      resizable: true,
-      minWidth: 60,
-      maxWidth: 400,
-    }));
-
-    // 创建 Tabulator 实例（列宽可拖拽调节）
-    new Tabulator(`#${containerId}`, {
-      columnMaxWidth: 400,
-      height: "100%",
-      layout: "fitColumns",
-      columns: tabulatorColumns,
-      data: data,
-      selectable: true,
-      headerSort: true,
-      resizableColumns: true,
-      placeholder: "暂无数据",
-      renderVertical: "basic",
-      movableColumns: true,
-      tooltips: true,
-      clipboard: true,
-      clipboardCopyStyled: false,
-      clipboardCopyConfig: {
-        columnHeaders: true,
-        rowGroups: false,
-        columnCalcs: false,
-      },
+    const columnDefs = (Array.isArray(columns) ? columns : []).map((col) => {
+      const field = col?.field || col?.name || col;
+      const headerName = (field != null ? String(field) : "").toUpperCase();
+      return {
+        field: field,
+        headerName,
+        sortable: true,
+        resizable: true,
+        filter: true,
+        minWidth: 60,
+      };
     });
+
+    const gridOptions = {
+      columnDefs,
+      rowData: Array.isArray(data) ? data : [],
+      defaultColDef: {
+        sortable: true,
+        resizable: true,
+        filter: true,
+      },
+      animateRows: false,
+      rowSelection: { mode: "singleRow" },
+      enableCellTextSelection: true,
+      suppressContextMenu: false,
+    };
+
+    const api = agGrid.createGrid(container, gridOptions);
+    if (api && typeof api.sizeColumnsToFit === "function") {
+      setTimeout(() => {
+        try {
+          api.sizeColumnsToFit();
+        } catch (_) {}
+      }, 0);
+    }
   }
 
   /**

@@ -41,10 +41,34 @@
     "views": {
       "datasource": [
         {
-          "id": "datasource",
-          "name": "数据源",
+          "id": "datasource-local",
+          "name": "本地",
+          "icon": "$(home)",
+          "contextualTitle": "Local Datasources"
+        },
+        {
+          "id": "datasource-dev",
+          "name": "开发",
+          "icon": "$(beaker)",
+          "contextualTitle": "Dev Datasources"
+        },
+        {
+          "id": "datasource-test",
+          "name": "测试",
+          "icon": "$(beaker-stop)",
+          "contextualTitle": "Test Datasources"
+        },
+        {
+          "id": "datasource-prod",
+          "name": "生产",
+          "icon": "$(rocket)",
+          "contextualTitle": "Prod Datasources"
+        },
+        {
+          "id": "datasource-misc",
+          "name": "其它",
           "icon": "$(database)",
-          "contextualTitle": "Datasource Explorer"
+          "contextualTitle": "Other Datasources"
         }
       ],
       "query": [
@@ -257,93 +281,25 @@
     ],
     "menus": {
       "view/title": [
-        {
-          "command": "cadb.datasource.refresh",
-          "when": "view == datasource",
-          "group": "navigation"
-        },
-        {
-          "command": "cadb.datasource.new",
-          "when": "view == datasource",
-          "group": "navigation"
-        },
-        {
-          "command": "cadb.notebook.new",
-          "when": "view == datasource",
-          "group": "navigation"
-        },
-        {
-          "command": "cadb.drivers.manage",
-          "when": "view == datasource",
-          "group": "navigation@9"
-        }
+        { "command": "cadb.datasource.refresh", "when": "view =~ /datasource/", "group": "navigation" },
+        { "command": "cadb.datasource.new", "when": "view =~ /datasource/", "group": "navigation" },
+        { "command": "cadb.notebook.new", "when": "view =~ /datasource/", "group": "navigation" },
+        { "command": "cadb.drivers.manage", "when": "view =~ /datasource/", "group": "navigation@9" }
       ],
       "view/item/context": [
-        {
-          "command": "cadb.datasource.refresh",
-          "when": "view == datasource && !(viewItem =~ /Type$/)",
-          "group": "inline"
-        },
-        {
-          "command": "cadb.datasource.edit",
-          "when": "view == datasource && !(viewItem =~ /Type$/) && viewItem != folder",
-          "group": "inline"
-        },
-        {
-          "command": "cadb.datasource.add",
-          "when": "view == datasource && (viewItem =~ /Type$/ || viewItem == folder)",
-          "group": "inline"
-        },
-        {
-          "command": "cadb.oss.download",
-          "when": "view == datasource && (viewItem == folder || viewItem == item)",
-          "group": "inline"
-        },
-        {
-          "command": "cadb.datasource.filterEntry",
-          "when": "view == datasource && (viewItem == datasourceType || viewItem == collectionType)",
-          "group": "context"
-        },
-        {
-          "command": "cadb.collection.useDatabase",
-          "when": "view == datasource && viewItem == collection",
-          "group": "context"
-        },
-        {
-          "command": "cadb.redis.pubsub",
-          "when": "view == datasource && viewItem == datasource",
-          "group": "context"
-        },
-        {
-          "command": "cadb.datasource.rename",
-          "when": "view == datasource && viewItem == datasource",
-          "group": "context"
-        },
-        {
-          "submenu": "cadb.datasource.copyConnectionSubmenu",
-          "when": "view == datasource && viewItem == datasource",
-          "group": "context"
-        },
-        {
-          "command": "cadb.file.execute",
-          "when": "view == datasource && viewItem == file",
-          "group": "context"
-        },
-        {
-          "command": "cadb.file.rename",
-          "when": "view == datasource && viewItem == file",
-          "group": "context"
-        },
-        {
-          "command": "cadb.file.delete",
-          "when": "view == datasource && viewItem == file",
-          "group": "context"
-        },
-        {
-          "command": "cadb.delete",
-          "when": "view == datasource && !(viewItem =~ /Type$/) && viewItem != file",
-          "group": "context"
-        }
+        { "command": "cadb.datasource.refresh", "when": "view =~ /datasource/ && !(viewItem =~ /Type$/)", "group": "inline" },
+        { "command": "cadb.datasource.edit", "when": "view =~ /datasource/ && !(viewItem =~ /Type$/) && viewItem != folder", "group": "inline" },
+        { "command": "cadb.datasource.add", "when": "view =~ /datasource/ && (viewItem =~ /Type$/ || viewItem == folder)", "group": "inline" },
+        { "command": "cadb.oss.download", "when": "view =~ /datasource/ && (viewItem == folder || viewItem == item)", "group": "inline" },
+        { "command": "cadb.datasource.filterEntry", "when": "view =~ /datasource/ && (viewItem == datasourceType || viewItem == collectionType)", "group": "context" },
+        { "command": "cadb.collection.useDatabase", "when": "view =~ /datasource/ && viewItem == collection", "group": "context" },
+        { "command": "cadb.redis.pubsub", "when": "view =~ /datasource/ && viewItem == datasource", "group": "context" },
+        { "command": "cadb.datasource.rename", "when": "view =~ /datasource/ && viewItem == datasource", "group": "context" },
+        { "submenu": "cadb.datasource.copyConnectionSubmenu", "when": "view =~ /datasource/ && viewItem == datasource", "group": "context" },
+        { "command": "cadb.file.execute", "when": "view =~ /datasource/ && viewItem == file", "group": "context" },
+        { "command": "cadb.file.rename", "when": "view =~ /datasource/ && viewItem == file", "group": "context" },
+        { "command": "cadb.file.delete", "when": "view =~ /datasource/ && viewItem == file", "group": "context" },
+        { "command": "cadb.delete", "when": "view =~ /datasource/ && !(viewItem =~ /Type$/) && viewItem != file", "group": "context" }
       ],
       "cadb.datasource.copyConnectionSubmenu": [
         {
@@ -458,12 +414,12 @@
       {
         "command": "cadb.datasource.search",
         "key": "ctrl+f",
-        "when": "view == datasource && !cadb.datasourceTableGridFocused"
+        "when": "view =~ /datasource/ && !cadb.datasourceTableGridFocused"
       },
       {
         "command": "cadb.datasource.search",
         "key": "cmd+f",
-        "when": "view == datasource && !cadb.datasourceTableGridFocused"
+        "when": "view =~ /datasource/ && !cadb.datasourceTableGridFocused"
       }
     ]
   },
@@ -498,11 +454,8 @@
     "dayjs": "^1.11.19",
     "jquery": "^3.7.1",
     "layui": "^2.13.2",
-    "monaco-editor": "^0.55.1",
-    "mysql": "^2.18.1",
     "mysql2": "^3.15.3",
     "redis": "^5.10.0",
-    "sql-formatter": "^15.6.2",
-    "tabulator-tables": "^6.3.1"
+    "sql-formatter": "^15.6.2"
   }
 }

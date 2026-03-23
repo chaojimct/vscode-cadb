@@ -331,6 +331,9 @@ class DynamicForm {
       case "radio":
         html += this.generateRadioField(fieldName, config);
         break;
+      case "combo":
+        html += this.generateComboField(fieldName, config);
+        break;
       case "checkbox":
         html += this.generateCheckboxField(fieldName, config);
         break;
@@ -396,6 +399,40 @@ class DynamicForm {
             `;
           })
           .join("")}
+      </div>
+    `;
+  }
+
+  /**
+   * 生成可输入+可选择字段（input + datalist）
+   */
+  generateComboField(fieldName, config) {
+    const required = config.required ? 'lay-verify="required"' : "";
+    const placeholder = config.placeholder || "";
+    const options = Array.isArray(config.options) ? config.options : [];
+    const listId = `${this.formId}-${fieldName}-datalist`;
+    return `
+      <label class="layui-form-label">${config.label}</label>
+      <div class="layui-input-block">
+        <input
+          type="text"
+          name="${fieldName}"
+          list="${listId}"
+          placeholder="${placeholder}"
+          ${required}
+          class="layui-input"
+        />
+        <datalist id="${listId}">
+          ${options
+            .map((option) => {
+              const value = typeof option === "object" ? option.value : option;
+              const label = typeof option === "object" ? option.label : option;
+              const v = String(value ?? "");
+              const l = String(label ?? v);
+              return `<option value="${v}">${l}</option>`;
+            })
+            .join("")}
+        </datalist>
       </div>
     `;
   }

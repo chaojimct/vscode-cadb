@@ -101,64 +101,64 @@ export function activate(context: vscode.ExtensionContext) {
     )
   );
 
-  const provider = new DataSourceProvider(context);
-  // 视图命令
-  vscode.window.registerTreeDataProvider("datasource", provider);
-  const treeView = vscode.window.createTreeView("datasource", {
-    treeDataProvider: provider,
-  });
+  const groupViews: Array<{ id: string; label: string }> = [
+    { id: "datasource-local", label: "本地" },
+    { id: "datasource-dev", label: "开发" },
+    { id: "datasource-test", label: "测试" },
+    { id: "datasource-prod", label: "生产" },
+    { id: "datasource-misc", label: "其它" },
+  ];
+  const providers: DataSourceProvider[] = [];
+  const treeViews: vscode.TreeView<Datasource>[] = [];
+  for (const gv of groupViews) {
+    const p = new DataSourceProvider(context, gv.label);
+    providers.push(p);
+    const tv = vscode.window.createTreeView(gv.id, { treeDataProvider: p });
+    treeViews.push(tv);
+    // 展开/收起事件：保存状态
+    tv.onDidExpandElement((e) => p.addExpandedNode(e.element));
+    tv.onDidCollapseElement((e) => p.removeExpandedNode(e.element));
+  }
+  // 注册命令（绑定第一个 provider 即可，命令逻辑内部使用 provider 的全局存储）
   const datasourceCommands = registerDatasourceCommands(
-    provider,
-    treeView,
+    providers[0],
+    treeViews[0],
     outputChannel
   );
-  datasourceCommands.forEach(cmd => context.subscriptions.push(cmd));
-  
-  // 监听 TreeView 展开/收起事件，保存状态
-  treeView.onDidExpandElement((e) => {
-    provider.addExpandedNode(e.element);
-  });
-  
-  treeView.onDidCollapseElement((e) => {
-    provider.removeExpandedNode(e.element);
-  });
+  datasourceCommands.forEach((cmd) => context.subscriptions.push(cmd));
   
   // 恢复展开状态（延迟执行，等待树视图初始化完成）
   setTimeout(() => {
     (async () => {
       try {
-        const treeState = provider.getTreeState();
-        if (treeState?.expandedNodes?.length) {
-          // 递归恢复展开状态
-          const restoreExpandedState = async (
-            element: Datasource,
-            expandedNodes: string[],
-            treeView: vscode.TreeView<Datasource>,
-            provider: DataSourceProvider
-          ): Promise<void> => {
-            const nodePath = provider.getNodePath(element);
-            if (expandedNodes.includes(nodePath)) {
-              try {
-                await treeView.reveal(element, { expand: true });
-                // 等待展开完成后再处理子节点
-                await new Promise(resolve => setTimeout(resolve, 100));
-              } catch (e) {
-                // 忽略错误，节点可能还未加载
+        for (let i = 0; i < providers.length; i++) {
+          const p = providers[i];
+          const tv = treeViews[i];
+          const treeState = p.getTreeState();
+          if (treeState?.expandedNodes?.length) {
+            const restoreExpandedState = async (
+              element: Datasource,
+              expandedNodes: string[],
+              treeView: vscode.TreeView<Datasource>,
+              provider: DataSourceProvider
+            ): Promise<void> => {
+              const nodePath = provider.getNodePath(element);
+              if (expandedNodes.includes(nodePath)) {
+                try {
+                  await treeView.reveal(element, { expand: true });
+                  await new Promise((resolve) => setTimeout(resolve, 100));
+                } catch (e) {}
               }
-            }
-            
-            // 递归处理子节点
-            if (element.children && element.children.length > 0) {
-              for (const child of element.children) {
-                await restoreExpandedState(child, expandedNodes, treeView, provider);
+              if (element.children && element.children.length > 0) {
+                for (const child of element.children) {
+                  await restoreExpandedState(child, expandedNodes, treeView, provider);
+                }
               }
+            };
+            const rootItems = p.getRootNodes();
+            for (const rootItem of rootItems) {
+              await restoreExpandedState(rootItem, treeState.expandedNodes, tv, p);
             }
-          };
-          
-          // 从根节点开始恢复
-          const rootItems = provider.getConnections().map((e) => new Datasource(e));
-          for (const rootItem of rootItems) {
-            await restoreExpandedState(rootItem, treeState.expandedNodes, treeView, provider);
           }
         }
       } catch (error) {
@@ -167,15 +167,18 @@ export function activate(context: vscode.ExtensionContext) {
     })();
   }, 1000);
   
-  treeView.onDidChangeVisibility((e) => {
-    if (e.visible) {
-      provider.refresh();
-    }
+  treeViews.forEach((tv, idx) => {
+    const p = providers[idx];
+    tv.onDidChangeVisibility((e) => {
+      if (e.visible) {
+        p.refresh();
+      }
+    });
   });
   
   // 数据库管理器（替代 CaEditor，只保留数据库选择功能）
-  const databaseManager = new DatabaseManager(provider);
-  provider.setDatabaseManager(databaseManager);
+  const databaseManager = new DatabaseManager(providers[0]);
+  providers[0].setDatabaseManager(databaseManager);
   
   // 创建数据库状态栏管理器
   const databaseStatusBar = new DatabaseStatusBar(databaseManager);
@@ -192,7 +195,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   // 数据项命令
-  registerDatasourceItemCommands(provider, outputChannel, databaseManager);
+  registerDatasourceItemCommands(providers[0], outputChannel, databaseManager);
 
   // 查询结果 Webview（底部面板）
   const resultProvider = new ResultWebviewProvider(context);
@@ -258,7 +261,7 @@ export function activate(context: vscode.ExtensionContext) {
     'cadb.sql-notebook-controller',
     'cadb.sqlNotebook',
     'SQL Notebook',
-    provider,
+    providers[0],
     context,
     databaseManager  // 传入 databaseManager 以获取当前选择的数据库
   );
@@ -285,7 +288,7 @@ export function activate(context: vscode.ExtensionContext) {
         await databaseManager.setActiveDatabase(datasourceName, databaseName);
         // 可选：后台尝试用完整节点更新（用于依赖树结构的逻辑）
         try {
-          const connections = provider.getConnections();
+          const connections = providers[0].getConnections();
           const connectionData = connections.find(
             (conn) => conn.name === datasourceName
           );
@@ -444,7 +447,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // SQL 自动补全（仅支持 Notebook）
   const completionProvider = new CaCompletionItemProvider();
-  completionProvider.setProvider(provider);
+  completionProvider.setProvider(providers[0]);
   completionProvider.setDatabaseManager(databaseManager);
   context.subscriptions.push(
     vscode.languages.registerCompletionItemProvider(
@@ -475,7 +478,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // SQL 悬浮提示（表名展示 DDL，字段名展示类型、备注等）
   const sqlHoverProvider = new SqlHoverProvider();
-  sqlHoverProvider.setProvider(provider);
+  sqlHoverProvider.setProvider(providers[0]);
   sqlHoverProvider.setDatabaseManager(databaseManager);
   context.subscriptions.push(
     vscode.languages.registerHoverProvider({ language: "sql" }, sqlHoverProvider)
@@ -505,7 +508,7 @@ export function activate(context: vscode.ExtensionContext) {
       const parsed = resolveTableFromArgs(args);
       if (!parsed) return;
       const [conn, db, table] = parsed;
-      const ds = await resolveTableDatasource(provider, context, conn, db, table);
+      const ds = await resolveTableDatasource(providers[0], context, conn, db, table);
       if (ds) await vscode.commands.executeCommand("cadb.item.showData", ds);
     })
   );
@@ -514,14 +517,14 @@ export function activate(context: vscode.ExtensionContext) {
       const parsed = resolveTableFromArgs(args);
       if (!parsed) return;
       const [conn, db, table] = parsed;
-      const ds = await resolveTableDatasource(provider, context, conn, db, table);
+      const ds = await resolveTableDatasource(providers[0], context, conn, db, table);
       if (ds) await vscode.commands.executeCommand("cadb.datasource.edit", ds);
     })
   );
 
   // 工作区符号：将 MySQL 数据表加入「转到工作区中的符号」(Ctrl/Cmd+T)，选择表可快速打开表数据
   const mysqlTableSymbolProvider = new MySQLTableWorkspaceSymbolProvider(
-    provider,
+    providers[0],
     context
   );
   context.subscriptions.push(
@@ -530,7 +533,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // cadb:// 虚拟文档：从工作区符号打开表时，提供占位内容并触发「查看数据」打开表面板
   const cadbTableContentProvider = new CadbTableDocumentContentProvider(
-    provider,
+    providers[0],
     context
   );
   context.subscriptions.push(
@@ -541,7 +544,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   // SQL 执行器
-  const sqlExecutor = new SqlExecutor(provider, databaseManager, resultProvider, outputChannel);
+  const sqlExecutor = new SqlExecutor(providers[0], databaseManager, resultProvider, outputChannel);
   context.subscriptions.push(sqlExecutor);
 
   // 注册 SQL 执行命令

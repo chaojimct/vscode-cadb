@@ -33,6 +33,21 @@ function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function getGroupOptionsForConnections(
+  provider: DataSourceProvider
+): Array<{ value: string; label: string }> {
+  const names = new Set<string>();
+  for (const c of provider.getConnections()) {
+    const raw = (c as any)?.group;
+    if (raw == null) continue;
+    const v = String(raw).trim();
+    if (!v) continue;
+    names.add(v);
+  }
+  const list = Array.from(names).sort((a, b) => a.localeCompare(b, "zh-CN"));
+  return [{ value: "默认", label: "默认" }, ...list.map((g) => ({ value: g, label: g }))];
+}
+
 /**
  * 向 settings webview 回传统一的状态消息
  */
@@ -772,6 +787,7 @@ async function editEntry(
         item.type === "datasource"
           ? getDriverOptionsForEditConnection(provider.context, item.data?.dbType)
           : undefined,
+      groupOptions: item.type === "datasource" ? getGroupOptionsForConnections(provider) : undefined,
     });
   }
 
@@ -960,6 +976,7 @@ export function registerDatasourceCommands(
         configType: "datasource",
         data: null,
         driverOptions,
+        groupOptions: getGroupOptionsForConnections(provider),
       });
 
       panel.webview.onDidReceiveMessage(async (message) => {

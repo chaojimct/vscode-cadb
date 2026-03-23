@@ -40,6 +40,23 @@
       placeholder: "例如：生产数据库",
       hint: "给此连接起一个易于识别的名称",
     },
+    group: {
+      type: "select",
+      label: "分组",
+      category: "base",
+      required: true,
+      colspan: 2,
+      fullRow: true,
+      placeholder: "选择分组",
+      options: [
+        { value: "本地", label: "本地" },
+        { value: "开发", label: "开发" },
+        { value: "测试", label: "测试" },
+        { value: "生产", label: "生产" },
+        { value: "其它", label: "其它" }
+      ],
+      value: "其它",
+    },
     saveLocation: {
       type: "radio",
       label: "保存位置",

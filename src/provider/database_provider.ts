@@ -20,9 +20,15 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
   private treeState: TreeState;
   private rootNodes: Datasource[] = [];
   private workspaceConnections: DatasourceInputData[] = [];
+  private groupFilter: string | null = null; // 本地/开发/测试/生产/其它 或 null(不过滤)
 
-  constructor(context: vscode.ExtensionContext) {
+  public getRootNodes(): Datasource[] {
+    return this.rootNodes;
+  }
+
+  constructor(context: vscode.ExtensionContext, groupFilter?: string | null) {
     this.context = context;
+    this.groupFilter = groupFilter ?? null;
     this.panels = {
       settings: readFileSync(
         path.join(
@@ -281,11 +287,29 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
 
   private async initialize() {
     this.workspaceConnections = await this.loadWorkspaceConnections();
-    const connections = this.getConnections();
-    this.rootNodes = connections.map(m => new Datasource(m));
+    const connections = this.getFilteredConnections();
+    this.rootNodes = connections.map((m) => new Datasource(m));
     this._onDidChangeTreeData.fire();
     // 每次加载都拉取最新数据，过滤显示仍按 treeState 中的 selectedDatabases/selectedTables 应用
     this.refreshAndCache();
+  }
+
+  private normalizeGroupName(name: any): string {
+    const v = String(name ?? "").trim();
+    if (!v) return "其它";
+    if (["本地", "开发", "测试", "生产", "其它"].includes(v)) return v;
+    return "其它";
+  }
+
+  private getFilteredConnections(): DatasourceInputData[] {
+    const all = this.getConnections();
+    if (!this.groupFilter) return all;
+    return all.filter((c) => this.normalizeGroupName((c as any)?.group) === this.groupFilter);
+  }
+
+  public setGroupFilter(group: string | null): void {
+    this.groupFilter = group;
+    this.refresh();
   }
 
   private getWorkspaceRootUri(): vscode.Uri | null {
@@ -509,8 +533,8 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
    * 仍根据 treeState 中的 selectedDatabases/selectedTables 过滤显示。
    */
   public async refreshAndCache() {
-    const connections = this.getConnections();
-    this.rootNodes = connections.map(m => new Datasource(m));
+    const connections = this.getFilteredConnections();
+    this.rootNodes = connections.map((m) => new Datasource(m));
     this._onDidChangeTreeData.fire();
 
     await vscode.window.withProgress({
@@ -1039,7 +1063,11 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
       const segmentNew = `datasource:${newName}`;
       this.treeState.expandedNodes = this.treeState.expandedNodes.map((path) => {
         const parts = path.split("/");
-        if (parts[0] === segmentOld) parts[0] = segmentNew;
+        for (let i = 0; i < parts.length; i++) {
+          if (parts[i] === segmentOld) {
+            parts[i] = segmentNew;
+          }
+        }
         return parts.join("/");
       });
     }
