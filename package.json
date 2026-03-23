@@ -1,461 +1,529 @@
 {
-  "name": "vscode-cadb",
-  "displayName": "vscode-cadb",
-  "publisher": "codingsoul",
-  "description": "Powerful database management VSCode plugin!",
-  "version": "0.0.9",
-  "engines": {
-    "vscode": "^1.104.0"
-  },
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/caoaolong/vscode-cadb.git"
-  },
-  "categories": [
-    "Other"
-  ],
-  "activationEvents": [
-    "onLanguage:sql",
-    "onNotebook:cadb.sqlNotebook"
-  ],
-  "main": "./dist/extension.js",
-  "icon": "logo.png",
-  "contributes": {
-    "viewsContainers": {
-      "activitybar": [
-        {
-          "id": "datasource",
-          "title": "CADB",
-          "icon": "./resources/icons/logo.png"
-        }
-      ],
-      "panel": [
-        {
-          "id": "query",
-          "title": "查询",
-          "icon": "$(search-sparkle)"
-        }
-      ]
+    "name": "vscode-cadb",
+    "displayName": "vscode-cadb",
+    "publisher": "codingsoul",
+    "description": "Powerful database management VSCode plugin!",
+    "version": "0.1.0",
+    "engines": {
+        "vscode": "^1.104.0"
     },
-    "views": {
-      "datasource": [
-        {
-          "id": "datasource-local",
-          "name": "本地",
-          "icon": "$(home)",
-          "contextualTitle": "Local Datasources"
-        },
-        {
-          "id": "datasource-dev",
-          "name": "开发",
-          "icon": "$(beaker)",
-          "contextualTitle": "Dev Datasources"
-        },
-        {
-          "id": "datasource-test",
-          "name": "测试",
-          "icon": "$(beaker-stop)",
-          "contextualTitle": "Test Datasources"
-        },
-        {
-          "id": "datasource-prod",
-          "name": "生产",
-          "icon": "$(rocket)",
-          "contextualTitle": "Prod Datasources"
-        },
-        {
-          "id": "datasource-misc",
-          "name": "其它",
-          "icon": "$(database)",
-          "contextualTitle": "Other Datasources"
-        }
-      ],
-      "query": [
-        {
-          "type": "webview",
-          "id": "query",
-          "name": "查询",
-          "icon": "$(search-sparkle)",
-          "contextualTitle": "Query Result"
-        }
-      ]
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/caoaolong/vscode-cadb.git"
     },
-    "commands": [
-      {
-        "command": "cadb.datasource.add",
-        "title": "新建项",
-        "icon": "$(add)"
-      },
-      {
-        "command": "cadb.datasource.new",
-        "title": "新建数据源",
-        "icon": "$(add)"
-      },
-      {
-        "command": "cadb.drivers.manage",
-        "title": "管理数据库驱动",
-        "icon": "$(extensions)"
-      },
-      {
-        "command": "cadb.datasource.refresh",
-        "title": "刷新",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "cadb.datasource.search",
-        "title": "搜索数据源"
-      },
-      {
-        "command": "cadb.grid.toggleSidePanel",
-        "title": "切换表格字段侧栏"
-      },
-      {
-        "command": "cadb.datasource.edit",
-        "title": "编辑",
-        "icon": "$(edit)"
-      },
-      {
-        "command": "cadb.datasource.rename",
-        "title": "重命名",
-        "icon": "$(pencil)"
-      },
-      {
-        "command": "cadb.datasource.filterEntry",
-        "title": "过滤显示",
-        "icon": "$(cursor)"
-      },
-      {
-        "command": "cadb.oss.download",
-        "title": "下载",
-        "icon": "$(cloud-download)"
-      },
-      {
-        "command": "cadb.oss.cache.clear",
-        "title": "清除 OSS 临时缓存"
-      },
-      {
-        "command": "cadb.collection.useDatabase",
-        "title": "使用",
-        "icon": "$(cursor)"
-      },
-      {
-        "command": "cadb.datasource.copyConnection",
-        "title": "复制",
-        "icon": "$(copy)"
-      },
-      {
-        "command": "cadb.datasource.copyConnectionAddress",
-        "title": "仅连接地址",
-        "icon": "$(attach)"
-      },
-      {
-        "command": "cadb.datasource.copyCredentials",
-        "title": "仅用户名密码",
-        "icon": "$(attach)"
-      },
-      {
-        "command": "cadb.datasource.copyFullConnection",
-        "title": "完整连接",
-        "icon": "$(attach)"
-      },
-      {
-        "command": "cadb.redis.pubsub",
-        "title": "Pub/Sub",
-        "icon": "$(comment-discussion)"
-      },
-      {
-        "command": "cadb.file.execute",
-        "title": "执行",
-        "icon": "$(play)"
-      },
-      {
-        "command": "cadb.file.rename",
-        "title": "重命名",
-        "icon": "$(rename)"
-      },
-      {
-        "command": "cadb.file.delete",
-        "title": "删除",
-        "icon": "$(close)"
-      },
-      {
-        "command": "cadb.delete",
-        "title": "删除",
-        "icon": "$(close)"
-      },
-      {
-        "command": "cadb.notebook.new",
-        "title": "新建 Notebook",
-        "icon": "$(new-file)"
-      },
-      {
-        "command": "cadb.sql.selectDatabase",
-        "title": "选择数据库",
-        "icon": "$(database)"
-      },
-      {
-        "command": "cadb.notebook.currentDatabase",
-        "title": "更换数据库",
-        "icon": "$(database)"
-      },
-      {
-        "command": "cadb.notebook.setCellDatabase",
-        "title": "设置 Cell 数据库",
-        "icon": "$(database)"
-      },
-      {
-        "command": "cadb.notebook.collapseAllResults",
-        "title": "收起全部结果",
-        "icon": "$(collapse-all)"
-      },
-      {
-        "command": "cadb.notebook.expandAllResults",
-        "title": "展开全部结果",
-        "icon": "$(expand-all)"
-      },
-      {
-        "command": "cadb.notebook.showDatabaseStatus",
-        "title": "显示数据库状态",
-        "icon": "$(info)"
-      },
-      {
-        "command": "cadb.sql.run",
-        "title": "执行 SQL",
-        "icon": "$(play)"
-      },
-      {
-        "command": "cadb.sql.explain",
-        "title": "解释 SQL",
-        "icon": "$(search)"
-      },
-      {
-        "command": "cadb.quickQuery",
-        "title": "快捷查询",
-        "icon": "$(search-sparkle)"
-      },
-      {
-        "command": "cadb.hover.openTableData",
-        "title": "进入表数据"
-      },
-      {
-        "command": "cadb.hover.editTable",
-        "title": "表编辑",
-        "icon": "$(edit-sparkle)"
-      }
+    "categories": [
+        "Other"
     ],
-    "notebooks": [
-      {
-        "type": "cadb.sqlNotebook",
-        "displayName": "SQL Notebook",
-        "selector": [
-          {
-            "filenamePattern": "*.jsql"
-          }
+    "activationEvents": [
+        "onLanguage:sql",
+        "onNotebook:cadb.sqlNotebook"
+    ],
+    "main": "./dist/extension.js",
+    "icon": "logo.png",
+    "contributes": {
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "datasource",
+                    "title": "CADB",
+                    "icon": "./resources/icons/logo.png"
+                }
+            ],
+            "panel": [
+                {
+                    "id": "query",
+                    "title": "查询",
+                    "icon": "$(search-sparkle)"
+                }
+            ]
+        },
+        "views": {
+            "datasource": [
+                {
+                    "id": "datasource-local",
+                    "name": "本地",
+                    "icon": "$(home)",
+                    "contextualTitle": "Local Datasources"
+                },
+                {
+                    "id": "datasource-dev",
+                    "name": "开发",
+                    "icon": "$(beaker)",
+                    "contextualTitle": "Dev Datasources"
+                },
+                {
+                    "id": "datasource-test",
+                    "name": "测试",
+                    "icon": "$(beaker-stop)",
+                    "contextualTitle": "Test Datasources"
+                },
+                {
+                    "id": "datasource-prod",
+                    "name": "生产",
+                    "icon": "$(rocket)",
+                    "contextualTitle": "Prod Datasources"
+                },
+                {
+                    "id": "datasource-misc",
+                    "name": "其它",
+                    "icon": "$(database)",
+                    "contextualTitle": "Other Datasources"
+                }
+            ],
+            "query": [
+                {
+                    "type": "webview",
+                    "id": "query",
+                    "name": "查询",
+                    "icon": "$(search-sparkle)",
+                    "contextualTitle": "Query Result"
+                }
+            ]
+        },
+        "commands": [
+            {
+                "command": "cadb.datasource.add",
+                "title": "新建项",
+                "icon": "$(add)"
+            },
+            {
+                "command": "cadb.datasource.new",
+                "title": "新建数据源",
+                "icon": "$(add)"
+            },
+            {
+                "command": "cadb.drivers.manage",
+                "title": "管理数据库驱动",
+                "icon": "$(extensions)"
+            },
+            {
+                "command": "cadb.datasource.refresh",
+                "title": "刷新",
+                "icon": "$(refresh)"
+            },
+            {
+                "command": "cadb.datasource.search",
+                "title": "搜索数据源"
+            },
+            {
+                "command": "cadb.grid.toggleSidePanel",
+                "title": "切换表格字段侧栏"
+            },
+            {
+                "command": "cadb.datasource.edit",
+                "title": "编辑",
+                "icon": "$(edit)"
+            },
+            {
+                "command": "cadb.datasource.rename",
+                "title": "重命名",
+                "icon": "$(pencil)"
+            },
+            {
+                "command": "cadb.datasource.filterEntry",
+                "title": "过滤显示",
+                "icon": "$(cursor)"
+            },
+            {
+                "command": "cadb.oss.download",
+                "title": "下载",
+                "icon": "$(cloud-download)"
+            },
+            {
+                "command": "cadb.oss.cache.clear",
+                "title": "清除 OSS 临时缓存"
+            },
+            {
+                "command": "cadb.collection.useDatabase",
+                "title": "使用",
+                "icon": "$(cursor)"
+            },
+            {
+                "command": "cadb.datasource.copyConnection",
+                "title": "复制",
+                "icon": "$(copy)"
+            },
+            {
+                "command": "cadb.datasource.copyConnectionAddress",
+                "title": "仅连接地址",
+                "icon": "$(attach)"
+            },
+            {
+                "command": "cadb.datasource.copyCredentials",
+                "title": "仅用户名密码",
+                "icon": "$(attach)"
+            },
+            {
+                "command": "cadb.datasource.copyFullConnection",
+                "title": "完整连接",
+                "icon": "$(attach)"
+            },
+            {
+                "command": "cadb.redis.pubsub",
+                "title": "Pub/Sub",
+                "icon": "$(comment-discussion)"
+            },
+            {
+                "command": "cadb.file.execute",
+                "title": "执行",
+                "icon": "$(play)"
+            },
+            {
+                "command": "cadb.file.rename",
+                "title": "重命名",
+                "icon": "$(rename)"
+            },
+            {
+                "command": "cadb.file.delete",
+                "title": "删除",
+                "icon": "$(close)"
+            },
+            {
+                "command": "cadb.delete",
+                "title": "删除",
+                "icon": "$(close)"
+            },
+            {
+                "command": "cadb.notebook.new",
+                "title": "新建 Notebook",
+                "icon": "$(new-file)"
+            },
+            {
+                "command": "cadb.sql.selectDatabase",
+                "title": "选择数据库",
+                "icon": "$(database)"
+            },
+            {
+                "command": "cadb.notebook.currentDatabase",
+                "title": "更换数据库",
+                "icon": "$(database)"
+            },
+            {
+                "command": "cadb.notebook.setCellDatabase",
+                "title": "设置 Cell 数据库",
+                "icon": "$(database)"
+            },
+            {
+                "command": "cadb.notebook.collapseAllResults",
+                "title": "收起全部结果",
+                "icon": "$(collapse-all)"
+            },
+            {
+                "command": "cadb.notebook.expandAllResults",
+                "title": "展开全部结果",
+                "icon": "$(expand-all)"
+            },
+            {
+                "command": "cadb.notebook.showDatabaseStatus",
+                "title": "显示数据库状态",
+                "icon": "$(info)"
+            },
+            {
+                "command": "cadb.sql.run",
+                "title": "执行 SQL",
+                "icon": "$(play)"
+            },
+            {
+                "command": "cadb.sql.explain",
+                "title": "解释 SQL",
+                "icon": "$(search)"
+            },
+            {
+                "command": "cadb.quickQuery",
+                "title": "快捷查询",
+                "icon": "$(search-sparkle)"
+            },
+            {
+                "command": "cadb.hover.openTableData",
+                "title": "进入表数据"
+            },
+            {
+                "command": "cadb.hover.editTable",
+                "title": "表编辑",
+                "icon": "$(edit-sparkle)"
+            }
         ],
-        "priority": "default"
-      }
-    ],
-    "fileAssociations": [
-      {
-        "pattern": "*.jsql",
-        "scheme": "file"
-      },
-      {
-        "pattern": "*.sql",
-        "scheme": "file"
-      }
-    ],
-    "notebookRenderer": [
-      {
-        "id": "cadb.sql-notebook-renderer",
-        "displayName": "SQL Notebook Renderer",
-        "mimeTypes": [
-          "application/x.sql-result",
-          "application/x.sql-results",
-          "application/x.sql-error"
+        "notebooks": [
+            {
+                "type": "cadb.sqlNotebook",
+                "displayName": "SQL Notebook",
+                "selector": [
+                    {
+                        "filenamePattern": "*.jsql"
+                    }
+                ],
+                "priority": "default"
+            }
         ],
-        "entrypoint": "./resources/notebook/renderer.js",
-        "requiresMessaging": "optional"
-      }
-    ],
-    "menus": {
-      "view/title": [
-        { "command": "cadb.datasource.refresh", "when": "view =~ /datasource/", "group": "navigation" },
-        { "command": "cadb.datasource.new", "when": "view =~ /datasource/", "group": "navigation" },
-        { "command": "cadb.notebook.new", "when": "view =~ /datasource/", "group": "navigation" },
-        { "command": "cadb.drivers.manage", "when": "view =~ /datasource/", "group": "navigation@9" }
-      ],
-      "view/item/context": [
-        { "command": "cadb.datasource.refresh", "when": "view =~ /datasource/ && !(viewItem =~ /Type$/)", "group": "inline" },
-        { "command": "cadb.datasource.edit", "when": "view =~ /datasource/ && !(viewItem =~ /Type$/) && viewItem != folder", "group": "inline" },
-        { "command": "cadb.datasource.add", "when": "view =~ /datasource/ && (viewItem =~ /Type$/ || viewItem == folder)", "group": "inline" },
-        { "command": "cadb.oss.download", "when": "view =~ /datasource/ && (viewItem == folder || viewItem == item)", "group": "inline" },
-        { "command": "cadb.datasource.filterEntry", "when": "view =~ /datasource/ && (viewItem == datasourceType || viewItem == collectionType)", "group": "context" },
-        { "command": "cadb.collection.useDatabase", "when": "view =~ /datasource/ && viewItem == collection", "group": "context" },
-        { "command": "cadb.redis.pubsub", "when": "view =~ /datasource/ && viewItem == datasource", "group": "context" },
-        { "command": "cadb.datasource.rename", "when": "view =~ /datasource/ && viewItem == datasource", "group": "context" },
-        { "submenu": "cadb.datasource.copyConnectionSubmenu", "when": "view =~ /datasource/ && viewItem == datasource", "group": "context" },
-        { "command": "cadb.file.execute", "when": "view =~ /datasource/ && viewItem == file", "group": "context" },
-        { "command": "cadb.file.rename", "when": "view =~ /datasource/ && viewItem == file", "group": "context" },
-        { "command": "cadb.file.delete", "when": "view =~ /datasource/ && viewItem == file", "group": "context" },
-        { "command": "cadb.delete", "when": "view =~ /datasource/ && !(viewItem =~ /Type$/) && viewItem != file", "group": "context" }
-      ],
-      "cadb.datasource.copyConnectionSubmenu": [
-        {
-          "command": "cadb.datasource.copyConnectionAddress"
+        "fileAssociations": [
+            {
+                "pattern": "*.jsql",
+                "scheme": "file"
+            },
+            {
+                "pattern": "*.sql",
+                "scheme": "file"
+            }
+        ],
+        "notebookRenderer": [
+            {
+                "id": "cadb.sql-notebook-renderer",
+                "displayName": "SQL Notebook Renderer",
+                "mimeTypes": [
+                    "application/x.sql-result",
+                    "application/x.sql-results",
+                    "application/x.sql-error"
+                ],
+                "entrypoint": "./resources/notebook/renderer.js",
+                "requiresMessaging": "optional"
+            }
+        ],
+        "menus": {
+            "view/title": [
+                {
+                    "command": "cadb.datasource.refresh",
+                    "when": "view =~ /datasource/",
+                    "group": "navigation"
+                },
+                {
+                    "command": "cadb.datasource.new",
+                    "when": "view =~ /datasource/",
+                    "group": "navigation"
+                },
+                {
+                    "command": "cadb.notebook.new",
+                    "when": "view =~ /datasource/",
+                    "group": "navigation"
+                },
+                {
+                    "command": "cadb.drivers.manage",
+                    "when": "view =~ /datasource/",
+                    "group": "navigation@9"
+                }
+            ],
+            "view/item/context": [
+                {
+                    "command": "cadb.datasource.refresh",
+                    "when": "view =~ /datasource/ && !(viewItem =~ /Type$/)",
+                    "group": "inline"
+                },
+                {
+                    "command": "cadb.datasource.edit",
+                    "when": "view =~ /datasource/ && !(viewItem =~ /Type$/) && viewItem != folder",
+                    "group": "inline"
+                },
+                {
+                    "command": "cadb.datasource.add",
+                    "when": "view =~ /datasource/ && (viewItem =~ /Type$/ || viewItem == folder)",
+                    "group": "inline"
+                },
+                {
+                    "command": "cadb.oss.download",
+                    "when": "view =~ /datasource/ && (viewItem == folder || viewItem == item)",
+                    "group": "inline"
+                },
+                {
+                    "command": "cadb.datasource.filterEntry",
+                    "when": "view =~ /datasource/ && (viewItem == datasourceType || viewItem == collectionType)",
+                    "group": "context"
+                },
+                {
+                    "command": "cadb.collection.useDatabase",
+                    "when": "view =~ /datasource/ && viewItem == collection",
+                    "group": "context"
+                },
+                {
+                    "command": "cadb.redis.pubsub",
+                    "when": "view =~ /datasource/ && viewItem == datasource",
+                    "group": "context"
+                },
+                {
+                    "command": "cadb.datasource.rename",
+                    "when": "view =~ /datasource/ && viewItem == datasource",
+                    "group": "context"
+                },
+                {
+                    "submenu": "cadb.datasource.copyConnectionSubmenu",
+                    "when": "view =~ /datasource/ && viewItem == datasource",
+                    "group": "context"
+                },
+                {
+                    "command": "cadb.file.execute",
+                    "when": "view =~ /datasource/ && viewItem == file",
+                    "group": "context"
+                },
+                {
+                    "command": "cadb.file.rename",
+                    "when": "view =~ /datasource/ && viewItem == file",
+                    "group": "context"
+                },
+                {
+                    "command": "cadb.file.delete",
+                    "when": "view =~ /datasource/ && viewItem == file",
+                    "group": "context"
+                },
+                {
+                    "command": "cadb.delete",
+                    "when": "view =~ /datasource/ && !(viewItem =~ /Type$/) && viewItem != file",
+                    "group": "context"
+                }
+            ],
+            "cadb.datasource.copyConnectionSubmenu": [
+                {
+                    "command": "cadb.datasource.copyConnectionAddress"
+                },
+                {
+                    "command": "cadb.datasource.copyCredentials"
+                },
+                {
+                    "command": "cadb.datasource.copyFullConnection"
+                }
+            ],
+            "datasource/context": [],
+            "notebook/toolbar": [
+                {
+                    "command": "cadb.sql.selectDatabase",
+                    "when": "notebookType == cadb.sqlNotebook && !cadb.hasDatabaseSelected",
+                    "group": "navigation"
+                },
+                {
+                    "command": "cadb.notebook.currentDatabase",
+                    "when": "notebookType == cadb.sqlNotebook && cadb.hasDatabaseSelected",
+                    "group": "navigation"
+                },
+                {
+                    "command": "cadb.notebook.showDatabaseStatus",
+                    "when": "notebookType == cadb.sqlNotebook",
+                    "group": "status"
+                },
+                {
+                    "command": "cadb.notebook.collapseAllResults",
+                    "when": "notebookType == cadb.sqlNotebook",
+                    "group": "navigation"
+                },
+                {
+                    "command": "cadb.notebook.expandAllResults",
+                    "when": "notebookType == cadb.sqlNotebook",
+                    "group": "navigation"
+                }
+            ],
+            "notebook/cell/title": [
+                {
+                    "command": "cadb.notebook.setCellDatabase",
+                    "when": "notebookType == cadb.sqlNotebook",
+                    "group": "right"
+                }
+            ]
         },
-        {
-          "command": "cadb.datasource.copyCredentials"
+        "submenus": [
+            {
+                "id": "cadb.datasource.copyConnectionSubmenu",
+                "label": "复制"
+            }
+        ],
+        "configuration": {
+            "title": "CADB",
+            "properties": {
+                "cadb.sqlNotebook.fontFamily": {
+                    "type": "string",
+                    "default": "Consolas, Monaco, 'Courier New', monospace",
+                    "description": "SQL Notebook 编辑器字体"
+                },
+                "cadb.sqlNotebook.fontSize": {
+                    "type": "number",
+                    "default": 13,
+                    "minimum": 8,
+                    "maximum": 24,
+                    "description": "SQL Notebook 编辑器字体大小（像素）"
+                },
+                "cadb.sqlNotebook.lineHeight": {
+                    "type": "number",
+                    "default": 1.5,
+                    "minimum": 1,
+                    "maximum": 3,
+                    "description": "SQL Notebook 编辑器行高"
+                },
+                "cadb.sqlNotebook.autoFormat": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "保存 SQL Notebook（.jsql）时自动格式化所有 SQL 单元格"
+                },
+                "cadb.grid.pageSize": {
+                    "type": "number",
+                    "default": 2000,
+                    "minimum": 1,
+                    "maximum": 10000,
+                    "description": "表格每页查询条数；亦为 SELECT 自动追加 LIMIT 时的默认条数"
+                },
+                "cadb.grid.debugSidePanelShortcut": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "在扩展宿主日志中输出表格 Cmd/Ctrl+F 侧栏快捷键相关调试信息（帮助 → 切换开发人员工具 → 控制台）"
+                },
+                "cadb.query.autoAppendSelectLimit": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "执行 SELECT/WITH 时若语句末尾未写 LIMIT，则自动追加 LIMIT（条数见 cadb.grid.pageSize）"
+                }
+            }
         },
-        {
-          "command": "cadb.datasource.copyFullConnection"
-        }
-      ],
-      "datasource/context": [],
-      "notebook/toolbar": [
-        {
-          "command": "cadb.sql.selectDatabase",
-          "when": "notebookType == cadb.sqlNotebook && !cadb.hasDatabaseSelected",
-          "group": "navigation"
-        },
-        {
-          "command": "cadb.notebook.currentDatabase",
-          "when": "notebookType == cadb.sqlNotebook && cadb.hasDatabaseSelected",
-          "group": "navigation"
-        },
-        {
-          "command": "cadb.notebook.showDatabaseStatus",
-          "when": "notebookType == cadb.sqlNotebook",
-          "group": "status"
-        },
-        {
-          "command": "cadb.notebook.collapseAllResults",
-          "when": "notebookType == cadb.sqlNotebook",
-          "group": "navigation"
-        },
-        {
-          "command": "cadb.notebook.expandAllResults",
-          "when": "notebookType == cadb.sqlNotebook",
-          "group": "navigation"
-        }
-      ],
-      "notebook/cell/title": [
-        {
-          "command": "cadb.notebook.setCellDatabase",
-          "when": "notebookType == cadb.sqlNotebook",
-          "group": "right"
-        }
-      ]
+        "keybindings": [
+            {
+                "command": "cadb.grid.toggleSidePanel",
+                "key": "ctrl+f",
+                "when": "cadb.datasourceTableGridFocused"
+            },
+            {
+                "command": "cadb.grid.toggleSidePanel",
+                "key": "cmd+f",
+                "when": "cadb.datasourceTableGridFocused"
+            },
+            {
+                "command": "cadb.datasource.search",
+                "key": "ctrl+f",
+                "when": "view =~ /datasource/ && !cadb.datasourceTableGridFocused"
+            },
+            {
+                "command": "cadb.datasource.search",
+                "key": "cmd+f",
+                "when": "view =~ /datasource/ && !cadb.datasourceTableGridFocused"
+            }
+        ]
     },
-    "submenus": [
-      {
-        "id": "cadb.datasource.copyConnectionSubmenu",
-        "label": "复制"
-      }
-    ],
-    "configuration": {
-      "title": "CADB",
-      "properties": {
-        "cadb.sqlNotebook.fontFamily": {
-          "type": "string",
-          "default": "Consolas, Monaco, 'Courier New', monospace",
-          "description": "SQL Notebook 编辑器字体"
-        },
-        "cadb.sqlNotebook.fontSize": {
-          "type": "number",
-          "default": 13,
-          "minimum": 8,
-          "maximum": 24,
-          "description": "SQL Notebook 编辑器字体大小（像素）"
-        },
-        "cadb.sqlNotebook.lineHeight": {
-          "type": "number",
-          "default": 1.5,
-          "minimum": 1,
-          "maximum": 3,
-          "description": "SQL Notebook 编辑器行高"
-        },
-        "cadb.sqlNotebook.autoFormat": {
-          "type": "boolean",
-          "default": false,
-          "description": "保存 SQL Notebook（.jsql）时自动格式化所有 SQL 单元格"
-        },
-        "cadb.grid.pageSize": {
-          "type": "number",
-          "default": 2000,
-          "minimum": 1,
-          "maximum": 10000,
-          "description": "表格每页查询条数；亦为 SELECT 自动追加 LIMIT 时的默认条数"
-        },
-        "cadb.grid.debugSidePanelShortcut": {
-          "type": "boolean",
-          "default": false,
-          "description": "在扩展宿主日志中输出表格 Cmd/Ctrl+F 侧栏快捷键相关调试信息（帮助 → 切换开发人员工具 → 控制台）"
-        },
-        "cadb.query.autoAppendSelectLimit": {
-          "type": "boolean",
-          "default": true,
-          "description": "执行 SELECT/WITH 时若语句末尾未写 LIMIT，则自动追加 LIMIT（条数见 cadb.grid.pageSize）"
-        }
-      }
+    "scripts": {
+        "vscode:prepublish": "npm run package",
+        "compile": "webpack",
+        "watch": "webpack --watch",
+        "package": "webpack --mode production --devtool hidden-source-map",
+        "compile-tests": "tsc -p . --outDir out",
+        "watch-tests": "tsc -p . -w --outDir out",
+        "pretest": "npm run compile-tests && npm run compile && npm run lint",
+        "lint": "eslint src",
+        "test": "vscode-test"
     },
-    "keybindings": [
-      {
-        "command": "cadb.grid.toggleSidePanel",
-        "key": "ctrl+f",
-        "when": "cadb.datasourceTableGridFocused"
-      },
-      {
-        "command": "cadb.grid.toggleSidePanel",
-        "key": "cmd+f",
-        "when": "cadb.datasourceTableGridFocused"
-      },
-      {
-        "command": "cadb.datasource.search",
-        "key": "ctrl+f",
-        "when": "view =~ /datasource/ && !cadb.datasourceTableGridFocused"
-      },
-      {
-        "command": "cadb.datasource.search",
-        "key": "cmd+f",
-        "when": "view =~ /datasource/ && !cadb.datasourceTableGridFocused"
-      }
-    ]
-  },
-  "scripts": {
-    "vscode:prepublish": "npm run package",
-    "compile": "webpack",
-    "watch": "webpack --watch",
-    "package": "webpack --mode production --devtool hidden-source-map",
-    "compile-tests": "tsc -p . --outDir out",
-    "watch-tests": "tsc -p . -w --outDir out",
-    "pretest": "npm run compile-tests && npm run compile && npm run lint",
-    "lint": "eslint src",
-    "test": "vscode-test"
-  },
-  "devDependencies": {
-    "@types/mocha": "^10.0.10",
-    "@types/mysql": "^2.15.27",
-    "@types/node": "22.x",
-    "@types/vscode": "^1.104.0",
-    "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^2.5.2",
-    "eslint": "^9.39.1",
-    "ts-loader": "^9.5.4",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.48.1",
-    "webpack": "^5.103.0",
-    "webpack-cli": "^6.0.1"
-  },
-  "dependencies": {
-    "@aws-sdk/client-s3": "^3.967.0",
-    "@vscode/codicons": "^0.0.44",
-    "dayjs": "^1.11.19",
-    "jquery": "^3.7.1",
-    "layui": "^2.13.2",
-    "mysql2": "^3.15.3",
-    "redis": "^5.10.0",
-    "sql-formatter": "^15.6.2"
-  }
+    "devDependencies": {
+        "@types/mocha": "^10.0.10",
+        "@types/mysql": "^2.15.27",
+        "@types/node": "22.x",
+        "@types/vscode": "^1.104.0",
+        "@vscode/test-cli": "^0.0.12",
+        "@vscode/test-electron": "^2.5.2",
+        "eslint": "^9.39.1",
+        "ts-loader": "^9.5.4",
+        "typescript": "^5.9.3",
+        "typescript-eslint": "^8.48.1",
+        "webpack": "^5.103.0",
+        "webpack-cli": "^6.0.1"
+    },
+    "dependencies": {
+        "@aws-sdk/client-s3": "^3.967.0",
+        "@vscode/codicons": "^0.0.44",
+        "dayjs": "^1.11.19",
+        "jquery": "^3.7.1",
+        "layui": "^2.13.2",
+        "mysql2": "^3.15.3",
+        "redis": "^5.10.0",
+        "sql-formatter": "^15.6.2"
+    }
 }
