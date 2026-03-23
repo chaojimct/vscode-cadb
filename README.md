@@ -2,6 +2,18 @@
 
 在 VS Code 中管理多种数据源的扩展：MySQL、Redis、OSS，支持 SQL 执行、Notebook 与查询面板。
 
++ 驱动管理
+
+![](https://raw.githubusercontent.com/caoaolong/vscode-cadb/refs/heads/master/example2.png)
+
++ 数据预览
+
+![](https://raw.githubusercontent.com/caoaolong/vscode-cadb/refs/heads/master/example1.gif)
+
++ SQL Notebook
+
+![](https://raw.githubusercontent.com/caoaolong/vscode-cadb/refs/heads/master/example3.gif)
+
 ## 功能特性
 
 - **MySQL**：连接数据库，浏览库/表，执行 SQL、解释 SQL，表数据查看与编辑，复制连接信息
