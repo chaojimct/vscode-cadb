@@ -173,6 +173,35 @@ function findAncestorByType(
   return undefined;
 }
 
+function escapeMySqlId(name: string): string {
+  return name.replace(/`/g, "``");
+}
+
+function parseMySqlUser(label: string): { user: string; host: string } | null {
+  const idx = label.lastIndexOf("@");
+  if (idx <= 0 || idx >= label.length - 1) return null;
+  const user = label.slice(0, idx);
+  const host = label.slice(idx + 1);
+  if (!user || !host) return null;
+  return { user, host };
+}
+
+function getDatasourceNode(node: Datasource): Datasource | undefined {
+  return findAncestorByType(node, "datasource");
+}
+
+function getDatabaseName(node: Datasource): string | null {
+  const dbNode = findAncestorByType(node, "collection");
+  const db = dbNode?.label?.toString() ?? "";
+  return db ? db : null;
+}
+
+function getTableName(node: Datasource): string | null {
+  const tNode = findAncestorByType(node, "document");
+  const t = tNode?.label?.toString() ?? "";
+  return t ? t : null;
+}
+
 /** 从 OSS 树节点解析出 bucket 与完整 key（path） */
 function getOssBucketAndKey(node: Datasource): { bucket: string; key: string } | null {
   const bucketNode = findAncestorByType(node, "collectionType");
@@ -1012,10 +1041,120 @@ export function registerDatasourceCommands(
       );
 
       if (confirm === "删除") {
-        // TODO: 实现具体的删除逻辑
-        vscode.window.showInformationMessage(
-          `TODO: 删除 "${item.label}" 的逻辑待实现`
-        );
+        const dsNode = getDatasourceNode(item) ?? (item.type === "datasource" ? item : undefined);
+        const dbType = dsNode?.data?.dbType;
+        if (dbType !== "mysql") {
+          vscode.window.showWarningMessage("当前仅支持删除 MySQL 数据源相关对象");
+          return;
+        }
+        const loader = dsNode?.dataloader as any;
+        if (!dsNode || !loader) {
+          vscode.window.showErrorMessage("无法获取数据库连接");
+          return;
+        }
+        try {
+          await dsNode.connect();
+          const conn: any = loader.getConnection?.();
+          if (!conn || typeof conn.query !== "function") {
+            throw new Error("无法获取 MySQL 连接");
+          }
+
+          if (item.type === "datasource") {
+            const name = item.label?.toString() ?? "";
+            if (!name) {
+              throw new Error("连接名称为空");
+            }
+            await provider.deleteConnectionRecord(name);
+            try {
+              const dsPath = vscode.Uri.joinPath(provider.context.globalStorageUri, name);
+              await vscode.workspace.fs.delete(dsPath, { recursive: true, useTrash: true });
+            } catch (_) {}
+            provider.refresh();
+            vscode.window.showInformationMessage(`已删除连接 "${name}"`);
+            return;
+          }
+
+          const run = (sql: string) =>
+            new Promise<void>((resolve, reject) => {
+              conn.query(sql, (err: any) => {
+                if (err) reject(err);
+                else resolve();
+              });
+            });
+
+          if (item.type === "collection") {
+            const db = item.label?.toString() ?? "";
+            if (!db) throw new Error("无法获取数据库名");
+            await run(`DROP DATABASE \`${escapeMySqlId(db)}\``);
+            provider.refresh();
+            vscode.window.showInformationMessage(`已删除数据库 "${db}"`);
+            return;
+          }
+
+          if (item.type === "document") {
+            const db = getDatabaseName(item);
+            const table = item.label?.toString() ?? "";
+            if (!db || !table) throw new Error("无法解析库名或表名");
+            await run(`DROP TABLE \`${escapeMySqlId(db)}\`.\`${escapeMySqlId(table)}\``);
+            provider.refresh();
+            vscode.window.showInformationMessage(`已删除表 "${db}.${table}"`);
+            return;
+          }
+
+          if (item.type === "field") {
+            const db = getDatabaseName(item);
+            const table = getTableName(item);
+            const col = item.label?.toString() ?? "";
+            if (!db || !table || !col) throw new Error("无法解析库名/表名/字段名");
+            if (typeof loader.alterColumn !== "function") {
+              throw new Error("当前连接不支持删除字段");
+            }
+            await loader.alterColumn({
+              databaseName: db,
+              tableName: table,
+              operation: "drop",
+              originalName: col,
+            });
+            provider.refresh();
+            vscode.window.showInformationMessage(`已删除字段 "${db}.${table}.${col}"`);
+            return;
+          }
+
+          if (item.type === "index") {
+            const db = getDatabaseName(item);
+            const table = getTableName(item);
+            const idxName = item.label?.toString() ?? "";
+            if (!db || !table || !idxName) throw new Error("无法解析库名/表名/索引名");
+            if (typeof loader.alterIndex !== "function") {
+              throw new Error("当前连接不支持删除索引");
+            }
+            await loader.alterIndex({
+              databaseName: db,
+              tableName: table,
+              operation: "drop",
+              originalName: idxName,
+            });
+            provider.refresh();
+            vscode.window.showInformationMessage(`已删除索引 "${db}.${table}.${idxName}"`);
+            return;
+          }
+
+          if (item.type === "user") {
+            const label = item.label?.toString() ?? "";
+            const parsed = parseMySqlUser(label);
+            if (!parsed) {
+              throw new Error("无法解析用户名与主机");
+            }
+            await run(`DROP USER ${conn.escape(parsed.user)}@${conn.escape(parsed.host)}`);
+            provider.refresh();
+            vscode.window.showInformationMessage(`已删除用户 "${label}"`);
+            return;
+          }
+
+          vscode.window.showWarningMessage(`暂不支持删除该类型节点：${item.type}`);
+        } catch (error) {
+          vscode.window.showErrorMessage(`删除失败: ${toErrorMessage(error)}`);
+        }
       }
     })
   );
