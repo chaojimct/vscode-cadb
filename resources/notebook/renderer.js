@@ -225,7 +225,17 @@ export function activate(context) {
             border-bottom: 1px solid var(--vscode-panel-border);
             margin-bottom: 8px;
             flex-shrink: 0;
+            overflow-x: auto;
+            overflow-y: hidden;
+            white-space: nowrap;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
           `;
+          tabBar.addEventListener('wheel', (e) => {
+            const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+            tabBar.scrollLeft += delta;
+            e.preventDefault();
+          }, { passive: false });
 
           const contentArea = document.createElement('div');
           contentArea.className = 'sql-result-tab-content';
@@ -275,6 +285,15 @@ export function activate(context) {
 
           const results = data.results;
           let selectedIndex = results.length - 1; // 最新（索引最大）
+          const ensureTabVisible = (tabEl) => {
+            if (!tabEl) return;
+            const left = tabEl.offsetLeft;
+            const right = left + tabEl.offsetWidth;
+            const viewLeft = tabBar.scrollLeft;
+            const viewRight = viewLeft + tabBar.clientWidth;
+            if (left < viewLeft) tabBar.scrollLeft = left;
+            else if (right > viewRight) tabBar.scrollLeft = right - tabBar.clientWidth;
+          };
 
           // 最新结果在最左边：按索引从大到小追加 tab
           for (let idx = results.length - 1; idx >= 0; idx--) {
@@ -291,6 +310,7 @@ export function activate(context) {
               border-radius: 4px;
               border: 1px solid transparent;
               transition: background 0.15s;
+              flex: 0 0 auto;
             `;
             if (idx === selectedIndex) {
               tab.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground)';
@@ -307,6 +327,7 @@ export function activate(context) {
               const inner = document.createElement('div');
               renderSingleResult(results[selectedIndex], inner);
               contentArea.appendChild(inner);
+              ensureTabVisible(tab);
             });
             tab.addEventListener('mouseenter', () => {
               if (idx !== selectedIndex) tab.style.backgroundColor = 'var(--vscode-list-hoverBackground)';
@@ -315,6 +336,9 @@ export function activate(context) {
               if (idx !== selectedIndex) tab.style.backgroundColor = '';
             });
             tabBar.appendChild(tab);
+          }
+          if (tabBar.firstElementChild) {
+            ensureTabVisible(tabBar.firstElementChild);
           }
 
           const innerContent = document.createElement('div');

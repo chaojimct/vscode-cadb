@@ -3,7 +3,6 @@
 import * as vscode from "vscode";
 import { DataSourceProvider } from "./provider/database_provider";
 import { Datasource } from "./provider/entity/datasource";
-import { format as formatSql } from "sql-formatter";
 import {
   registerDatasourceCommands,
   registerDatasourceItemCommands,
@@ -27,51 +26,94 @@ import {
   resolveTableDatasource,
 } from "./provider/workspace_symbol_provider";
 import { registerBuiltinDatabaseDrivers } from "./provider/drivers/builtin_drivers";
+import { format as formatSql } from "sql-formatter";
 
-class CadbColorDecorationProvider implements vscode.FileDecorationProvider {
-  private readonly emitter = new vscode.EventEmitter<vscode.Uri | vscode.Uri[]>();
-  readonly onDidChangeFileDecorations = this.emitter.event;
-
-  provideFileDecoration(uri: vscode.Uri): vscode.ProviderResult<vscode.FileDecoration> {
-    if (uri.scheme !== "cadb-color") {
-      return;
-    }
-    const params = new URLSearchParams(uri.query);
-    const color = params.get("color");
-    if (!color) {
-      return;
-    }
-    return new vscode.FileDecoration("●", undefined, new vscode.ThemeColor(color));
-  }
+interface SqlStatementSpan {
+  start: number;
+  end: number;
 }
 
-class SqlDocumentFormattingProvider implements vscode.DocumentFormattingEditProvider {
-  provideDocumentFormattingEdits(
-    document: vscode.TextDocument,
-    options: vscode.FormattingOptions,
-    _token: vscode.CancellationToken
-  ): vscode.ProviderResult<vscode.TextEdit[]> {
-    const text = document.getText();
-    let formatted: string;
-    try {
-      formatted = formatSql(text, {
-        language: "mysql",
-        tabWidth: typeof options.tabSize === "number" ? options.tabSize : 2,
-        useTabs: options.insertSpaces === false,
-      });
-    } catch {
-      return [];
+interface SqlFileDatabaseBinding {
+  datasource: string;
+  database: string;
+  updatedAt: number;
+}
+
+const SQL_FILE_DATABASE_STATE_KEY = "cadb.sqlFileDatabaseBindings";
+
+function parseSqlStatementSpans(text: string): SqlStatementSpan[] {
+  const spans: SqlStatementSpan[] = [];
+  let start = 0;
+  let i = 0;
+  let inString = false;
+  let stringChar = "";
+  let inLineComment = false;
+  let inBlockComment = false;
+
+  while (i < text.length) {
+    const ch = text[i];
+    const next = i + 1 < text.length ? text[i + 1] : "";
+
+    if (inLineComment) {
+      if (ch === "\n") inLineComment = false;
+      i++;
+      continue;
+    }
+    if (inBlockComment) {
+      if (ch === "*" && next === "/") {
+        inBlockComment = false;
+        i += 2;
+        continue;
+      }
+      i++;
+      continue;
     }
 
-    if (formatted === text) {
-      return [];
+    if (!inString && (ch === "-" && next === "-" || ch === "#")) {
+      inLineComment = true;
+      i += ch === "-" ? 2 : 1;
+      continue;
     }
-    // Notebook 单元格上避免 positionAt(length) 与宿主范围不一致
-    const fullRange = document.validateRange(
-      new vscode.Range(0, 0, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER)
-    );
-    return [vscode.TextEdit.replace(fullRange, formatted)];
+    if (!inString && ch === "/" && next === "*") {
+      inBlockComment = true;
+      i += 2;
+      continue;
+    }
+
+    if (ch === "'" || ch === '"' || ch === "`") {
+      if (!inString) {
+        inString = true;
+        stringChar = ch;
+      } else if (stringChar === ch) {
+        const escaped = text[i - 1] === "\\" || next === ch;
+        if (!escaped) {
+          inString = false;
+          stringChar = "";
+        } else if (next === ch) {
+          i++;
+        }
+      }
+      i++;
+      continue;
+    }
+
+    if (!inString && ch === ";") {
+      spans.push({ start, end: i + 1 });
+      start = i + 1;
+    }
+    i++;
   }
+
+  if (start < text.length) {
+    spans.push({ start, end: text.length });
+  }
+  return spans;
+}
+
+function splitSqlStatements(text: string): string[] {
+  return parseSqlStatementSpans(text)
+    .map(span => text.slice(span.start, span.end).trim())
+    .filter(Boolean);
 }
 
 // This method is called when your extension is activated
@@ -82,24 +124,6 @@ export function activate(context: vscode.ExtensionContext) {
   // 创建输出通道用于显示 SQL 执行日志
   const outputChannel = vscode.window.createOutputChannel("CADB SQL");
   context.subscriptions.push(outputChannel);
-  context.subscriptions.push(
-    vscode.window.registerFileDecorationProvider(new CadbColorDecorationProvider())
-  );
-  const sqlFormattingProvider = new SqlDocumentFormattingProvider();
-  // .sql 文件：整档格式化
-  context.subscriptions.push(
-    vscode.languages.registerDocumentFormattingEditProvider(
-      [{ language: "sql", scheme: "file" }],
-      sqlFormattingProvider
-    )
-  );
-  // JSQL Notebook 中的 SQL Cell：支持格式化
-  context.subscriptions.push(
-    vscode.languages.registerDocumentFormattingEditProvider(
-      [{ language: "sql", notebookType: "cadb.sqlNotebook" }],
-      sqlFormattingProvider
-    )
-  );
 
   const provider = new DataSourceProvider(context);
   const treeView = vscode.window.createTreeView("cadb-datasource-tree", {
@@ -162,6 +186,66 @@ export function activate(context: vscode.ExtensionContext) {
   // 数据库管理器（替代 CaEditor，只保留数据库选择功能）
   const databaseManager = new DatabaseManager(provider);
   provider.setDatabaseManager(databaseManager);
+
+  const getSqlFileKey = (document: vscode.TextDocument): string | undefined => {
+    if (document.languageId !== "sql") return undefined;
+    return document.uri.toString();
+  };
+
+  const getSqlFileBindings = (): Record<string, SqlFileDatabaseBinding> => {
+    return context.workspaceState.get<Record<string, SqlFileDatabaseBinding>>(
+      SQL_FILE_DATABASE_STATE_KEY,
+      {}
+    );
+  };
+
+  const persistSelectionForDocument = async (document: vscode.TextDocument): Promise<void> => {
+    const key = getSqlFileKey(document);
+    if (!key) return;
+    const connection = databaseManager.getCurrentConnection();
+    const database = databaseManager.getCurrentDatabase();
+    if (!connection || !database) return;
+    const datasource = connection.label?.toString() ?? "";
+    const databaseName = database.label?.toString() ?? "";
+    if (!datasource || !databaseName) return;
+
+    const bindings = getSqlFileBindings();
+    bindings[key] = {
+      datasource,
+      database: databaseName,
+      updatedAt: Date.now(),
+    };
+    await context.workspaceState.update(SQL_FILE_DATABASE_STATE_KEY, bindings);
+  };
+
+  const persistSelectionForActiveSqlEditor = async (): Promise<void> => {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) return;
+    await persistSelectionForDocument(editor.document);
+  };
+
+  const applyStoredSelectionForDocument = async (document: vscode.TextDocument): Promise<boolean> => {
+    const key = getSqlFileKey(document);
+    if (!key) return false;
+    const bindings = getSqlFileBindings();
+    const saved = bindings[key];
+    if (!saved?.datasource || !saved?.database) return false;
+
+    const currentConnection = databaseManager.getCurrentConnection();
+    const currentDatabase = databaseManager.getCurrentDatabase();
+    const sameAsCurrent =
+      currentConnection?.label?.toString() === saved.datasource &&
+      currentDatabase?.label?.toString() === saved.database;
+    if (sameAsCurrent) return true;
+
+    const ok = await databaseManager.setActiveDatabase(saved.datasource, saved.database);
+    if (!ok) {
+      delete bindings[key];
+      await context.workspaceState.update(SQL_FILE_DATABASE_STATE_KEY, bindings);
+      return false;
+    }
+    return true;
+  };
   
   // 创建数据库状态栏管理器
   const databaseStatusBar = new DatabaseStatusBar(databaseManager);
@@ -174,6 +258,23 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('cadb.selectDatabase', async () => {
       await databaseManager.selectDatabase();
+      await persistSelectionForActiveSqlEditor();
+    })
+  );
+
+  // 数据库切换后，如果当前是 SQL 文件则自动记忆到该文件
+  context.subscriptions.push(
+    databaseManager.onDidChangeDatabase(() => {
+      void persistSelectionForActiveSqlEditor();
+    })
+  );
+
+  // 切换到 SQL 文件时自动恢复该文件上次使用的数据源
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      if (editor?.document.languageId === "sql") {
+        void applyStoredSelectionForDocument(editor.document);
+      }
     })
   );
 
@@ -197,47 +298,6 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.workspace.registerNotebookSerializer('cadb.sqlNotebook', notebookSerializer)
   );
-
-  // 保存 .jsql 前按配置自动格式化所有 SQL 单元格
-  const onWillSaveNotebook = (vscode.workspace as any).onWillSaveNotebookDocument;
-  if (typeof onWillSaveNotebook === "function") {
-    context.subscriptions.push(
-      onWillSaveNotebook.call(vscode.workspace, (e: { notebook: vscode.NotebookDocument; waitUntil: (p: Thenable<void>) => void }) => {
-        if (e.notebook.notebookType !== "cadb.sqlNotebook") return;
-        const enabled = vscode.workspace.getConfiguration("cadb").get<boolean>("sqlNotebook.autoFormat", false);
-        if (!enabled) return;
-        const edit = new vscode.WorkspaceEdit();
-        let hasEdits = false;
-        for (const cell of e.notebook.getCells()) {
-          if (cell.kind !== vscode.NotebookCellKind.Code || cell.document.languageId !== "sql") continue;
-          const doc = cell.document;
-          const text = doc.getText();
-          const opts = vscode.workspace.getConfiguration("editor", doc.uri);
-          const tabSize = opts.get<number>("tabSize", 2);
-          const insertSpaces = opts.get<boolean>("insertSpaces", true);
-          let formatted: string;
-          try {
-            formatted = formatSql(text, {
-              language: "mysql",
-              tabWidth: tabSize,
-              useTabs: !insertSpaces,
-            });
-          } catch {
-            continue;
-          }
-          if (formatted === text) continue;
-          const fullRange = doc.validateRange(
-            new vscode.Range(0, 0, Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER)
-          );
-          edit.replace(doc.uri, fullRange, formatted);
-          hasEdits = true;
-        }
-        if (hasEdits) {
-          e.waitUntil(vscode.workspace.applyEdit(edit).then(() => {}));
-        }
-      })
-    );
-  }
 
   // SQL Notebook 控制器（执行 SQL 代码单元格）
   const notebookController = new SqlNotebookController(
@@ -268,7 +328,12 @@ export function activate(context: vscode.ExtensionContext) {
       const databaseName = metadata?.database;
 
       if (datasourceName && databaseName) {
-        await databaseManager.setActiveDatabase(datasourceName, databaseName);
+        console.log(`[Notebook] 检测到连接信息: ${datasourceName} / ${databaseName}`);
+        // 立即设置数据库状态，确保顶部工具栏/状态栏能回显（不依赖后续展开）
+        const ok = await databaseManager.setActiveDatabase(datasourceName, databaseName);
+        if (ok) {
+          console.log(`[Notebook] 已回显数据库: ${datasourceName} / ${databaseName}`);
+        }
         // 可选：后台尝试用完整节点更新（用于依赖树结构的逻辑）
         try {
           const connections = provider.getConnections();
@@ -441,22 +506,13 @@ export function activate(context: vscode.ExtensionContext) {
     )
   );
 
-  // SQL CodeLens 提供者（仅在 .sql 文件中显示 Run/Explain，Notebook 中不显示）
+  // SQL CodeLens 提供者（在 SQL 语句上方显示 Run 和 Explain）
   const sqlCodeLensProvider = new SqlCodeLensProvider(databaseManager);
-  const sqlCodeLensSelector = [{ language: "sql" }];
   context.subscriptions.push(
     vscode.languages.registerCodeLensProvider(
-      { language: "sql", scheme: "file" },
+      { language: "sql" },
       sqlCodeLensProvider
     )
-  );
-  // 文档内容变更后延迟刷新 CodeLens（格式化后等编辑应用再刷新）
-  context.subscriptions.push(
-    vscode.workspace.onDidChangeTextDocument((e) => {
-      if (e.document.languageId === "sql" && e.document.uri.scheme === "file") {
-        setTimeout(() => sqlCodeLensProvider.refresh(), 80);
-      }
-    })
   );
 
   // SQL 悬浮提示（表名展示 DDL，字段名展示类型、备注等）
@@ -530,12 +586,149 @@ export function activate(context: vscode.ExtensionContext) {
   const sqlExecutor = new SqlExecutor(provider, databaseManager, resultProvider, outputChannel);
   context.subscriptions.push(sqlExecutor);
 
+  const getActiveSqlEditor = (): vscode.TextEditor | undefined => {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) return undefined;
+    if (editor.document.languageId !== "sql") return undefined;
+    return editor;
+  };
+
+  const executeSqlStatements = async (document: vscode.TextDocument, sqlText: string): Promise<void> => {
+    await applyStoredSelectionForDocument(document);
+    const statements = splitSqlStatements(sqlText);
+    if (statements.length === 0) {
+      vscode.window.showWarningMessage("没有可执行的 SQL 语句");
+      return;
+    }
+    for (const stmt of statements) {
+      await sqlExecutor.executeSql(stmt, document);
+    }
+    await persistSelectionForDocument(document);
+    sqlCodeLensProvider.refresh();
+  };
+
+  // 运行当前语句（按分号拆分，取光标所在语句）
+  context.subscriptions.push(
+    vscode.commands.registerCommand("cadb.sql.runCurrent", async () => {
+      const editor = getActiveSqlEditor();
+      if (!editor) return;
+      await applyStoredSelectionForDocument(editor.document);
+      const text = editor.document.getText();
+      const spans = parseSqlStatementSpans(text);
+      if (spans.length === 0) {
+        vscode.window.showWarningMessage("没有可执行的 SQL 语句");
+        return;
+      }
+      const cursorOffset = editor.document.offsetAt(editor.selection.active);
+      const currentSpan =
+        spans.find(s => cursorOffset >= s.start && cursorOffset <= s.end) ??
+        spans.find(s => text.slice(s.start, s.end).trim().length > 0);
+      if (!currentSpan) {
+        vscode.window.showWarningMessage("没有可执行的 SQL 语句");
+        return;
+      }
+      const sql = text.slice(currentSpan.start, currentSpan.end).trim();
+      if (!sql) {
+        vscode.window.showWarningMessage("当前语句为空");
+        return;
+      }
+      await sqlExecutor.executeSql(sql, editor.document);
+      await persistSelectionForDocument(editor.document);
+      sqlCodeLensProvider.refresh();
+    })
+  );
+
+  // 运行当前行
+  context.subscriptions.push(
+    vscode.commands.registerCommand("cadb.sql.runLine", async (uri?: string, line?: number) => {
+      const editor = vscode.window.activeTextEditor;
+      const targetUri =
+        typeof uri === "string" && uri.length > 0
+          ? vscode.Uri.parse(uri)
+          : editor?.document.uri;
+      if (!targetUri) return;
+
+      const document = await vscode.workspace.openTextDocument(targetUri);
+      await applyStoredSelectionForDocument(document);
+      const targetLine =
+        typeof line === "number" ? line : editor?.document.uri.toString() === targetUri.toString()
+          ? editor.selection.active.line
+          : 0;
+      if (targetLine < 0 || targetLine >= document.lineCount) {
+        vscode.window.showWarningMessage("当前行无效");
+        return;
+      }
+      const sql = document.lineAt(targetLine).text.trim();
+      if (!sql || sql.startsWith("--") || sql.startsWith("/*")) {
+        vscode.window.showWarningMessage("当前行没有可执行 SQL");
+        return;
+      }
+      await sqlExecutor.executeSql(sql, document);
+      await persistSelectionForDocument(document);
+      sqlCodeLensProvider.refresh();
+    })
+  );
+
+  // 运行选中 SQL（支持多条）
+  context.subscriptions.push(
+    vscode.commands.registerCommand("cadb.sql.runSelection", async () => {
+      const editor = getActiveSqlEditor();
+      if (!editor) return;
+      const selected = editor.document.getText(editor.selection).trim();
+      if (!selected) {
+        vscode.window.showWarningMessage("请先选中要执行的 SQL");
+        return;
+      }
+      await executeSqlStatements(editor.document, selected);
+    })
+  );
+
+  // 运行全文 SQL（支持多条）
+  context.subscriptions.push(
+    vscode.commands.registerCommand("cadb.sql.runAll", async () => {
+      const editor = getActiveSqlEditor();
+      if (!editor) return;
+      await executeSqlStatements(editor.document, editor.document.getText());
+    })
+  );
+
+  // SQL 文档格式化（file/untitled）
+  const sqlFormatterProvider: vscode.DocumentFormattingEditProvider = {
+    provideDocumentFormattingEdits(document, options) {
+      try {
+        const formatted = formatSql(document.getText(), {
+          language: "mysql",
+          tabWidth: Number(options.tabSize) || 2,
+          useTabs: !options.insertSpaces,
+          keywordCase: "upper",
+        } as any);
+        const fullRange = new vscode.Range(
+          document.positionAt(0),
+          document.positionAt(document.getText().length)
+        );
+        return [vscode.TextEdit.replace(fullRange, formatted)];
+      } catch (error) {
+        vscode.window.showErrorMessage(
+          `SQL 格式化失败: ${error instanceof Error ? error.message : String(error)}`
+        );
+        return [];
+      }
+    },
+  };
+  context.subscriptions.push(
+    vscode.languages.registerDocumentFormattingEditProvider(
+      [{ language: "sql", scheme: "file" }, { language: "sql", scheme: "untitled" }],
+      sqlFormatterProvider
+    )
+  );
+
   // 注册 SQL 执行命令
   context.subscriptions.push(
     vscode.commands.registerCommand(
       "cadb.sql.run",
       async (uri: string, range: vscode.Range) => {
         const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(uri));
+        await applyStoredSelectionForDocument(document);
         const sql = document.getText(range).trim();
         if (sql) {
           // 检查是否选择了数据库
@@ -567,6 +760,7 @@ export function activate(context: vscode.ExtensionContext) {
           }
 
           await sqlExecutor.executeSql(sql, document);
+          await persistSelectionForDocument(document);
           // 刷新 CodeLens
           sqlCodeLensProvider.refresh();
         }
@@ -580,6 +774,7 @@ export function activate(context: vscode.ExtensionContext) {
       "cadb.sql.explain",
       async (uri: string, range: vscode.Range) => {
         const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(uri));
+        await applyStoredSelectionForDocument(document);
         const sql = document.getText(range).trim();
         if (sql) {
           // 检查是否选择了数据库
@@ -611,6 +806,7 @@ export function activate(context: vscode.ExtensionContext) {
           }
 
           await sqlExecutor.explainSql(sql, document);
+          await persistSelectionForDocument(document);
           // 刷新 CodeLens
           sqlCodeLensProvider.refresh();
         }

@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import { ensureSelectRowLimit } from './sql_limit_guard';
 import { DataSourceProvider } from '../database_provider';
 import { Datasource } from '../entity/datasource';
 import type { DatabaseManager } from './database_manager';
@@ -202,16 +201,11 @@ export class SqlNotebookController {
       if (!finalConnection || !finalDatabase) return;
 
       const connection = await this._getConnection(datasourceName, databaseName);
-      const rawSql = cell.document.getText().trim();
+      const sql = cell.document.getText().trim();
 
-      if (!rawSql) {
+      if (!sql) {
         return;
       }
-
-      const cadbCfg = vscode.workspace.getConfiguration('cadb');
-      const autoLimit = cadbCfg.get<boolean>('query.autoAppendSelectLimit', true);
-      const limitRows = cadbCfg.get<number>('grid.pageSize', 2000);
-      const sql = autoLimit ? ensureSelectRowLimit(rawSql, limitRows) : rawSql;
 
       const result = await new Promise<any>((resolve, reject) => {
         connection.query(sql, (err: any, results: any) => {
@@ -433,6 +427,8 @@ export class SqlNotebookController {
       ]);
       
       await vscode.workspace.applyEdit(edit);
+      
+      console.log(`[Notebook] 已保存连接信息: ${datasource} / ${database}`);
     } catch (error) {
       console.error('[Notebook] 保存元数据失败:', error);
     }

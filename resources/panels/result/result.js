@@ -31,6 +31,7 @@ layui.use(["tabs", "layer"], function () {
     
     // 初始化自定义右键菜单
     initContextMenu();
+    bindHeaderHorizontalScroll();
     
     // 为已存在的标签（欢迎页）绑定右键菜单
     setTimeout(() => {
@@ -43,6 +44,77 @@ layui.use(["tabs", "layer"], function () {
         });
       });
     }, 100);
+  }
+
+  /**
+   * 标签栏采用文件标签式滚动：隐藏滚动条，滚轮横向滚动
+   */
+  function bindHeaderHorizontalScroll() {
+    const $header = $(`#${TABS_ID} .layui-tabs-header`);
+    $header.off("wheel").on("wheel", function (e) {
+      const originalEvent = e.originalEvent;
+      if (!originalEvent) return;
+      const delta = Math.abs(originalEvent.deltaX) > Math.abs(originalEvent.deltaY)
+        ? originalEvent.deltaX
+        : originalEvent.deltaY;
+      this.scrollLeft += delta;
+      e.preventDefault();
+    });
+  }
+
+  /**
+   * 将标签移动到欢迎页右侧（最左结果位）
+   */
+  function moveTabToLeft(tabId) {
+    const $header = $(`#${TABS_ID} .layui-tabs-header`);
+    const $targetTab = $header.children(`li[lay-id="${tabId}"]`);
+    if ($targetTab.length === 0) return;
+    const targetIndexBeforeMove = $header.children("li").index($targetTab);
+
+    const $welcomeTab = $header.children(`li[lay-id="welcome"]`);
+    if ($welcomeTab.length > 0) {
+      $welcomeTab.after($targetTab);
+    } else {
+      $header.prepend($targetTab);
+    }
+
+    const $body = $(`#${TABS_ID} .layui-tabs-body`);
+    const $targetItem = $body.children(`.layui-tabs-item[lay-id="${tabId}"], .layui-tab-item[lay-id="${tabId}"]`);
+    if ($targetItem.length > 0) {
+      const $welcomeItem = $body.children(`.layui-tabs-item, .layui-tab-item`).first();
+      if ($welcomeItem.length > 0) {
+        $welcomeItem.after($targetItem);
+      } else {
+        $body.prepend($targetItem);
+      }
+    } else {
+      const $items = $body.children(`.layui-tabs-item, .layui-tab-item`);
+      const $itemByIndex = $items.eq(targetIndexBeforeMove);
+      const $welcomeItem = $items.first();
+      if ($itemByIndex.length > 0 && $welcomeItem.length > 0 && !$itemByIndex.is($welcomeItem)) {
+        $welcomeItem.after($itemByIndex);
+      }
+    }
+  }
+
+  /**
+   * 激活后确保标签可见
+   */
+  function ensureTabVisible(tabId) {
+    const header = $(`#${TABS_ID} .layui-tabs-header`).get(0);
+    const tab = $(`#${TABS_ID} .layui-tabs-header>li[lay-id="${tabId}"]`).get(0);
+    if (!header || !tab) return;
+
+    const tabLeft = tab.offsetLeft;
+    const tabRight = tabLeft + tab.offsetWidth;
+    const viewLeft = header.scrollLeft;
+    const viewRight = viewLeft + header.clientWidth;
+
+    if (tabLeft < viewLeft) {
+      header.scrollLeft = tabLeft;
+    } else if (tabRight > viewRight) {
+      header.scrollLeft = tabRight - header.clientWidth;
+    }
   }
 
   /**
@@ -309,6 +381,7 @@ layui.use(["tabs", "layer"], function () {
       icon,
       closable = true,
       pinned = false,
+      insertToLeft = true,
     } = options;
     const tabId = id || `tab-${Date.now()}`;
     
@@ -342,6 +415,12 @@ layui.use(["tabs", "layer"], function () {
           const layId = $(this).attr("lay-id");
           showContextMenu(layId, e.clientX, e.clientY);
         });
+
+        if (insertToLeft) {
+          moveTabToLeft(tabId);
+        }
+        tabs.change(TABS_ID, tabId);
+        ensureTabVisible(tabId);
 
         // 显示 tabs 容器
         $(`#${TABS_ID}`).removeClass("layui-hide-v");
@@ -526,6 +605,7 @@ layui.use(["tabs", "layer"], function () {
           icon: "&#xe65b;",
           pinned: pinned || false,
           closable: true,
+          insertToLeft: true,
         });
         // 保存历史供下次恢复
         if (vscode) {
@@ -545,6 +625,7 @@ layui.use(["tabs", "layer"], function () {
           icon: type === "error" ? "&#xe69c;" : "&#xe65b;",
           pinned: pinned || false,
           closable: true,
+          insertToLeft: true,
         });
         if (vscode) {
           vscode.postMessage({ command: "saveHistory", tabId: id, title, text, type, pinned });
@@ -563,6 +644,7 @@ layui.use(["tabs", "layer"], function () {
               content: content,
               pinned: tab.pinned || false,
               closable: true,
+              insertToLeft: true,
             });
           } else if (tab.type === "message") {
             const content = createMessageContent(tab.text || "", tab.messageType || "info");
@@ -573,6 +655,7 @@ layui.use(["tabs", "layer"], function () {
               icon: tab.type === "error" ? "&#xe69c;" : "&#xe65b;",
               pinned: tab.pinned || false,
               closable: true,
+              insertToLeft: true,
             });
           }
         });

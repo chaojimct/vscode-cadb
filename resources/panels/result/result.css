@@ -57,12 +57,21 @@ body {
   overflow-y: hidden;
   height: 30px;
   min-height: 30px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+.layui-tabs-scroll {
+  padding: 0 !important;
 }
 
 /* Tab 标题滚动条 */
 .layui-tab-title::-webkit-scrollbar,
 .layui-tabs-header::-webkit-scrollbar {
-  height: 2px;
+  display: none;
 }
 
 .layui-tab-title::-webkit-scrollbar-track,
@@ -102,6 +111,7 @@ body {
   min-width: 80px;
   max-width: 180px;
   user-select: none;
+  flex-shrink: 0;
 }
 
 /* Tab 悬停效果 */
@@ -507,6 +517,35 @@ body {
 
 .welcome-content > div > div .layui-icon {
   flex-shrink: 0;
+}
+
+/* 隐藏标签栏左右箭头控件（Layui 在溢出时注入） */
+.layui-tab-bar,
+.layui-tabs-bar,
+.layui-tabs-control,
+.layui-tabs-control-prev,
+.layui-tabs-control-next,
+.layui-tab-prev,
+.layui-tab-next {
+  display: none !important;
+}
+
+/* 清理 overflow 模式下为左右控制区预留的空白 */
+.layui-tabs-overflow .layui-tab-title,
+.layui-tabs-overflow .layui-tabs-header,
+.layui-tabs[overflow] .layui-tab-title,
+.layui-tabs[overflow] .layui-tabs-header {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+.layui-tab-title::before,
+.layui-tab-title::after,
+.layui-tabs-header::before,
+.layui-tabs-header::after {
+  display: none !important;
 }
 
 

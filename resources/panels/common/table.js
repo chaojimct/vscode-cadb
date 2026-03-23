@@ -143,6 +143,7 @@ class DatabaseTableData {
         resizable: true,
         filter: true,
         editable: true,
+        maxWidth: 220,
         valueFormatter: (params) => {
           const v = params.value;
           if (v == null) return "";
@@ -247,10 +248,9 @@ class DatabaseTableData {
       const colDef = {
         field: c.field,
         headerName: (c.headerName != null ? c.headerName : c.field.toUpperCase()),
-        ...(c.comment != null && String(c.comment).trim() !== "" && { headerTooltip: String(c.comment) }),
         width: c.width != null ? c.width : 120,
         minWidth: c.minWidth != null ? c.minWidth : 60,
-        ...(c.maxWidth != null && { maxWidth: c.maxWidth }),
+        maxWidth: c.maxWidth != null ? c.maxWidth : 220,
         ...this._getFilterConfig(c, type),
         ...this._getComparatorConfig(c, type),
         // 透传 AG Grid 列扩展配置（如 cellEditor、cellEditorPopup 等）
@@ -746,59 +746,6 @@ class DatabaseTableData {
 
   clearFilter() {
     if (this.gridApi) this.gridApi.setFilterModel(null);
-  }
-
-  /**
-   * 设置列是否在表格中显示
-   * 显示时将该列追加到当前所有列的末尾（右侧），隐藏时仅改显隐不改变其他列顺序。
-   */
-  setColumnVisible(field, visible) {
-    if (!this.gridApi) return;
-    try {
-      if (visible && typeof this.gridApi.getColumnState === "function" && typeof this.gridApi.applyColumnState === "function") {
-        const state = this.gridApi.getColumnState();
-        if (Array.isArray(state) && state.length > 0) {
-          const idx = state.findIndex((c) => c.colId === field);
-          if (idx >= 0) {
-            const one = { ...state[idx], hide: false };
-            const rest = state.filter((_, i) => i !== idx);
-            const newState = [...rest, one];
-            this.gridApi.applyColumnState({ state: newState, applyOrder: true });
-            return;
-          }
-        }
-      }
-      if (typeof this.gridApi.setColumnVisible === "function") {
-        this.gridApi.setColumnVisible(field, visible);
-        if (visible && typeof this.gridApi.moveColumn === "function") {
-          const cols = this.gridApi.getAllGridColumns?.() ?? [];
-          const toIndex = cols.length - 1;
-          if (toIndex > 0) this.gridApi.moveColumn(field, toIndex);
-        }
-        return;
-      }
-      if (typeof this.gridApi.applyColumnState === "function") {
-        this.gridApi.applyColumnState({ state: [{ colId: field, hide: !visible }], applyOrder: true });
-      }
-    } catch (_) {}
-  }
-
-  /**
-   * 获取列是否显示
-   * 参考：Column Reference - Display - isVisible() https://www.ag-grid.com/javascript-data-grid/column-object/
-   */
-  getColumnVisible(field) {
-    if (!this.gridApi) return true;
-    try {
-      const col = this.gridApi.getColumn(field);
-      if (col && typeof col.isVisible === "function") return col.isVisible();
-      const state = this.gridApi.getColumnState && this.gridApi.getColumnState();
-      if (Array.isArray(state)) {
-        const s = state.find((c) => c.colId === field);
-        return s ? s.hide !== true : true;
-      }
-    } catch (_) {}
-    return true;
   }
 
   setSort(field, dir) {
