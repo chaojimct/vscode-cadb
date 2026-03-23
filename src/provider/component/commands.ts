@@ -23,7 +23,7 @@ import {
   getDriverOptionsForNewConnection,
   getDriversManagementPayload,
   isDriverEnabled,
-  setEnabledDriverIds,
+  setDriverEnabled,
 } from "../drivers/enabled_store";
 
 /**
@@ -1557,22 +1557,24 @@ export function registerDatasourceCommands(
       };
       sendLoad();
       panel.webview.onDidReceiveMessage(async (message) => {
-        if (message.command === "saveDrivers") {
-          const ids = Array.isArray(message.enabledIds)
-            ? message.enabledIds.map((x: unknown) => String(x))
-            : [];
-          if (ids.length === 0) {
-            postWebviewStatus(panel.webview, {
-              success: false,
-              message: "请至少启用一种数据库驱动",
-            });
+        if (message.command === "setDriverEnabled") {
+          const id = String((message as { id?: string }).id ?? "").trim();
+          const enabled = !!(message as { enabled?: boolean }).enabled;
+          if (!id) {
             return;
           }
-          await setEnabledDriverIds(provider.context, ids);
-          postWebviewStatus(panel.webview, {
-            success: true,
-            message: "✔️ 已保存驱动设置",
-          });
+          const r = await setDriverEnabled(provider.context, id, enabled);
+          if (!r.ok) {
+            postWebviewStatus(panel.webview, {
+              success: false,
+              message: r.message ?? "操作失败",
+            });
+          } else {
+            postWebviewStatus(panel.webview, {
+              success: true,
+              message: enabled ? "✔️ 已安装（启用）驱动" : "✔️ 已卸载（停用）驱动",
+            });
+          }
           sendLoad();
         }
       });

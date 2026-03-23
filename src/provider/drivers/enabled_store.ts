@@ -4,6 +4,7 @@ import {
   listRegisteredDatabaseDrivers,
 } from "./registry";
 import type { DriverSelectOption } from "./types";
+import { resolveNpmPackageVersions } from "./package_versions";
 
 const ENABLED_DRIVER_IDS_KEY = "cadb.enabledDriverIds";
 
@@ -36,6 +37,33 @@ export async function setEnabledDriverIds(
   const registered = new Set(allRegisteredIds());
   const next = ids.filter((id) => registered.has(id));
   await context.globalState.update(ENABLED_DRIVER_IDS_KEY, next);
+}
+
+/**
+ * 启用或停用单个驱动并立即持久化；至少保留一种已启用驱动
+ */
+export async function setDriverEnabled(
+  context: vscode.ExtensionContext,
+  id: string,
+  enabled: boolean
+): Promise<{ ok: boolean; message?: string }> {
+  const registered = allRegisteredIds();
+  const regSet = new Set(registered);
+  if (!regSet.has(id)) {
+    return { ok: false, message: "未知驱动类型" };
+  }
+  const current = new Set(getEnabledDriverIds(context));
+  if (enabled) {
+    current.add(id);
+  } else {
+    current.delete(id);
+  }
+  const next = registered.filter((x) => current.has(x));
+  if (next.length === 0) {
+    return { ok: false, message: "至少需要启用一种数据库驱动" };
+  }
+  await context.globalState.update(ENABLED_DRIVER_IDS_KEY, next);
+  return { ok: true };
 }
 
 export function isDriverEnabled(
@@ -97,13 +125,19 @@ export function getDriversManagementPayload(context: vscode.ExtensionContext): {
   description: string;
   enabled: boolean;
   marketplaceExtensionId?: string;
+  packages: { name: string; version: string }[];
 }[] {
   const enabled = new Set(getEnabledDriverIds(context));
+  const extPath = context.extensionPath;
   return listRegisteredDatabaseDrivers().map((d) => ({
     id: d.id,
     displayName: d.displayName,
     description: d.description ?? "",
     enabled: enabled.has(d.id),
     marketplaceExtensionId: d.marketplaceExtensionId,
+    packages:
+      d.npmDependencyNames && d.npmDependencyNames.length > 0
+        ? resolveNpmPackageVersions(extPath, d.npmDependencyNames)
+        : [],
   }));
 }

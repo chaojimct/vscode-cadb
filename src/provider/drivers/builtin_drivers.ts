@@ -24,6 +24,7 @@ function registerMysql(): void {
     id: "mysql",
     displayName: "MySQL",
     description: "MySQL / MariaDB 等兼容协议",
+    npmDependencyNames: ["mysql2", "mysql"],
     capabilities: {
       createDatabase: true,
       sqlExecutionTarget: true,
@@ -67,6 +68,7 @@ function registerRedis(): void {
     id: "redis",
     displayName: "Redis",
     description: "Redis 键值与数据结构",
+    npmDependencyNames: ["redis"],
     capabilities: { createDatabase: false, sqlExecutionTarget: false },
     applyPresentation(treeItem: Datasource, input: DatasourceInputData) {
       treeItem.description = `${input.host}:${input.port}`;
@@ -85,6 +87,7 @@ function registerOss(): void {
     id: "oss",
     displayName: "OSS",
     description: "对象存储（S3 兼容等）",
+    npmDependencyNames: ["@aws-sdk/client-s3"],
     capabilities: { createDatabase: false, sqlExecutionTarget: false },
     applyPresentation(treeItem: Datasource, input: DatasourceInputData) {
       treeItem.description = `${input.bucket ?? ""}`;

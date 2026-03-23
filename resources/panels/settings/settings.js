@@ -167,45 +167,89 @@ function initDatasourceForm(data = {}, driverOptionsFromHost) {
 }
 
 /**
- * 数据库驱动管理（启用/禁用，影响新建连接可选类型）
+ * 数据库驱动管理（安装=启用 / 卸载=停用，立即生效）
  */
 function initDriversForm(drivers) {
   $("#pageTitle").text("数据库驱动");
   $("#pageSubtitle").text(
-    "勾选要在「新建连接」中出现的类型。后续可通过独立扩展包注册更多驱动到此列表。"
+    "「安装」启用驱动并出现在新建连接中；「卸载」停用驱动。操作立即保存。"
   );
   dynamicForm = null;
   const list = Array.isArray(drivers) ? drivers : [];
-  let html = '<div class="drivers-manage layui-form">';
+  let html = '<div class="drivers-manage">';
   list.forEach((d) => {
     const id = escapeHtml(d.id);
-    const checked = d.enabled ? " checked" : "";
+    const rawId = d.id;
     const desc = d.description ? escapeHtml(d.description) : "";
-    const hint = desc ? ` title="${desc}"` : "";
-    html += `<div class="driver-row">`;
-    html += `<input type="checkbox" name="driverEnable" value="${id}" id="drv-${id}" lay-skin="primary"${checked}${hint}/>`;
-    html += `<label for="drv-${id}" class="driver-label">${escapeHtml(d.displayName)}`;
-    html += ` <span class="driver-id">(${id})</span></label>`;
-    if (d.marketplaceExtensionId) {
-      html += `<div class="driver-marketplace">${escapeHtml(d.marketplaceExtensionId)}</div>`;
+    const statusClass = d.enabled ? "is-on" : "is-off";
+    const statusText = d.enabled ? "已安装" : "未安装";
+
+    let pkgsHtml = "";
+    const pkgs = Array.isArray(d.packages) ? d.packages : [];
+    if (pkgs.length > 0) {
+      pkgsHtml += '<ul class="driver-packages__list">';
+      pkgs.forEach((p) => {
+        const pn = escapeHtml(p.name);
+        const pv = escapeHtml(p.version);
+        pkgsHtml += `<li><code class="driver-pkg-name">${pn}</code><span class="driver-pkg-ver">${pv}</span></li>`;
+      });
+      pkgsHtml += "</ul>";
+    } else {
+      pkgsHtml = '<p class="driver-packages__empty">未声明 npm 依赖包</p>';
     }
+
+    const installDisabled = d.enabled ? " disabled" : "";
+    const uninstallDisabled = !d.enabled ? " disabled" : "";
+
+    html += `<article class="driver-card" data-driver-id="${escapeHtml(rawId)}">`;
+    html += '<div class="driver-card__main">';
+    html += `<div class="driver-card__head">`;
+    html += `<h2 class="driver-card__title">${escapeHtml(d.displayName)}`;
+    html += ` <span class="driver-card__id">${id}</span></h2>`;
+    html += `<span class="driver-card__status ${statusClass}">${statusText}</span>`;
     html += `</div>`;
+    if (desc) {
+      html += `<p class="driver-card__desc">${desc}</p>`;
+    }
+    if (d.marketplaceExtensionId) {
+      html += `<p class="driver-card__marketplace">扩展：<code>${escapeHtml(
+        d.marketplaceExtensionId
+      )}</code></p>`;
+    }
+    html += `<div class="driver-packages"><div class="driver-packages__label">NPM 包</div>${pkgsHtml}</div>`;
+    html += `</div>`;
+    html += `<div class="driver-card__actions">`;
+    html += `<button type="button" class="driver-btn driver-btn-install"${installDisabled} data-driver-action="install" data-driver-id="${escapeHtml(
+      rawId
+    )}" title="启用此驱动">`;
+    html += `<i class="codicon codicon-download" aria-hidden="true"></i><span>安装</span></button>`;
+    html += `<button type="button" class="driver-btn driver-btn-uninstall"${uninstallDisabled} data-driver-action="uninstall" data-driver-id="${escapeHtml(
+      rawId
+    )}" title="停用此驱动">`;
+    html += `<i class="codicon codicon-trash" aria-hidden="true"></i><span>卸载</span></button>`;
+    html += `</div></article>`;
   });
   html += "</div>";
-  html +=
-    '<div class="drivers-actions" style="margin-top: 20px;"><button type="button" class="layui-btn" id="drivers-save">保存</button></div>';
   $("#formContainer").html(html);
-  if (typeof layui !== "undefined" && layui.form) {
-    layui.form.render("checkbox");
-  }
-  $("#drivers-save")
-    .off("click")
-    .on("click", () => {
-      const enabledIds = [];
-      $('input[name="driverEnable"]:checked').each(function () {
-        enabledIds.push($(this).val());
-      });
-      vscode.postMessage({ command: "saveDrivers", enabledIds });
+
+  $("#formContainer")
+    .off("click.driversManage")
+    .on("click.driversManage", "[data-driver-action]", function (e) {
+      e.preventDefault();
+      const $btn = $(this);
+      if ($btn.prop("disabled")) {
+        return;
+      }
+      const action = $btn.attr("data-driver-action");
+      const driverId = $btn.attr("data-driver-id");
+      if (!driverId) {
+        return;
+      }
+      if (action === "install") {
+        vscode.postMessage({ command: "setDriverEnabled", id: driverId, enabled: true });
+      } else if (action === "uninstall") {
+        vscode.postMessage({ command: "setDriverEnabled", id: driverId, enabled: false });
+      }
     });
 }
 

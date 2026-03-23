@@ -13,6 +13,11 @@ export interface RegisteredDatabaseDriver {
   readonly capabilities: DriverCapabilities;
   /** 可选：独立驱动扩展的 ID，设置页可提示「去市场安装」 */
   readonly marketplaceExtensionId?: string;
+  /**
+   * 本驱动在扩展 package.json dependencies 中对应的 npm 包名（可多个），
+   * 用于驱动管理页展示包名与版本
+   */
+  readonly npmDependencyNames?: readonly string[];
   createDataloader(treeItem: Datasource, input: DatasourceInputData): Dataloader;
   /** 根连接节点 datasource 的图标与描述 */
   applyPresentation(treeItem: Datasource, input: DatasourceInputData): void;

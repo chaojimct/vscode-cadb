@@ -1,31 +1,175 @@
 /* 统一配置页面特殊样式 */
 
-.drivers-manage .driver-row {
+/* ---------- 数据库驱动管理（卡片） ---------- */
+
+.drivers-manage {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 8px 12px;
-  margin-bottom: 12px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-border));
+  flex-direction: column;
+  gap: 12px;
+  max-width: 920px;
 }
 
-.drivers-manage .driver-label {
-  flex: 1;
-  min-width: 120px;
+.driver-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0;
+  border: 1px solid var(--vscode-widget-border, var(--vscode-border));
+  border-radius: 6px;
+  background: var(--vscode-editorWidget-background, var(--vscode-sideBar-background));
+  overflow: hidden;
+}
+
+.driver-card__main {
+  flex: 1 1 260px;
+  min-width: 0;
+  padding: 14px 16px;
+}
+
+.driver-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 6px;
+}
+
+.driver-card__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
   color: var(--vscode-foreground);
 }
 
-.drivers-manage .driver-id {
-  opacity: 0.75;
-  font-size: 0.9em;
+.driver-card__id {
+  font-weight: 400;
+  opacity: 0.7;
+  font-size: 13px;
 }
 
-.drivers-manage .driver-marketplace {
-  width: 100%;
+.driver-card__status {
   font-size: 12px;
-  opacity: 0.8;
-  margin-left: 24px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.driver-card__status.is-on {
+  color: var(--vscode-gitDecoration-addedResourceForeground, var(--vscode-testing-iconPassed));
+  background: var(--vscode-inputValidation-infoBackground, rgba(0, 120, 80, 0.12));
+}
+
+.driver-card__status.is-off {
+  color: var(--vscode-descriptionForeground);
+  background: var(--vscode-input-background, rgba(128, 128, 128, 0.15));
+}
+
+.driver-card__desc {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--vscode-descriptionForeground);
+  line-height: 1.45;
+}
+
+.driver-card__marketplace {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.driver-packages__label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 6px;
+}
+
+.driver-packages__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.driver-packages__list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 12px;
+  padding: 4px 0;
+  font-size: 13px;
+  border-top: 1px solid var(--vscode-widget-border, rgba(128, 128, 128, 0.2));
+}
+
+.driver-packages__list li:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.driver-pkg-name {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 12px;
+  color: var(--vscode-textPreformat-foreground, var(--vscode-foreground));
+  background: var(--vscode-textCodeBlock-background, rgba(128, 128, 128, 0.12));
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.driver-pkg-ver {
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+}
+
+.driver-packages__empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.driver-card__actions {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 16px;
+  border-left: 1px solid var(--vscode-widget-border, var(--vscode-border));
+  background: var(--vscode-sideBar-background, rgba(0, 0, 0, 0.03));
+  min-width: 120px;
+}
+
+.driver-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  border: 1px solid var(--vscode-button-border, var(--vscode-contrastBorder, transparent));
+  border-radius: 4px;
+  cursor: pointer;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+}
+
+.driver-btn:hover:not(:disabled) {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.driver-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.driver-btn-install .codicon {
+  font-size: 14px;
+}
+
+.driver-btn-uninstall .codicon {
+  font-size: 14px;
 }
 
 /* 权限复选框网格布局（用于用户配置） */
