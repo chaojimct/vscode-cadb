@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { driverSupportsSqlExecution } from "../drivers/registry";
 import { DataSourceProvider } from "../database_provider";
 import { Datasource } from "../entity/datasource";
 
@@ -82,12 +83,12 @@ export class DatabaseManager {
     interface ConnectionQuickPickItem extends vscode.QuickPickItem {
       datasource: Datasource;
     }
-    const connectionItems: ConnectionQuickPickItem[] = connections.filter(e => {
-			if (docType === 'sql') {
-				return e.data.dbType === "mysql";
-			}
-			return false;
-		}).map(
+    const connectionItems: ConnectionQuickPickItem[] = connections.filter((e) => {
+      if (docType === "sql") {
+        return driverSupportsSqlExecution(e.data.dbType);
+      }
+      return false;
+    }).map(
       (conn) => ({
         label: `$(plug) ${conn.label}`,
         description: typeof conn.tooltip === "string" ? conn.tooltip : "",

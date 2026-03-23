@@ -69,6 +69,11 @@
         "icon": "$(add)"
       },
       {
+        "command": "cadb.drivers.manage",
+        "title": "管理数据库驱动",
+        "icon": "$(extensions)"
+      },
+      {
         "command": "cadb.datasource.refresh",
         "title": "刷新",
         "icon": "$(refresh)"
@@ -266,6 +271,11 @@
           "command": "cadb.notebook.new",
           "when": "view == datasource",
           "group": "navigation"
+        },
+        {
+          "command": "cadb.drivers.manage",
+          "when": "view == datasource",
+          "group": "navigation@9"
         }
       ],
       "view/item/context": [

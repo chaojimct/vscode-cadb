@@ -1,5 +1,33 @@
 /* 统一配置页面特殊样式 */
 
+.drivers-manage .driver-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-border));
+}
+
+.drivers-manage .driver-label {
+  flex: 1;
+  min-width: 120px;
+  color: var(--vscode-foreground);
+}
+
+.drivers-manage .driver-id {
+  opacity: 0.75;
+  font-size: 0.9em;
+}
+
+.drivers-manage .driver-marketplace {
+  width: 100%;
+  font-size: 12px;
+  opacity: 0.8;
+  margin-left: 24px;
+}
+
 /* 权限复选框网格布局（用于用户配置） */
 .permission-grid {
   display: grid;

@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import type { DatabaseManager } from "./database_manager";
 import { DataSourceProvider } from "../database_provider";
 import { Datasource } from "../entity/datasource";
+import { driverSupportsSchemaHover } from "../drivers/registry";
 
 interface ConnectionCache {
   connection: any;
@@ -335,8 +336,8 @@ export class SqlHoverProvider implements vscode.HoverProvider {
     if (!this._provider) throw new Error("Provider 未设置");
     const connData = this._provider.getConnections().find((ds) => ds.name === datasourceName);
     if (!connData) throw new Error(`找不到数据源: ${datasourceName}`);
-    if (connData.dbType && connData.dbType !== "mysql") {
-      throw new Error("悬浮提示仅支持 MySQL 数据源");
+    if (!driverSupportsSchemaHover(connData.dbType)) {
+      throw new Error("悬浮提示仅支持已声明模式元数据能力的数据源（如 MySQL）");
     }
 
     const ds = new Datasource(connData);

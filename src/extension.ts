@@ -26,6 +26,7 @@ import {
   CadbTableDocumentContentProvider,
   resolveTableDatasource,
 } from "./provider/workspace_symbol_provider";
+import { registerBuiltinDatabaseDrivers } from "./provider/drivers/builtin_drivers";
 
 class CadbColorDecorationProvider implements vscode.FileDecorationProvider {
   private readonly emitter = new vscode.EventEmitter<vscode.Uri | vscode.Uri[]>();
@@ -76,6 +77,8 @@ class SqlDocumentFormattingProvider implements vscode.DocumentFormattingEditProv
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
+  registerBuiltinDatabaseDrivers();
+
   // 创建输出通道用于显示 SQL 执行日志
   const outputChannel = vscode.window.createOutputChannel("CADB SQL");
   context.subscriptions.push(outputChannel);

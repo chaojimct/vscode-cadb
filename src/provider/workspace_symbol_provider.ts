@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { DataSourceProvider } from "./database_provider";
 import { Datasource } from "./entity/datasource";
 import { fuzzyMatch } from "./utils";
+import { driverSupportsSqlExecution } from "./drivers/registry";
 
 const CADB_TABLE_URI_SCHEME = "cadb";
 const CADB_TABLE_URI_AUTHORITY = "table";
@@ -20,7 +21,7 @@ export async function resolveTableDatasource(
   const connData = connections.find(
     (c) => (c.name || "").trim() === connectionName.trim()
   );
-  if (!connData || (connData.dbType && connData.dbType !== "mysql")) {
+  if (!connData || !driverSupportsSqlExecution(connData.dbType)) {
     return null;
   }
 
@@ -99,7 +100,7 @@ async function collectAllMySQLTables(
   for (const connData of connections) {
     if (token.isCancellationRequested) return result;
 
-    if (connData.dbType && connData.dbType !== "mysql") continue;
+    if (!driverSupportsSqlExecution(connData.dbType)) continue;
 
     const connection = new Datasource(connData);
     const connectionName = connection.label?.toString() || connData.name || "";

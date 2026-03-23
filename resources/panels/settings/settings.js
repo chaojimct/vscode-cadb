@@ -15,8 +15,12 @@ let dynamicForm = null;
 const CONFIG_TYPES = {
   DATASOURCE: "datasource",
   USER: "user",
-  DATABASE: "database"
+  DATABASE: "database",
+  DRIVERS: "drivers",
 };
+
+/** 新建/编辑连接时由扩展下发的可选驱动列表（保持到切换其它配置页） */
+let datasourceDriverOptions = null;
 
 // ==================== 从全局配置获取字段映射 ====================
 
@@ -80,21 +84,42 @@ class UserDynamicForm extends DynamicForm {
 
 // ==================== 初始化函数 ====================
 
+function escapeHtml(s) {
+  const div = document.createElement("div");
+  div.textContent = s == null ? "" : String(s);
+  return div.innerHTML;
+}
+
 /**
  * 初始化数据库连接配置表单
+ * @param {object} data
+ * @param {Array<{id:string,label:string,description?:string}>|null} driverOptionsFromHost 扩展下发的已启用驱动；null 表示沿用上次
  */
-function initDatasourceForm(data = {}) {
+function initDatasourceForm(data = {}, driverOptionsFromHost) {
   $("#pageTitle").text("数据库连接配置");
-  $("#pageSubtitle").text("配置数据库连接信息，支持多种数据库类型");
+  $("#pageSubtitle").text("仅显示已在「管理数据库驱动」中启用的数据库类型");
   
+  if (Array.isArray(driverOptionsFromHost) && driverOptionsFromHost.length > 0) {
+    datasourceDriverOptions = driverOptionsFromHost;
+  }
+
+  const allowedIds = new Set(
+    (datasourceDriverOptions || []).map((o) => o.id)
+  );
+  const fallbackType =
+    (datasourceDriverOptions && datasourceDriverOptions[0] && datasourceDriverOptions[0].id) || "mysql";
+
   // 根据数据库类型过滤字段
-  const dbType = data.dbType || "mysql";
-  let filteredData = { ...data };
+  let dbType = data.dbType || fallbackType;
+  if (allowedIds.size > 0 && !allowedIds.has(dbType)) {
+    dbType = fallbackType;
+  }
+  let filteredData = { ...data, dbType };
 
   // 对于 SQLite，只显示相关字段
   if (dbType === "sqlite") {
     filteredData = {
-      dbType: data.dbType,
+      dbType: filteredData.dbType,
       name: data.name,
       saveLocation: data.saveLocation,
       markColor: data.markColor,
@@ -105,9 +130,20 @@ function initDatasourceForm(data = {}) {
     delete filteredData.sqlitePath;
   }
 
+  const mapping = JSON.parse(JSON.stringify(datasourceFieldMapping));
+  if (datasourceDriverOptions && datasourceDriverOptions.length > 0) {
+    mapping.dbType = {
+      ...mapping.dbType,
+      options: datasourceDriverOptions.map((o) => ({
+        value: o.id,
+        label: o.label,
+      })),
+    };
+  }
+
   dynamicForm = new DynamicForm({
     container: "#formContainer",
-    fieldMapping: datasourceFieldMapping,
+    fieldMapping: mapping,
     formId: "datasource-form",
     onSubmit: handleDatasourceSave,
     onCancel: handleCancel,
@@ -126,8 +162,51 @@ function initDatasourceForm(data = {}) {
     const selectedType = $(this).val();
     const currentData = dynamicForm.getData();
     currentData.dbType = selectedType;
-    initDatasourceForm(currentData);
+    initDatasourceForm(currentData, null);
   });
+}
+
+/**
+ * 数据库驱动管理（启用/禁用，影响新建连接可选类型）
+ */
+function initDriversForm(drivers) {
+  $("#pageTitle").text("数据库驱动");
+  $("#pageSubtitle").text(
+    "勾选要在「新建连接」中出现的类型。后续可通过独立扩展包注册更多驱动到此列表。"
+  );
+  dynamicForm = null;
+  const list = Array.isArray(drivers) ? drivers : [];
+  let html = '<div class="drivers-manage layui-form">';
+  list.forEach((d) => {
+    const id = escapeHtml(d.id);
+    const checked = d.enabled ? " checked" : "";
+    const desc = d.description ? escapeHtml(d.description) : "";
+    const hint = desc ? ` title="${desc}"` : "";
+    html += `<div class="driver-row">`;
+    html += `<input type="checkbox" name="driverEnable" value="${id}" id="drv-${id}" lay-skin="primary"${checked}${hint}/>`;
+    html += `<label for="drv-${id}" class="driver-label">${escapeHtml(d.displayName)}`;
+    html += ` <span class="driver-id">(${id})</span></label>`;
+    if (d.marketplaceExtensionId) {
+      html += `<div class="driver-marketplace">${escapeHtml(d.marketplaceExtensionId)}</div>`;
+    }
+    html += `</div>`;
+  });
+  html += "</div>";
+  html +=
+    '<div class="drivers-actions" style="margin-top: 20px;"><button type="button" class="layui-btn" id="drivers-save">保存</button></div>';
+  $("#formContainer").html(html);
+  if (typeof layui !== "undefined" && layui.form) {
+    layui.form.render("checkbox");
+  }
+  $("#drivers-save")
+    .off("click")
+    .on("click", () => {
+      const enabledIds = [];
+      $('input[name="driverEnable"]:checked').each(function () {
+        enabledIds.push($(this).val());
+      });
+      vscode.postMessage({ command: "saveDrivers", enabledIds });
+    });
 }
 
 /**
@@ -329,11 +408,13 @@ window.addEventListener("message", (event) => {
         // 数据库连接配置
         if (message.data && message.data.rowData && message.data.rowData.length > 0) {
           const rowData = message.data.rowData[0];
-          initDatasourceForm(rowData);
+          initDatasourceForm(rowData, message.driverOptions || null);
         } else {
           // 新建模式：加载默认数据
+          const opts = message.driverOptions || [];
+          const firstId = (opts[0] && opts[0].id) || "mysql";
           const defaultData = {
-            dbType: "mysql",
+            dbType: firstId,
             name: "",
             host: "localhost",
             port: 3306,
@@ -341,8 +422,10 @@ window.addEventListener("message", (event) => {
             password: "",
             database: "",
           };
-          initDatasourceForm(defaultData);
+          initDatasourceForm(defaultData, message.driverOptions || null);
         }
+      } else if (currentConfigType === CONFIG_TYPES.DRIVERS) {
+        initDriversForm(message.drivers);
       } else if (currentConfigType === CONFIG_TYPES.USER) {
         // 用户配置
         if (message.data && message.data.rowData && message.data.rowData.length > 0) {

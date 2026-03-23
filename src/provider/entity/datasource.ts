@@ -1,5 +1,4 @@
 import * as vscode from "vscode";
-import path from "path";
 import {
   Dataloader,
   FormResult,
@@ -7,23 +6,11 @@ import {
   PromiseResult,
   TableResult,
 } from "./dataloader";
-import { MySQLDataloader } from "./mysql_dataloader";
 import type { DatabaseManager } from "../component/database_manager";
-import { RedisDataloader } from "./redis_dataloader";
-import { OssDataLoader } from "./oss_dataloader";
-
-const iconDir: string[] = ["..", "..", "resources", "icons"];
-const markColorThemeIds: Record<string, string> = {
-  red: "charts.red",
-  yellow: "charts.yellow",
-  blue: "charts.blue",
-  green: "charts.green",
-  cyan: "charts.cyan",
-  purple: "charts.purple",
-  gray: "charts.gray",
-  orange: "charts.orange",
-  pink: "charts.pink",
-};
+import {
+  attachDriverToDatasourceNode,
+  driverSupportsCreateDatabase,
+} from "../drivers/registry";
 
 export interface DatasourceInputData {
   type:
@@ -50,7 +37,8 @@ export interface DatasourceInputData {
   /** 字段是否允许为空（MySQL 等），用于 TreeItem 图标 */
   nullable?: boolean;
 
-  dbType?: "mysql" | "redis" | "oss";
+  /** 数据库驱动 id，与驱动注册表一致（如 mysql、redis、oss） */
+  dbType?: string;
   saveLocation?: "workspace" | "user";
   markColor?: "red" | "yellow" | "blue" | "green" | "cyan" | "purple" | "gray" | "orange" | "pink" | "none";
   database?: string;
@@ -121,8 +109,12 @@ export class Datasource extends vscode.TreeItem {
     databaseManager?: DatabaseManager
   ): Promise<void> => {
     switch (this.type) {
-      case "datasourceType":
-        if (this.dataloader instanceof MySQLDataloader) {
+      case "datasourceType": {
+        const rootDbType = this.parent?.data?.dbType;
+        if (!driverSupportsCreateDatabase(rootDbType)) {
+          break;
+        }
+        if (this.dataloader) {
           const host = Datasource.createDatabaseHost;
           if (!host || !this.dataloader) return;
           const dataloader = this.dataloader;
@@ -181,6 +173,7 @@ export class Datasource extends vscode.TreeItem {
           });
         }
         break;
+      }
       case "fileType":
         if (!this.parent || !this.parent.label) {
           return Promise.resolve();
@@ -439,53 +432,7 @@ export class Datasource extends vscode.TreeItem {
 
   private initDatasource(input: DatasourceInputData): void {
     if (input.type === "datasource") {
-      this.description = `${input.host}:${input.port}`;
-      const markColor = input.markColor;
-      if (markColor && markColor !== "none" && markColorThemeIds[markColor]) {
-        this.resourceUri = vscode.Uri.parse(
-          `cadb-color://datasource/${encodeURIComponent(input.name)}?color=${encodeURIComponent(
-            markColorThemeIds[markColor]
-          )}`
-        );
-      } else {
-        this.resourceUri = undefined;
-      }
-      switch (input.dbType) {
-        case "mysql":
-          this.iconPath = {
-            light: vscode.Uri.file(
-              path.join(__filename, ...iconDir, "mysql", "MySQL_light.svg")
-            ),
-            dark: vscode.Uri.file(
-              path.join(__filename, ...iconDir, "mysql", "MySQL_dark.svg")
-            ),
-          };
-          this.dataloader = new MySQLDataloader(this, input);
-          break;
-        case "redis":
-          this.iconPath = {
-            light: vscode.Uri.file(
-              path.join(__filename, ...iconDir, "redis", "Redis_light.svg")
-            ),
-            dark: vscode.Uri.file(
-              path.join(__filename, ...iconDir, "redis", "Redis_dark.svg")
-            ),
-          };
-          this.dataloader = new RedisDataloader(this, input);
-          break;
-				case "oss":
-					this.description = `${input.bucket}`;
-					this.iconPath = {
-						light: vscode.Uri.file(
-							path.join(__filename, ...iconDir, "oss", "OSS_light.svg")
-						),
-						dark: vscode.Uri.file(
-							path.join(__filename, ...iconDir, "oss", "OSS_dark.svg")
-						),
-					};
-					this.dataloader = new OssDataLoader(this, input);
-					break;
-      }
+      attachDriverToDatasourceNode(this, input);
     } else {
       this.iconPath = new vscode.ThemeIcon("folder");
       this.description = input.extra;

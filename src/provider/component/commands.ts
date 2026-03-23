@@ -14,6 +14,17 @@ import type { RedisClientType } from "redis";
 import { resolveTableDatasource } from "../workspace_symbol_provider";
 import { fuzzyMatch } from "../utils";
 import { ensureSelectRowLimit } from "./sql_limit_guard";
+import {
+  driverSupportsCreateDatabase,
+  driverSupportsTreeDelete,
+} from "../drivers/registry";
+import {
+  getDriverOptionsForEditConnection,
+  getDriverOptionsForNewConnection,
+  getDriversManagementPayload,
+  isDriverEnabled,
+  setEnabledDriverIds,
+} from "../drivers/enabled_store";
 
 /**
  * 将 unknown 错误转换为可展示的消息文本
@@ -134,6 +145,13 @@ async function saveDatasourceConfigForCreate(
   if (!name) {
     throw new Error("连接名称不能为空");
   }
+  const dbType = String(payload?.dbType || "").trim();
+  if (!dbType) {
+    throw new Error("请选择数据库类型");
+  }
+  if (!isDriverEnabled(provider.context, dbType)) {
+    throw new Error("该数据库驱动未启用，请先在命令面板执行「CADB: 管理数据库驱动」并勾选对应类型");
+  }
   const connections = provider.getConnections();
   if (connections.some((c) => c.name === name)) {
     throw new Error("该连接名称已存在");
@@ -149,6 +167,15 @@ async function saveDatasourceConfigForEdit(
   item: Datasource,
   payload: any
 ): Promise<void> {
+  const nextDb = String(payload?.dbType || "").trim();
+  const origDb = item.data?.dbType;
+  if (
+    nextDb &&
+    nextDb !== origDb &&
+    !isDriverEnabled(provider.context, nextDb)
+  ) {
+    throw new Error("所选数据库类型未启用，请先在「管理数据库驱动」中启用");
+  }
   if (payload?.dbType === "oss") {
     await saveOssDatasourceConfig(provider, payload, {
       originalName: item.label?.toString() || "",
@@ -312,8 +339,8 @@ async function editEntry(
   } else if (item.type === "collection") {
     const datasourceNode = findAncestorByType(item, "datasource");
     const dbType = datasourceNode?.data?.dbType || "mysql";
-    if (dbType !== "mysql") {
-      vscode.window.showWarningMessage("当前仅支持 MySQL 数据库编辑");
+    if (!driverSupportsCreateDatabase(dbType)) {
+      vscode.window.showWarningMessage("当前连接类型不支持在此编辑数据库属性");
       return;
     }
     panel = createWebview(provider, "settings", `【${item.label}】编辑`);
@@ -741,6 +768,10 @@ async function editEntry(
       command: "load",
       configType: configType,
       data: data,
+      driverOptions:
+        item.type === "datasource"
+          ? getDriverOptionsForEditConnection(provider.context, item.data?.dbType)
+          : undefined,
     });
   }
 
@@ -915,12 +946,20 @@ export function registerDatasourceCommands(
 
   disposables.push(
     vscode.commands.registerCommand("cadb.datasource.new", async (item) => {
+      const driverOptions = getDriverOptionsForNewConnection(provider.context);
+      if (driverOptions.length === 0) {
+        vscode.window.showWarningMessage(
+          "没有已启用的数据库驱动。请在命令面板执行「CADB: 管理数据库驱动」至少启用一种类型。"
+        );
+        return;
+      }
       const panel = createWebview(provider, "settings", "数据库连接配置");
       // 发送初始化消息，指定为 datasource 类型的新建模式
       panel.webview.postMessage({
         command: "load",
         configType: "datasource",
         data: null,
+        driverOptions,
       });
 
       panel.webview.onDidReceiveMessage(async (message) => {
@@ -1043,8 +1082,8 @@ export function registerDatasourceCommands(
       if (confirm === "删除") {
         const dsNode = getDatasourceNode(item) ?? (item.type === "datasource" ? item : undefined);
         const dbType = dsNode?.data?.dbType;
-        if (dbType !== "mysql") {
-          vscode.window.showWarningMessage("当前仅支持删除 MySQL 数据源相关对象");
+        if (!driverSupportsTreeDelete(dbType)) {
+          vscode.window.showWarningMessage("当前连接类型不支持在侧栏删除该对象");
           return;
         }
         const loader = dsNode?.dataloader as any;
@@ -1504,6 +1543,40 @@ export function registerDatasourceCommands(
         }
       }
     )
+  );
+
+  disposables.push(
+    vscode.commands.registerCommand("cadb.drivers.manage", async () => {
+      const panel = createWebview(provider, "settings", "数据库驱动");
+      const sendLoad = () => {
+        panel.webview.postMessage({
+          command: "load",
+          configType: "drivers",
+          drivers: getDriversManagementPayload(provider.context),
+        });
+      };
+      sendLoad();
+      panel.webview.onDidReceiveMessage(async (message) => {
+        if (message.command === "saveDrivers") {
+          const ids = Array.isArray(message.enabledIds)
+            ? message.enabledIds.map((x: unknown) => String(x))
+            : [];
+          if (ids.length === 0) {
+            postWebviewStatus(panel.webview, {
+              success: false,
+              message: "请至少启用一种数据库驱动",
+            });
+            return;
+          }
+          await setEnabledDriverIds(provider.context, ids);
+          postWebviewStatus(panel.webview, {
+            success: true,
+            message: "✔️ 已保存驱动设置",
+          });
+          sendLoad();
+        }
+      });
+    })
   );
 
   return disposables;
