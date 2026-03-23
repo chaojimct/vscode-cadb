@@ -1514,11 +1514,69 @@ const openTablePanels = new Map<string, vscode.WebviewPanel>();
 /** 当前聚焦的表数据 WebviewPanel（用于快捷键切换侧栏） */
 let lastActiveDatasourceTablePanel: vscode.WebviewPanel | undefined;
 
-function attachDatasourceTablePanelFocusTracking(panel: vscode.WebviewPanel) {
-  panel.onDidChangeViewState((e) => {
-    if (e.webviewPanel.active) {
-      lastActiveDatasourceTablePanel = e.webviewPanel;
+/** 与 package.json 中 Cmd/Ctrl+F 的 when 一致；勿用 activeWebviewPanelId==='datasourceTable'（扩展内多为带前缀的 viewType） */
+const CONTEXT_DATASOURCE_TABLE_GRID_FOCUSED = "cadb.datasourceTableGridFocused";
+
+function debugGridSidePanelShortcut(label: string, detail?: Record<string, unknown>) {
+  try {
+    const on = vscode.workspace
+      .getConfiguration("cadb")
+      .get<boolean>("grid.debugSidePanelShortcut", false);
+    if (!on) {
+      return;
     }
+    const tail = detail && Object.keys(detail).length ? ` ${JSON.stringify(detail)}` : "";
+    console.log(`[CADB grid shortcut] ${label}${tail}`);
+  } catch (_e) {
+    /* ignore */
+  }
+}
+
+/** 根据 openTablePanels 中 WebviewPanel.active 同步快捷键 when 上下文与 lastActive */
+function refreshDatasourceTableGridFocusContext() {
+  let activePanel: vscode.WebviewPanel | undefined;
+  for (const p of openTablePanels.values()) {
+    try {
+      if (p.active) {
+        activePanel = p;
+        break;
+      }
+    } catch (_e) {
+      /* 面板已 dispose */
+    }
+  }
+  lastActiveDatasourceTablePanel = activePanel;
+  void vscode.commands.executeCommand(
+    "setContext",
+    CONTEXT_DATASOURCE_TABLE_GRID_FOCUSED,
+    !!activePanel
+  );
+  debugGridSidePanelShortcut("refreshFocusContext", {
+    openPanels: openTablePanels.size,
+    activeMatch: !!activePanel,
+  });
+}
+
+/** Webview 内 window 获得焦点时调用（iframe/内部焦点有时不同步 panel.active） */
+function markDatasourceTableGridDomFocused(panel: vscode.WebviewPanel) {
+  let inMap = false;
+  for (const p of openTablePanels.values()) {
+    if (p === panel) {
+      inMap = true;
+      break;
+    }
+  }
+  if (!inMap) {
+    return;
+  }
+  lastActiveDatasourceTablePanel = panel;
+  void vscode.commands.executeCommand("setContext", CONTEXT_DATASOURCE_TABLE_GRID_FOCUSED, true);
+  debugGridSidePanelShortcut("gridPanelDomFocus");
+}
+
+function attachDatasourceTablePanelFocusTracking(panel: vscode.WebviewPanel) {
+  panel.onDidChangeViewState(() => {
+    refreshDatasourceTableGridFocusContext();
   });
 }
 /** 已打开的表结构编辑面板：key 同上，用于相互跳转 */
@@ -1601,6 +1659,7 @@ async function sqlResultView(
   const existing = openTablePanels.get(panelKey);
   if (existing) {
     existing.reveal();
+    setTimeout(() => refreshDatasourceTableGridFocusContext(), 0);
     setTimeout(() => {
       const msg = postLoad(data, 0, pageSize);
       if (msg) existing.webview.postMessage(msg);
@@ -1619,10 +1678,15 @@ async function sqlResultView(
     if (lastActiveDatasourceTablePanel === panel) {
       lastActiveDatasourceTablePanel = undefined;
     }
+    refreshDatasourceTableGridFocusContext();
   });
   attachDatasourceTablePanelFocusTracking(panel);
 
   panel.webview.onDidReceiveMessage(async (message) => {
+    if (message.command === "gridPanelDomFocus") {
+      markDatasourceTableGridDomFocused(panel);
+      return;
+    }
     if (message.command === "ready") {
       const limit = getGridPageSize();
       const freshData = await datasource.listData(
@@ -1802,6 +1866,7 @@ async function keyValueResultView(
   const existing = openTablePanels.get(panelKey);
   if (existing) {
     existing.reveal();
+    setTimeout(() => refreshDatasourceTableGridFocusContext(), 0);
     const data = await datasource.listData();
     if (data) {
       setTimeout(() => {
@@ -1837,10 +1902,15 @@ async function keyValueResultView(
     if (lastActiveDatasourceTablePanel === panel) {
       lastActiveDatasourceTablePanel = undefined;
     }
+    refreshDatasourceTableGridFocusContext();
   });
   attachDatasourceTablePanelFocusTracking(panel);
 
   panel.webview.onDidReceiveMessage(async (message) => {
+    if (message.command === "gridPanelDomFocus") {
+      markDatasourceTableGridDomFocused(panel);
+      return;
+    }
     if (message.command === "ready") {
       const freshData = await datasource.listData();
       if (freshData) {
@@ -2853,9 +2923,26 @@ export function registerResultCommands(resultProvider: ResultWebviewProvider) {
 
 /** 表数据网格：快捷键切换右侧字段侧栏（由 package.json 绑定 Cmd/Ctrl+F） */
 export function registerGridSidePanelCommand(): vscode.Disposable {
+  void vscode.commands.executeCommand("setContext", CONTEXT_DATASOURCE_TABLE_GRID_FOCUSED, false);
+
   return vscode.commands.registerCommand("cadb.grid.toggleSidePanel", () => {
-    const p = lastActiveDatasourceTablePanel;
+    debugGridSidePanelShortcut("toggleSidePanel invoked");
+
+    let p: vscode.WebviewPanel | undefined;
+    for (const cand of openTablePanels.values()) {
+      try {
+        if (cand.active) {
+          p = cand;
+          break;
+        }
+      } catch (_e) {
+        /* disposed */
+      }
+    }
+    p ??= lastActiveDatasourceTablePanel;
+
     if (!p?.webview) {
+      debugGridSidePanelShortcut("no target panel");
       return;
     }
     let stillOpen = false;
@@ -2867,9 +2954,11 @@ export function registerGridSidePanelCommand(): vscode.Disposable {
     }
     if (!stillOpen) {
       lastActiveDatasourceTablePanel = undefined;
+      void vscode.commands.executeCommand("setContext", CONTEXT_DATASOURCE_TABLE_GRID_FOCUSED, false);
       return;
     }
     void p.webview.postMessage({ command: "toggleSidePanel" });
+    debugGridSidePanelShortcut("postMessage toggleSidePanel");
   });
 }
 

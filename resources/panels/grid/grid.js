@@ -83,6 +83,7 @@
       const panel = document.getElementById("grid-side-panel");
       const tab = document.querySelector(".grid-side-panel__tab");
       const toggleBtn = document.querySelector(".grid-side-panel__toggle");
+      const wasCollapsed = body.classList.contains("grid-side-panel-collapsed");
       const collapsed = body.classList.toggle("grid-side-panel-collapsed");
       if (tab) {
         tab.setAttribute("aria-expanded", String(!collapsed));
@@ -92,6 +93,10 @@
       try {
         localStorage.setItem("cadb.grid.sidePanelCollapsed", collapsed ? "1" : "0");
       } catch (_) {}
+      // 从收起变为展开：聚焦「搜索字段」输入框（快捷键/点击标签打开侧栏后可直接输入）
+      if (wasCollapsed && !collapsed) {
+        focusFieldSearchInputDeferred();
+      }
     },
   };
 
@@ -163,6 +168,20 @@
     }
   })();
 
+  /** 侧栏展开后聚焦搜索框（等布局稳定再 focus，避免被 transition 抢焦点） */
+  function focusFieldSearchInputDeferred() {
+    const run = () => {
+      const input = document.getElementById("grid-field-search");
+      if (!input || document.body.classList.contains("grid-side-panel-collapsed")) return;
+      try {
+        input.focus({ preventScroll: true });
+      } catch (_) {
+        input.focus();
+      }
+    };
+    requestAnimationFrame(() => requestAnimationFrame(run));
+  }
+
   /** 根据当前表格列刷新侧边栏「字段」列表 */
   function refreshColumnList() {
     const listEl = document.getElementById("grid-column-list");
@@ -218,6 +237,17 @@
     if (e.key === "Enter") {
       e.preventDefault();
       actions.toggleFieldSearch();
+      return;
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      const input = e.currentTarget;
+      if (input && String(input.value ?? "")) {
+        input.value = "";
+        applyFieldSearch();
+        updateClearButtonUI();
+      }
     }
   });
 
@@ -382,8 +412,19 @@
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && vscode) {
       vscode.postMessage({ command: "ready" });
+      vscode.postMessage({ command: "gridPanelDomFocus" });
     }
   });
+
+  // 同步扩展侧快捷键上下文：扩展内 Webview 的 activeWebviewPanelId 往往不等于裸字符串 datasourceTable，
+  // 故用 setContext(cadb.datasourceTableGridFocused)；window focus 可补全「点在表格里但 panel.active 未更新」的情况（尤其 macOS）
+  window.addEventListener(
+    "focus",
+    () => {
+      if (vscode) vscode.postMessage({ command: "gridPanelDomFocus" });
+    },
+    true
+  );
 
   window.dbTable = dbTable;
 })();

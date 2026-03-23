@@ -422,6 +422,11 @@
           "maximum": 10000,
           "description": "表格每页查询条数；亦为 SELECT 自动追加 LIMIT 时的默认条数"
         },
+        "cadb.grid.debugSidePanelShortcut": {
+          "type": "boolean",
+          "default": false,
+          "description": "在扩展宿主日志中输出表格 Cmd/Ctrl+F 侧栏快捷键相关调试信息（帮助 → 切换开发人员工具 → 控制台）"
+        },
         "cadb.query.autoAppendSelectLimit": {
           "type": "boolean",
           "default": true,
@@ -433,22 +438,22 @@
       {
         "command": "cadb.grid.toggleSidePanel",
         "key": "ctrl+f",
-        "when": "activeWebviewPanelId == 'datasourceTable'"
+        "when": "cadb.datasourceTableGridFocused"
       },
       {
         "command": "cadb.grid.toggleSidePanel",
         "key": "cmd+f",
-        "when": "activeWebviewPanelId == 'datasourceTable'"
+        "when": "cadb.datasourceTableGridFocused"
       },
       {
         "command": "cadb.datasource.search",
         "key": "ctrl+f",
-        "when": "view == datasource && activeWebviewPanelId != 'datasourceTable'"
+        "when": "view == datasource && !cadb.datasourceTableGridFocused"
       },
       {
         "command": "cadb.datasource.search",
         "key": "cmd+f",
-        "when": "view == datasource && activeWebviewPanelId != 'datasourceTable'"
+        "when": "view == datasource && !cadb.datasourceTableGridFocused"
       }
     ]
   },
