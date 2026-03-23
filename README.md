@@ -4,15 +4,15 @@
 
 + 驱动管理
 
-![](https://raw.githubusercontent.com/caoaolong/vscode-cadb/refs/heads/master/example2.png)
+![](https://raw.githubusercontent.com/caoaolong/vscode-cadb/refs/heads/master/examples/example2.png)
 
 + 数据预览
 
-![](https://raw.githubusercontent.com/caoaolong/vscode-cadb/refs/heads/master/example1.gif)
+![](https://raw.githubusercontent.com/caoaolong/vscode-cadb/refs/heads/master/examples/example1.gif)
 
 + SQL Notebook
 
-![](https://raw.githubusercontent.com/caoaolong/vscode-cadb/refs/heads/master/example3.gif)
+![](https://raw.githubusercontent.com/caoaolong/vscode-cadb/refs/heads/master/examples/example3.gif)
 
 ## 功能特性
 
