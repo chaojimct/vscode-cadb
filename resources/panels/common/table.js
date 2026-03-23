@@ -20,6 +20,12 @@ class DatabaseTableData {
     this.dataOffset = 0;
     /** 是否使用服务端分页（由 load 传入 pageSize/offset 时启用） */
     this.serverPagination = false;
+    this._serverReloadTimer = null;
+    this._suppressServerQueryReload = false;
+    this._pendingFilterModel = null;
+    this._pendingColumnState = null;
+    /** 避免首屏/恢复列状态时 onSortChanged、onFilterChanged 触发多余 loadPage */
+    this._allowServerQueryReload = false;
   }
 
   /**
@@ -54,14 +60,65 @@ class DatabaseTableData {
     return this.dataOffset ?? 0;
   }
 
+  /** 服务端分页时随请求带给扩展，用于生成 SQL WHERE */
+  getFilterModelForServer() {
+    if (!this.gridApi) return {};
+    try {
+      return this.gridApi.getFilterModel() || {};
+    } catch (_e) {
+      return {};
+    }
+  }
+
+  getSortModelForServer() {
+    if (!this.gridApi) return [];
+    try {
+      const allowed = new Set((this.columns || []).map((c) => c.field));
+      const state = this.gridApi.getColumnState() || [];
+      return state
+        .filter((s) => s.sort && s.colId && allowed.has(s.colId))
+        .map((s) => ({ colId: s.colId, sort: s.sort }));
+    } catch (_e2) {
+      return [];
+    }
+  }
+
+  _scheduleServerReload(reason) {
+    if (!this.serverPagination) return;
+    if (this._suppressServerQueryReload) {
+      return;
+    }
+    if (!this._allowServerQueryReload) {
+      return;
+    }
+    clearTimeout(this._serverReloadTimer);
+    const self = this;
+    this._serverReloadTimer = setTimeout(() => {
+      if (!self.serverPagination || !self.vscode || !self.gridApi) return;
+      const fm = self.getFilterModelForServer();
+      const sm = self.getSortModelForServer();
+      self.vscode.postMessage({ command: "loadPage", offset: 0, filterModel: fm, sortModel: sm });
+    }, 400);
+  }
+
   _initGrid() {
     const container = document.querySelector(this.tableSelector);
     if (!container) return;
 
+    let savedFilterModel = null;
+    let savedColumnState = null;
     if (this.gridApi) {
+      try {
+        savedFilterModel = this.gridApi.getFilterModel();
+      } catch (_e) {}
+      try {
+        savedColumnState = this.gridApi.getColumnState();
+      } catch (_e2) {}
       this.gridApi.destroy();
       this.gridApi = null;
     }
+    this._pendingFilterModel = savedFilterModel;
+    this._pendingColumnState = savedColumnState;
 
     const self = this;
     requestAnimationFrame(() => {
@@ -71,6 +128,7 @@ class DatabaseTableData {
 
   _doInitGrid(container) {
     const self = this;
+    this._allowServerQueryReload = false;
     const columnDefs = this._buildColumnDefs();
     const rowData = this.tableData.map((r, i) => ({ ...r, __rowIndex: i }));
 
@@ -119,9 +177,37 @@ class DatabaseTableData {
         "grid-row-edited": (params) => params.data?.__edited === true && params.data?.__deleted !== true,
       },
       onCellValueChanged: boundOnCellValueChanged,
+      onFilterChanged: () => {
+        self._scheduleServerReload("filter");
+      },
+      onSortChanged: () => {
+        self._scheduleServerReload("sort");
+      },
       onGridReady: (e) => {
         self.gridApi = e.api;
         boundUpdatePaginationUI();
+        const colState = self._pendingColumnState;
+        const fm = self._pendingFilterModel;
+        self._pendingColumnState = null;
+        self._pendingFilterModel = null;
+        queueMicrotask(() => {
+          if (!self.gridApi) return;
+          self._suppressServerQueryReload = true;
+          try {
+            if (colState && colState.length) {
+              self.gridApi.applyColumnState({ state: colState, applyOrder: true });
+            }
+            if (fm && typeof fm === "object" && Object.keys(fm).length > 0) {
+              self.gridApi.setFilterModel(fm);
+            }
+          } catch (_err) {
+            /* 恢复列状态/过滤器失败时忽略 */
+          }
+          setTimeout(() => {
+            self._suppressServerQueryReload = false;
+            self._allowServerQueryReload = true;
+          }, 220);
+        });
       },
       onPaginationChanged: boundUpdatePaginationUI,
     };
@@ -203,6 +289,9 @@ class DatabaseTableData {
         colDef.cellEditor = "agDateStringCellEditor";
         colDef.cellEditorParams = { includeTime: !!includeTime };
         colDef.cellEditorPopup = true;
+      }
+      if (this.serverPagination) {
+        colDef.comparator = () => 0;
       }
       defs.push(colDef);
     });
@@ -307,7 +396,12 @@ class DatabaseTableData {
 
   nextPage() {
     if (this.serverPagination && this.vscode) {
-      this.vscode.postMessage({ command: "loadPage", offset: this.dataOffset + this.pageSize });
+      this.vscode.postMessage({
+        command: "loadPage",
+        offset: this.dataOffset + this.pageSize,
+        filterModel: this.getFilterModelForServer(),
+        sortModel: this.getSortModelForServer(),
+      });
       return;
     }
     if (this.gridApi) this.gridApi.paginationGoToNextPage();
@@ -315,7 +409,12 @@ class DatabaseTableData {
 
   prevPage() {
     if (this.serverPagination && this.vscode) {
-      this.vscode.postMessage({ command: "loadPage", offset: Math.max(0, this.dataOffset - this.pageSize) });
+      this.vscode.postMessage({
+        command: "loadPage",
+        offset: Math.max(0, this.dataOffset - this.pageSize),
+        filterModel: this.getFilterModelForServer(),
+        sortModel: this.getSortModelForServer(),
+      });
       return;
     }
     if (this.gridApi) this.gridApi.paginationGoToPreviousPage();

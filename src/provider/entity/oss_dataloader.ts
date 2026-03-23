@@ -2,6 +2,7 @@ import { Uri } from "vscode";
 import {
   Dataloader,
   FormResult,
+  ListDataOptions,
   PromiseResult,
   SaveDataParams,
   SaveResult,
@@ -271,7 +272,7 @@ export class OssDataLoader implements Dataloader {
   listFolders(ds: Datasource): Promise<Datasource[]> {
     throw new Error("listFolders Method not implemented.");
   }
-  listData(ds: Datasource, _options?: { offset?: number; limit?: number }): Promise<TableResult> {
+  listData(ds: Datasource, _options?: ListDataOptions): Promise<TableResult> {
     throw new Error("listData Method not implemented.");
   }
   descDatasource(ds: Datasource): Promise<FormResult | undefined> {

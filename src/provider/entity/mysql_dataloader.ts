@@ -10,7 +10,12 @@ import {
   SaveResult,
   TableResult,
 } from "./dataloader";
+import {
+  buildMySqlOrderByFromSortModel,
+  buildMySqlWhereFromAgGridFilterModel,
+} from "../component/grid_filter_sql";
 import { Datasource, DatasourceInputData } from "./datasource";
+import type { ListDataOptions } from "./dataloader";
 import { readdirSync } from "fs";
 import path from "path";
 
@@ -788,7 +793,7 @@ ORDER BY
     }
   }
 
-  async listData(ds: Datasource, options?: { offset?: number; limit?: number }): Promise<TableResult> {
+  async listData(ds: Datasource, options?: ListDataOptions): Promise<TableResult> {
     const startTime = Date.now();
     const offset = options?.offset ?? 0;
     const limit = options?.limit ?? 2000;
@@ -799,7 +804,9 @@ ORDER BY
       if (!table || !database) {
         return resolve([]);
       }
-      this.conn.query(`SHOW FULL COLUMNS FROM \`${database}\`.\`${table}\``, (err, results) => {
+      const showSql = `SHOW FULL COLUMNS FROM \`${database}\`.\`${table}\``;
+      options?.sqlLogger?.(showSql);
+      this.conn.query(showSql, (err, results) => {
         if (err) {
           vscode.window.showErrorMessage(err.message);
           return resolve([]);
@@ -825,10 +832,24 @@ ORDER BY
     const databaseName = ds.parent?.parent?.label;
     const baseTable = tableName && databaseName ? `\`${databaseName}\`.\`${tableName}\`` : null;
 
+    const whereSql = buildMySqlWhereFromAgGridFilterModel(
+      options?.filterModel ?? undefined,
+      descTable
+    );
+    const whereClause = whereSql ? ` WHERE ${whereSql}` : "";
+
+    const orderBySql = buildMySqlOrderByFromSortModel(
+      options?.sortModel ?? undefined,
+      descTable
+    );
+    const orderClause = orderBySql ? ` ORDER BY ${orderBySql}` : "";
+
     const dataTable = await new Promise<Record<string, any>[]>((resolve) => {
       if (!baseTable) return resolve([]);
+      const selectSql = `SELECT * FROM ${baseTable}${whereClause}${orderClause} LIMIT ${Number(offset)} , ${Number(limit)}`;
+      options?.sqlLogger?.(selectSql);
       this.conn.query(
-        `SELECT * FROM ${baseTable} LIMIT ${Number(offset)} , ${Number(limit)}`,
+        selectSql,
         (err, results) => {
           if (err) {
             vscode.window.showErrorMessage(err.message);

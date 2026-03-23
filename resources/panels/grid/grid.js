@@ -29,6 +29,8 @@
       vscode?.postMessage({
         command: "refresh",
         offset: dbTable.getDataOffset?.() ?? 0,
+        filterModel: dbTable.getFilterModelForServer?.() ?? {},
+        sortModel: dbTable.getSortModelForServer?.() ?? [],
       }),
     add: () => dbTable.addRow(),
     delete: () => dbTable.deleteRow(),
@@ -212,6 +214,11 @@
   window.addEventListener("message", (event) => {
     const { command } = event.data || {};
     const payload = event.data?.data != null ? event.data.data : event.data;
+
+    if (command === "toggleSidePanel") {
+      actions.toggleSidePanel();
+      return;
+    }
 
     if (command === "load") {
       tableMeta = {

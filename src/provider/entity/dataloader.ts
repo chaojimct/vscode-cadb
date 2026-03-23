@@ -29,6 +29,21 @@ export interface TableResult {
   totalCount?: number; // 总行数，用于远程分页
 }
 
+/** AG Grid 排序列（与 getColumnState 中带 sort 的项一致） */
+export type ListDataSortCol = { colId: string; sort: "asc" | "desc" };
+
+/** 表格 listData 选项（分页 + 过滤/排序转 SQL + 日志） */
+export interface ListDataOptions {
+  offset?: number;
+  limit?: number;
+  /** AG Grid getFilterModel()，由扩展端安全转换为 WHERE */
+  filterModel?: Record<string, unknown> | null;
+  /** 数据列排序，生成 ORDER BY */
+  sortModel?: ListDataSortCol[] | null;
+  /** 将本次 listData 内执行的 SQL 写入 CADB SQL 输出（含 SHOW COLUMNS 与 SELECT） */
+  sqlLogger?: (sql: string) => void;
+}
+
 export interface FormResult {
   rowData: Record<string, any>[];
 }
@@ -87,7 +102,7 @@ export interface Dataloader {
   listColumns(ds: Datasource): Promise<Datasource[]>;
   listTables(ds: Datasource): Promise<Datasource[]>;
   listFolders(ds: Datasource): Promise<Datasource[]>;
-  listData(ds: Datasource, options?: { offset?: number; limit?: number }): Promise<TableResult>;
+  listData(ds: Datasource, options?: ListDataOptions): Promise<TableResult>;
 
   descDatasource(ds: Datasource): Promise<FormResult | undefined>;
   descUser(ds: Datasource): Promise<FormResult | undefined>;

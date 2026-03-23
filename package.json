@@ -78,6 +78,10 @@
         "title": "搜索数据源"
       },
       {
+        "command": "cadb.grid.toggleSidePanel",
+        "title": "切换表格字段侧栏"
+      },
+      {
         "command": "cadb.datasource.edit",
         "title": "编辑",
         "icon": "$(edit)"
@@ -198,7 +202,8 @@
       },
       {
         "command": "cadb.quickQuery",
-        "title": "快捷查询"
+        "title": "快捷查询",
+        "icon": "$(search-sparkle)"
       },
       {
         "command": "cadb.hover.openTableData",
@@ -206,7 +211,8 @@
       },
       {
         "command": "cadb.hover.editTable",
-        "title": "表编辑"
+        "title": "表编辑",
+        "icon": "$(edit-sparkle)"
       }
     ],
     "notebooks": [
@@ -425,14 +431,24 @@
     },
     "keybindings": [
       {
+        "command": "cadb.grid.toggleSidePanel",
+        "key": "ctrl+f",
+        "when": "activeWebviewPanelId == 'datasourceTable'"
+      },
+      {
+        "command": "cadb.grid.toggleSidePanel",
+        "key": "cmd+f",
+        "when": "activeWebviewPanelId == 'datasourceTable'"
+      },
+      {
         "command": "cadb.datasource.search",
         "key": "ctrl+f",
-        "when": "view == datasource"
+        "when": "view == datasource && activeWebviewPanelId != 'datasourceTable'"
       },
       {
         "command": "cadb.datasource.search",
         "key": "cmd+f",
-        "when": "view == datasource"
+        "when": "view == datasource && activeWebviewPanelId != 'datasourceTable'"
       }
     ]
   },

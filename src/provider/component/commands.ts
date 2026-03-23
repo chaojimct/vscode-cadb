@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { DataSourceProvider } from "../database_provider";
 import { Datasource } from "../entity/datasource";
 import path from "path";
-import { FormResult, type TableResult } from "../entity/dataloader";
+import { FormResult, type ListDataSortCol, type TableResult } from "../entity/dataloader";
 import { MySQLDataloader } from "../entity/mysql_dataloader";
 import { OssDataLoader } from "../entity/oss_dataloader";
 import { RedisDataloader } from "../entity/redis_dataloader";
@@ -1372,6 +1372,16 @@ export function registerDatasourceCommands(
 
 /** 已打开的表格数据面板：key = connectionName|databaseName|tableName，同一表只保留一个 */
 const openTablePanels = new Map<string, vscode.WebviewPanel>();
+/** 当前聚焦的表数据 WebviewPanel（用于快捷键切换侧栏） */
+let lastActiveDatasourceTablePanel: vscode.WebviewPanel | undefined;
+
+function attachDatasourceTablePanelFocusTracking(panel: vscode.WebviewPanel) {
+  panel.onDidChangeViewState((e) => {
+    if (e.webviewPanel.active) {
+      lastActiveDatasourceTablePanel = e.webviewPanel;
+    }
+  });
+}
 /** 已打开的表结构编辑面板：key 同上，用于相互跳转 */
 const openTableEditPanels = new Map<string, vscode.WebviewPanel>();
 
@@ -1385,12 +1395,54 @@ async function sqlResultView(
   outputChannel: vscode.OutputChannel
 ) {
   const pageSize = getGridPageSize();
-  const data = await datasource.listData({ offset: 0, limit: pageSize });
   const tableName = datasource.label?.toString() || "";
   const databaseName = datasource.parent?.parent?.label?.toString() || "";
   const connectionName =
     datasource.dataloader?.rootNode().label?.toString() || "";
   const panelKey = `${connectionName}|${databaseName}|${tableName}`;
+
+  /** 与 AG Grid 列过滤 / 排序同步，用于 listData 生成 SQL */
+  let lastFilterModel: Record<string, unknown> = {};
+  let lastSortModel: ListDataSortCol[] = [];
+
+  const logTableSql = (sql: string) => {
+    const ts = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+    outputChannel.appendLine(`[${ts}] [表数据] ${databaseName}.${tableName}`);
+    outputChannel.appendLine(sql.replace(/\s+/g, " ").trim());
+  };
+
+  const listOpts = (
+    offset: number,
+    limit: number,
+    messageFilter?: Record<string, unknown> | null,
+    messageSort?: ListDataSortCol[] | null
+  ) => {
+    if (messageFilter !== undefined) {
+      lastFilterModel =
+        messageFilter != null && typeof messageFilter === "object"
+          ? { ...messageFilter }
+          : {};
+    }
+    if (messageSort !== undefined) {
+      lastSortModel = Array.isArray(messageSort)
+        ? messageSort.filter(
+            (s) =>
+              s &&
+              typeof s.colId === "string" &&
+              (s.sort === "asc" || s.sort === "desc")
+          )
+        : [];
+    }
+    return {
+      offset,
+      limit,
+      filterModel: lastFilterModel,
+      sortModel: lastSortModel,
+      sqlLogger: logTableSql,
+    };
+  };
+
+  const data = await datasource.listData(listOpts(0, pageSize, {}, []));
 
   const postLoad = (payload: TableResult | null, offset: number, limit: number) =>
     payload
@@ -1423,12 +1475,20 @@ async function sqlResultView(
     data?.title || "未命名页"
   );
   openTablePanels.set(panelKey, panel);
-  panel.onDidDispose(() => openTablePanels.delete(panelKey));
+  panel.onDidDispose(() => {
+    openTablePanels.delete(panelKey);
+    if (lastActiveDatasourceTablePanel === panel) {
+      lastActiveDatasourceTablePanel = undefined;
+    }
+  });
+  attachDatasourceTablePanelFocusTracking(panel);
 
   panel.webview.onDidReceiveMessage(async (message) => {
     if (message.command === "ready") {
       const limit = getGridPageSize();
-      const freshData = await datasource.listData({ offset: 0, limit });
+      const freshData = await datasource.listData(
+        listOpts(0, limit, message.filterModel, message.sortModel)
+      );
       const msg = postLoad(freshData, 0, limit);
       if (msg) panel.webview.postMessage(msg);
       return;
@@ -1436,7 +1496,9 @@ async function sqlResultView(
     if (message.command === "loadPage") {
       const offset = typeof message.offset === "number" ? message.offset : 0;
       const limit = getGridPageSize();
-      const freshData = await datasource.listData({ offset, limit });
+      const freshData = await datasource.listData(
+        listOpts(offset, limit, message.filterModel, message.sortModel)
+      );
       const msg = postLoad(freshData, offset, limit);
       if (msg) panel.webview.postMessage(msg);
       return;
@@ -1551,7 +1613,7 @@ async function sqlResultView(
               message: msg,
             });
             const limit = getGridPageSize();
-            const refreshedData = await datasource.listData({ offset: 0, limit });
+            const refreshedData = await datasource.listData(listOpts(0, limit, undefined, undefined));
             const loadMsg = postLoad(refreshedData, 0, limit);
             if (loadMsg) panel.webview.postMessage(loadMsg);
           } else {
@@ -1577,7 +1639,9 @@ async function sqlResultView(
       case "refresh": {
         const offset = typeof message.offset === "number" ? message.offset : 0;
         const limit = getGridPageSize();
-        const freshData = await datasource.listData({ offset, limit });
+        const freshData = await datasource.listData(
+          listOpts(offset, limit, message.filterModel, message.sortModel)
+        );
         const loadMsg = postLoad(freshData, offset, limit);
         if (loadMsg) panel.webview.postMessage(loadMsg);
         break;
@@ -1629,7 +1693,13 @@ async function keyValueResultView(
     data?.title || key || "键值数据"
   );
   openTablePanels.set(panelKey, panel);
-  panel.onDidDispose(() => openTablePanels.delete(panelKey));
+  panel.onDidDispose(() => {
+    openTablePanels.delete(panelKey);
+    if (lastActiveDatasourceTablePanel === panel) {
+      lastActiveDatasourceTablePanel = undefined;
+    }
+  });
+  attachDatasourceTablePanelFocusTracking(panel);
 
   panel.webview.onDidReceiveMessage(async (message) => {
     if (message.command === "ready") {
@@ -2640,6 +2710,28 @@ export function registerResultCommands(resultProvider: ResultWebviewProvider) {
     "cadb.result.showError",
     (error: string, sql: string) => resultProvider.showError(error, sql)
   );
+}
+
+/** 表数据网格：快捷键切换右侧字段侧栏（由 package.json 绑定 Cmd/Ctrl+F） */
+export function registerGridSidePanelCommand(): vscode.Disposable {
+  return vscode.commands.registerCommand("cadb.grid.toggleSidePanel", () => {
+    const p = lastActiveDatasourceTablePanel;
+    if (!p?.webview) {
+      return;
+    }
+    let stillOpen = false;
+    for (const v of openTablePanels.values()) {
+      if (v === p) {
+        stillOpen = true;
+        break;
+      }
+    }
+    if (!stillOpen) {
+      lastActiveDatasourceTablePanel = undefined;
+      return;
+    }
+    void p.webview.postMessage({ command: "toggleSidePanel" });
+  });
 }
 
 /**

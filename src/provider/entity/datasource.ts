@@ -3,6 +3,7 @@ import path from "path";
 import {
   Dataloader,
   FormResult,
+  ListDataOptions,
   PromiseResult,
   TableResult,
 } from "./dataloader";
@@ -293,7 +294,7 @@ export class Datasource extends vscode.TreeItem {
     }
   };
 
-  public listData(options?: { offset?: number; limit?: number }): Promise<TableResult | null> {
+  public listData(options?: ListDataOptions): Promise<TableResult | null> {
     if (!this.dataloader) {
       return Promise.resolve(null);
     }

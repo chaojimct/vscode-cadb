@@ -14,9 +14,15 @@
   <body class="grid-body">
     <div class="grid-main">
     <header class="grid-toolbar">
-      <div class="grid-toolbar__nav" style="display:flex;align-items:center;gap:8px;margin-right:12px;">
-        <a href="#" data-action="switchToTableEdit" title="切换至表结构编辑" class="grid-nav-link">表编辑</a>
-        <a href="#" data-action="quickQuery" title="新建或选择查询文件，快速添加 SELECT 语句" class="grid-nav-link">快捷查询</a>
+      <div class="grid-toolbar__nav">
+        <button type="button" data-action="switchToTableEdit" title="切换至表结构编辑" aria-label="切换至表结构编辑">
+          <i class="codicon codicon-edit-sparkle" aria-hidden="true"></i>
+          <span class="sr-only">表编辑</span>
+        </button>
+        <button type="button" data-action="quickQuery" title="新建或选择查询文件，快速添加 SELECT 语句" aria-label="快捷查询">
+          <i class="codicon codicon-search-sparkle" aria-hidden="true"></i>
+          <span class="sr-only">快捷查询</span>
+        </button>
       </div>
       <div class="grid-toolbar__actions">
         <button data-action="save" title="保存修改到数据库">

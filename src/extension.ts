@@ -9,6 +9,7 @@ import {
   registerDatasourceItemCommands,
   registerDatabaseCommands,
   registerResultCommands,
+  registerGridSidePanelCommand,
 } from "./provider/component/commands";
 import { SqlNotebookSerializer } from "./provider/component/sql_notebook_serializer";
 import { SqlNotebookController } from "./provider/component/sql_notebook_controller";
@@ -200,7 +201,7 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
   registerResultCommands(resultProvider);
-
+  context.subscriptions.push(registerGridSidePanelCommand());
 
   // SQL Notebook API（用于打开 .jsql 文件）
   const notebookSerializer = new SqlNotebookSerializer();

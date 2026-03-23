@@ -4,6 +4,7 @@ import {
   ColDef,
   Dataloader,
   FormResult,
+  ListDataOptions,
   PromiseResult,
   SaveDataParams,
   SaveResult,
@@ -223,7 +224,7 @@ export class RedisDataloader implements Dataloader {
     }
     return Promise.resolve(ds.children);
   }
-  async listData(ds: Datasource, _options?: { offset?: number; limit?: number }): Promise<TableResult> {
+  async listData(ds: Datasource, _options?: ListDataOptions): Promise<TableResult> {
     const startTime = Date.now();
 
     if (!this.client.isOpen) {
