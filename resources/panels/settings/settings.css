@@ -1,5 +1,117 @@
 /* 统一配置页面特殊样式 */
 
+.connection-groups-form {
+  max-width: 640px;
+}
+
+.connection-groups-form .cg-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.connection-groups-form .cg-input {
+  flex: 1 1 200px;
+  min-width: 160px;
+  box-sizing: border-box;
+}
+
+.connection-groups-form .cg-tags-section {
+  margin-bottom: 8px;
+}
+
+.connection-groups-form .cg-tags-hint {
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 8px;
+}
+
+.connection-groups-form .cg-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  min-height: 8px;
+}
+
+.connection-groups-form .cg-tags-empty {
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+  margin: 0 0 4px;
+  line-height: 1.5;
+}
+
+.connection-groups-form .cg-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 4px 6px 4px 10px;
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--vscode-badge-foreground, var(--vscode-foreground));
+  background: var(--vscode-badge-background, var(--vscode-input-background));
+  border: 1px solid var(--vscode-widget-border, transparent);
+  border-radius: 999px;
+}
+
+.connection-groups-form .cg-tag--pinned {
+  padding-right: 12px;
+}
+
+.connection-groups-form .cg-tag-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+.connection-groups-form .cg-tag-close {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  color: inherit;
+  background: transparent;
+}
+
+.connection-groups-form .cg-tag-close:hover {
+  background: color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+}
+
+.connection-groups-form .cg-actions {
+  margin-top: 12px;
+}
+
+.connection-groups-form .cg-status {
+  margin-top: 10px;
+  font-size: 13px;
+  min-height: 1.2em;
+}
+
+.connection-groups-form .cg-status.is-ok {
+  color: var(--vscode-testing-iconPassed, var(--vscode-gitDecoration-addedResourceForeground));
+}
+
+.connection-groups-form .cg-status.is-err {
+  color: var(--vscode-errorForeground);
+}
+
+.connection-groups-form .cg-status.is-info {
+  color: var(--vscode-descriptionForeground);
+}
+
 /* ---------- 数据库驱动管理（卡片） ---------- */
 
 .drivers-manage {

@@ -41,34 +41,10 @@
         "views": {
             "datasource": [
                 {
-                    "id": "datasource-local",
-                    "name": "本地",
-                    "icon": "$(home)",
-                    "contextualTitle": "Local Datasources"
-                },
-                {
-                    "id": "datasource-dev",
-                    "name": "开发",
-                    "icon": "$(beaker)",
-                    "contextualTitle": "Dev Datasources"
-                },
-                {
-                    "id": "datasource-test",
-                    "name": "测试",
-                    "icon": "$(beaker-stop)",
-                    "contextualTitle": "Test Datasources"
-                },
-                {
-                    "id": "datasource-prod",
-                    "name": "生产",
-                    "icon": "$(rocket)",
-                    "contextualTitle": "Prod Datasources"
-                },
-                {
-                    "id": "datasource-misc",
-                    "name": "其它",
+                    "id": "cadb-datasource-tree",
+                    "name": "数据源",
                     "icon": "$(database)",
-                    "contextualTitle": "Other Datasources"
+                    "contextualTitle": "CADB 数据源"
                 }
             ],
             "query": [
@@ -96,6 +72,11 @@
                 "command": "cadb.drivers.manage",
                 "title": "管理数据库驱动",
                 "icon": "$(extensions)"
+            },
+            {
+                "command": "cadb.connectionGroups.manage",
+                "title": "管理连接分组",
+                "icon": "$(list-tree)"
             },
             {
                 "command": "cadb.datasource.refresh",
@@ -300,6 +281,11 @@
                     "command": "cadb.drivers.manage",
                     "when": "view =~ /datasource/",
                     "group": "navigation@9"
+                },
+                {
+                    "command": "cadb.connectionGroups.manage",
+                    "when": "view =~ /datasource/",
+                    "group": "navigation@10"
                 }
             ],
             "view/item/context": [
@@ -310,7 +296,7 @@
                 },
                 {
                     "command": "cadb.datasource.edit",
-                    "when": "view =~ /datasource/ && !(viewItem =~ /Type$/) && viewItem != folder",
+                    "when": "view =~ /datasource/ && !(viewItem =~ /Type$/) && viewItem != folder && viewItem != group",
                     "group": "inline"
                 },
                 {
@@ -365,7 +351,7 @@
                 },
                 {
                     "command": "cadb.delete",
-                    "when": "view =~ /datasource/ && !(viewItem =~ /Type$/) && viewItem != file",
+                    "when": "view =~ /datasource/ && !(viewItem =~ /Type$/) && viewItem != file && viewItem != group",
                     "group": "context"
                 }
             ],

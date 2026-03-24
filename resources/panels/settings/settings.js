@@ -17,18 +17,13 @@ const CONFIG_TYPES = {
   USER: "user",
   DATABASE: "database",
   DRIVERS: "drivers",
+  CONNECTION_GROUPS: "connectionGroups",
 };
 
 /** 新建/编辑连接时由扩展下发的可选驱动列表（保持到切换其它配置页） */
 let datasourceDriverOptions = null;
-/** 分组固定选项 */
-const FIXED_GROUP_OPTIONS = [
-  { value: "本地", label: "本地" },
-  { value: "开发", label: "开发" },
-  { value: "测试", label: "测试" },
-  { value: "生产", label: "生产" },
-  { value: "其它", label: "其它" },
-];
+/** 连接表单「分组」下拉选项（扩展下发；切换数据库类型时沿用） */
+let datasourceGroupOptions = null;
 
 // ==================== 从全局配置获取字段映射 ====================
 
@@ -149,10 +144,15 @@ function initDatasourceForm(data = {}, driverOptionsFromHost) {
       })),
     };
   }
-  if (mapping.group) {
-    mapping.group = { ...mapping.group, options: FIXED_GROUP_OPTIONS };
+  if (datasourceGroupOptions && datasourceGroupOptions.length > 0) {
+    mapping.group = {
+      ...mapping.group,
+      options: datasourceGroupOptions.map((o) => ({
+        value: o.value != null ? String(o.value) : String(o),
+        label: o.label != null ? String(o.label) : String(o.value ?? o),
+      })),
+    };
   }
-
   dynamicForm = new DynamicForm({
     container: "#formContainer",
     fieldMapping: mapping,
@@ -262,6 +262,168 @@ function initDriversForm(drivers) {
       } else if (action === "uninstall") {
         vscode.postMessage({ command: "setDriverEnabled", id: driverId, enabled: false });
       }
+    });
+}
+
+/** 与扩展侧栏一致：未分类连接归入此分组，且管理页中不可删除 */
+const CG_DEFAULT_GROUP = "默认";
+
+/**
+ * 连接分组：输入名称后确认加入，下方 Tag 表示顺序（「默认」不可删除），保存写入扩展
+ */
+function initConnectionGroupsForm(groups) {
+  $("#pageTitle").text("连接分组");
+  $("#pageSubtitle").text(
+    "「默认」分组固定存在、显示在列表最下方且不可删除，未填写分组的连接均归入默认。输入其他分组名后点「确认」加入；删除某个分组并保存后，该分组下的连接会移到默认。保存空列表表示完全按连接里的分组名自动排序。"
+  );
+  dynamicForm = null;
+
+  function dedupeCgOrder(arr) {
+    const out = [];
+    const set = new Set();
+    for (const n of arr) {
+      const t = String(n || "").trim();
+      if (!t) continue;
+      if (!set.has(t)) {
+        set.add(t);
+        out.push(t);
+      }
+    }
+    return out;
+  }
+
+  /** 非空列表时强制「默认」在末位且唯一 */
+  function ensureDefaultAtEnd(arr) {
+    const u = dedupeCgOrder(arr);
+    if (u.length === 0) return [];
+    const rest = u.filter((x) => x !== CG_DEFAULT_GROUP);
+    return [...rest, CG_DEFAULT_GROUP];
+  }
+
+  /** @type {string[]} */
+  let cgOrder = ensureDefaultAtEnd(Array.isArray(groups) ? groups : []);
+
+  const html = `
+    <div class="connection-groups-form">
+      <div class="cg-add-row">
+        <input type="text" id="cg-input" class="layui-input cg-input" maxlength="64" spellcheck="false" placeholder="输入分组名称" />
+        <button type="button" class="layui-btn layui-btn-normal" id="cg-add">确认</button>
+      </div>
+      <div class="cg-tags-section">
+        <div class="cg-tags-hint">当前顺序（自上而下对应侧栏显示顺序）</div>
+        <div id="cg-tags" class="cg-tags" role="list"></div>
+        <p class="cg-tags-empty" id="cg-tags-empty">暂无自定义顺序，保存后将按连接中的分组名自动排序。</p>
+      </div>
+      <div id="cg-status" class="cg-status" role="status" aria-live="polite"></div>
+      <div class="cg-actions">
+        <button type="button" class="layui-btn" id="cg-save">保存</button>
+      </div>
+    </div>`;
+  $("#formContainer").html(html);
+
+  const $status = $("#cg-status");
+  const $empty = $("#cg-tags-empty");
+
+  function setStatus(msg, kind) {
+    $status.text(msg || "");
+    $status.removeClass("is-ok is-err is-info");
+    if (kind === "ok") {
+      $status.addClass("is-ok");
+    } else if (kind === "err") {
+      $status.addClass("is-err");
+    } else if (kind === "info") {
+      $status.addClass("is-info");
+    }
+  }
+
+  function renderCgTags() {
+    const $box = $("#cg-tags");
+    $box.empty();
+    if (cgOrder.length === 0) {
+      $empty.show();
+    } else {
+      $empty.hide();
+    }
+    cgOrder.forEach((name, index) => {
+      const $tag = $('<span class="cg-tag" role="listitem">').attr("data-index", String(index));
+      if (name === CG_DEFAULT_GROUP) {
+        $tag.addClass("cg-tag--pinned");
+      }
+      $tag.append(
+        $('<span class="cg-tag-text">')
+          .text(name)
+          .attr("title", name)
+      );
+      if (name !== CG_DEFAULT_GROUP) {
+        $tag.append(
+          $('<button type="button" class="cg-tag-close">')
+            .text("×")
+            .attr("title", "删除")
+            .attr("aria-label", "删除分组 " + name)
+        );
+      }
+      $box.append($tag);
+    });
+  }
+
+  function tryAddOne() {
+    const raw = String($("#cg-input").val() || "").trim();
+    if (!raw) {
+      setStatus("请输入分组名称", "info");
+      return;
+    }
+    if (raw === CG_DEFAULT_GROUP) {
+      setStatus("「默认」分组已固定显示在末位，无需添加", "info");
+      return;
+    }
+    if (cgOrder.includes(raw)) {
+      setStatus("该分组已在列表中", "info");
+      return;
+    }
+    cgOrder = ensureDefaultAtEnd([...cgOrder, raw]);
+    $("#cg-input").val("");
+    setStatus("");
+    renderCgTags();
+  }
+
+  renderCgTags();
+
+  $("#cg-add")
+    .off("click")
+    .on("click", tryAddOne);
+
+  $("#cg-input")
+    .off("keydown")
+    .on("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        tryAddOne();
+      }
+    });
+
+  $("#cg-tags")
+    .off("click", ".cg-tag-close")
+    .on("click", ".cg-tag-close", function (e) {
+      e.preventDefault();
+      const $tag = $(this).closest(".cg-tag");
+      const idx = Number($tag.attr("data-index"));
+      if (!Number.isInteger(idx) || idx < 0 || idx >= cgOrder.length) {
+        return;
+      }
+      if (cgOrder[idx] === CG_DEFAULT_GROUP) {
+        return;
+      }
+      cgOrder.splice(idx, 1);
+      cgOrder = ensureDefaultAtEnd(cgOrder);
+      setStatus("");
+      renderCgTags();
+    });
+
+  $("#cg-save")
+    .off("click")
+    .on("click", () => {
+      const toSave = cgOrder.length === 0 ? [] : ensureDefaultAtEnd(cgOrder);
+      vscode.postMessage({ command: "saveConnectionGroups", groups: toSave });
     });
 }
 
@@ -461,9 +623,18 @@ window.addEventListener("message", (event) => {
       currentConfigType = message.configType;
       
       if (currentConfigType === CONFIG_TYPES.DATASOURCE) {
+        if (Array.isArray(message.groupOptions)) {
+          datasourceGroupOptions =
+            message.groupOptions.length > 0
+              ? message.groupOptions
+              : [{ value: "默认", label: "默认" }];
+        }
         // 数据库连接配置
         if (message.data && message.data.rowData && message.data.rowData.length > 0) {
-          const rowData = message.data.rowData[0];
+          const rowData = { ...message.data.rowData[0] };
+          if (rowData.group == null || String(rowData.group).trim() === "") {
+            rowData.group = "默认";
+          }
           initDatasourceForm(rowData, message.driverOptions || null);
         } else {
           // 新建模式：加载默认数据
@@ -472,6 +643,7 @@ window.addEventListener("message", (event) => {
           const defaultData = {
             dbType: firstId,
             name: "",
+            group: "默认",
             host: "localhost",
             port: 3306,
             username: "root",
@@ -482,6 +654,8 @@ window.addEventListener("message", (event) => {
         }
       } else if (currentConfigType === CONFIG_TYPES.DRIVERS) {
         initDriversForm(message.drivers);
+      } else if (currentConfigType === CONFIG_TYPES.CONNECTION_GROUPS) {
+        initConnectionGroupsForm(message.groups);
       } else if (currentConfigType === CONFIG_TYPES.USER) {
         // 用户配置
         if (message.data && message.data.rowData && message.data.rowData.length > 0) {
@@ -517,7 +691,15 @@ window.addEventListener("message", (event) => {
     }
     case "status": {
       const { success, message: msg } = message;
-      showStatus(msg, success ? "success" : "error");
+      if (currentConfigType === CONFIG_TYPES.CONNECTION_GROUPS) {
+        const el = document.getElementById("cg-status");
+        if (el) {
+          el.textContent = msg || "";
+          el.className = "cg-status " + (success ? "is-ok" : "is-err");
+        }
+      } else {
+        showStatus(msg, success ? "success" : "error");
+      }
       break;
     }
   }

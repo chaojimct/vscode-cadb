@@ -1,5 +1,13 @@
 import * as vscode from "vscode";
 import { DataSourceProvider } from "../database_provider";
+import {
+  getConnectionGroupFormOptions,
+  getConnectionGroupsEditorLines,
+  getRemovedGroupsForMigration,
+  getStoredConnectionGroupsOrder,
+  normalizeConnectionGroupsOrderForSave,
+  setConnectionGroupsOrder,
+} from "../connection_groups";
 import { Datasource } from "../entity/datasource";
 import path from "path";
 import { FormResult, type ListDataSortCol, type TableResult } from "../entity/dataloader";
@@ -31,21 +39,6 @@ import {
  */
 function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function getGroupOptionsForConnections(
-  provider: DataSourceProvider
-): Array<{ value: string; label: string }> {
-  const names = new Set<string>();
-  for (const c of provider.getConnections()) {
-    const raw = (c as any)?.group;
-    if (raw == null) continue;
-    const v = String(raw).trim();
-    if (!v) continue;
-    names.add(v);
-  }
-  const list = Array.from(names).sort((a, b) => a.localeCompare(b, "zh-CN"));
-  return [{ value: "默认", label: "默认" }, ...list.map((g) => ({ value: g, label: g }))];
 }
 
 /**
@@ -787,7 +780,14 @@ async function editEntry(
         item.type === "datasource"
           ? getDriverOptionsForEditConnection(provider.context, item.data?.dbType)
           : undefined,
-      groupOptions: item.type === "datasource" ? getGroupOptionsForConnections(provider) : undefined,
+      groupOptions:
+        item.type === "datasource"
+          ? getConnectionGroupFormOptions(
+              provider.context,
+              provider.getConnections(),
+              data?.rowData?.[0]?.group ?? item.data?.group
+            )
+          : undefined,
     });
   }
 
@@ -976,7 +976,10 @@ export function registerDatasourceCommands(
         configType: "datasource",
         data: null,
         driverOptions,
-        groupOptions: getGroupOptionsForConnections(provider),
+        groupOptions: getConnectionGroupFormOptions(
+          provider.context,
+          provider.getConnections()
+        ),
       });
 
       panel.webview.onDidReceiveMessage(async (message) => {
@@ -1592,6 +1595,40 @@ export function registerDatasourceCommands(
               message: enabled ? "✔️ 已安装（启用）驱动" : "✔️ 已卸载（停用）驱动",
             });
           }
+          sendLoad();
+        }
+      });
+    })
+  );
+
+  disposables.push(
+    vscode.commands.registerCommand("cadb.connectionGroups.manage", async () => {
+      const panel = createWebview(provider, "settings", "连接分组");
+      const sendLoad = () => {
+        panel.webview.postMessage({
+          command: "load",
+          configType: "connectionGroups",
+          groups: getConnectionGroupsEditorLines(provider.context, provider.getConnections()),
+        });
+      };
+      sendLoad();
+      panel.webview.onDidReceiveMessage(async (message) => {
+        if (message.command === "saveConnectionGroups") {
+          const lines = Array.isArray((message as { groups?: unknown }).groups)
+            ? (message as { groups: unknown[] }).groups.map((x) => String(x))
+            : [];
+          const prevStored = getStoredConnectionGroupsOrder(provider.context);
+          const nextStored = normalizeConnectionGroupsOrderForSave(lines);
+          const removed = getRemovedGroupsForMigration(prevStored, nextStored);
+          if (removed.length > 0) {
+            await provider.migrateConnectionsToDefaultForGroups(new Set(removed));
+          }
+          await setConnectionGroupsOrder(provider.context, nextStored);
+          postWebviewStatus(panel.webview, {
+            success: true,
+            message: "✔️ 已保存连接分组",
+          });
+          provider.refresh();
           sendLoad();
         }
       });

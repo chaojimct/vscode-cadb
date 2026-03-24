@@ -439,7 +439,17 @@ export class Datasource extends vscode.TreeItem {
   }
 
   private initGroup(input: DatasourceInputData): void {
-    this.iconPath = new vscode.ThemeIcon("folder");
+    const g = String(input.group ?? input.name ?? "").trim();
+    const legacyIcons: Record<string, string> = {
+      本地: "home",
+      开发: "beaker",
+      测试: "beaker-stop",
+      生产: "rocket",
+      其它: "database",
+      默认: "folder",
+    };
+    const iconId = legacyIcons[g] || "folder";
+    this.iconPath = new vscode.ThemeIcon(iconId);
     this.description = input.extra;
   }
 

@@ -3,6 +3,11 @@ import { readFileSync } from "fs";
 import * as vscode from "vscode";
 import { Datasource, DatasourceInputData } from "./entity/datasource";
 import type { DatabaseManager } from "./component/database_manager";
+import {
+  DEFAULT_CONNECTION_GROUP,
+  getOrderedConnectionGroups,
+  normalizeConnectionGroupLabel,
+} from "./connection_groups";
 
 /**
  * 树状态接口（仅持久化展开状态与用户过滤选项，不缓存树数据）
@@ -20,15 +25,13 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
   private treeState: TreeState;
   private rootNodes: Datasource[] = [];
   private workspaceConnections: DatasourceInputData[] = [];
-  private groupFilter: string | null = null; // 本地/开发/测试/生产/其它 或 null(不过滤)
 
   public getRootNodes(): Datasource[] {
     return this.rootNodes;
   }
 
-  constructor(context: vscode.ExtensionContext, groupFilter?: string | null) {
+  constructor(context: vscode.ExtensionContext) {
     this.context = context;
-    this.groupFilter = groupFilter ?? null;
     this.panels = {
       settings: readFileSync(
         path.join(
@@ -238,6 +241,46 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
     }
   }
 
+  /**
+   * 从「管理连接分组」列表中移除的分组：其下连接全部改为「默认」分组
+   */
+  public async migrateConnectionsToDefaultForGroups(
+    removedGroups: Set<string>
+  ): Promise<void> {
+    if (removedGroups.size === 0) {
+      return;
+    }
+    const target = DEFAULT_CONNECTION_GROUP;
+    const shouldMigrate = (g: unknown): boolean =>
+      removedGroups.has(normalizeConnectionGroupLabel(g));
+
+    let wsChanged = false;
+    const ws = [...this.workspaceConnections];
+    for (let i = 0; i < ws.length; i++) {
+      if (shouldMigrate(ws[i].group)) {
+        ws[i] = { ...ws[i], group: target };
+        wsChanged = true;
+      }
+    }
+    if (wsChanged) {
+      this.workspaceConnections = ws;
+      await this.persistWorkspaceConnections(this.workspaceConnections);
+    }
+
+    const user = this.getUserConnections();
+    let userChanged = false;
+    const nextUser = user.map((c) => {
+      if (shouldMigrate(c.group)) {
+        userChanged = true;
+        return { ...c, group: target };
+      }
+      return c;
+    });
+    if (userChanged) {
+      await this.context.globalState.update("cadb.connections", nextUser);
+    }
+  }
+
   public async renameConnectionRecord(
     oldName: string,
     newName: string
@@ -287,29 +330,48 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
 
   private async initialize() {
     this.workspaceConnections = await this.loadWorkspaceConnections();
-    const connections = this.getFilteredConnections();
-    this.rootNodes = connections.map((m) => new Datasource(m));
+    this.rootNodes = this.buildRootGroupNodes();
+    this.rebuildConnectionChildrenUnderGroups();
     this._onDidChangeTreeData.fire();
     // 每次加载都拉取最新数据，过滤显示仍按 treeState 中的 selectedDatabases/selectedTables 应用
     this.refreshAndCache();
   }
 
   private normalizeGroupName(name: any): string {
-    const v = String(name ?? "").trim();
-    if (!v) return "其它";
-    if (["本地", "开发", "测试", "生产", "其它"].includes(v)) return v;
-    return "其它";
+    return normalizeConnectionGroupLabel(name);
   }
 
-  private getFilteredConnections(): DatasourceInputData[] {
+  /** 根节点：用户自定义顺序 + 连接中出现的分组（见 connection_groups） */
+  private buildRootGroupNodes(): Datasource[] {
+    const labels = getOrderedConnectionGroups(this.context, this.getConnections());
+    return labels.map(
+      (label) =>
+        new Datasource({
+          type: "group",
+          name: label,
+          tooltip: "",
+          group: label,
+          extra: "",
+        })
+    );
+  }
+
+  /** 按连接的 group 字段将连接挂到对应分组节点下 */
+  public rebuildConnectionChildrenUnderGroups(): void {
     const all = this.getConnections();
-    if (!this.groupFilter) return all;
-    return all.filter((c) => this.normalizeGroupName((c as any)?.group) === this.groupFilter);
-  }
-
-  public setGroupFilter(group: string | null): void {
-    this.groupFilter = group;
-    this.refresh();
+    for (const g of this.rootNodes) {
+      if (g.type !== "group") {
+        continue;
+      }
+      const groupName = this.normalizeGroupName(g.data.group ?? g.label?.toString() ?? "");
+      const conns = all.filter(
+        (c) => this.normalizeGroupName((c as { group?: string }).group) === groupName
+      );
+      g.children = conns.map((c) => new Datasource(c, undefined, g));
+      const n = conns.length;
+      g.description = n > 0 ? String(n) : "";
+      g.data.extra = g.description;
+    }
   }
 
   private getWorkspaceRootUri(): vscode.Uri | null {
@@ -533,30 +595,40 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
    * 仍根据 treeState 中的 selectedDatabases/selectedTables 过滤显示。
    */
   public async refreshAndCache() {
-    const connections = this.getFilteredConnections();
-    this.rootNodes = connections.map((m) => new Datasource(m));
+    // 每次同步须重建分组根：连接中的 group 与 globalState 中的分组顺序会变；
+    // 若沿用旧 rootNodes，仅 rebuildConnectionChildrenUnderGroups 无法出现新分组名。
+    this.rootNodes = this.buildRootGroupNodes();
+    this.rebuildConnectionChildrenUnderGroups();
     this._onDidChangeTreeData.fire();
 
-    await vscode.window.withProgress({
-      location: vscode.ProgressLocation.Window,
-      title: "正在同步数据库结构...",
-      cancellable: false
-    }, async (progress) => {
-      const nodePromises = this.rootNodes.map(async (node, index) => {
-        try {
-          progress.report({
-            message: `正在加载 ${node.label} (${index + 1}/${this.rootNodes.length})`,
-            increment: 100 / this.rootNodes.length
-          });
-          await this.expandRecursiveFast(node, 2);
-        } catch (error) {
-          console.error(`加载连接 ${node.label} 失败:`, error);
-        }
-      });
+    const connectionRoots = this.rootNodes.flatMap((g) =>
+      g.type === "group" ? g.children || [] : []
+    );
 
-      await Promise.all(nodePromises);
-      this._onDidChangeTreeData.fire();
-    });
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Window,
+        title: "正在同步数据库结构...",
+        cancellable: false,
+      },
+      async (progress) => {
+        const total = Math.max(1, connectionRoots.length);
+        const nodePromises = connectionRoots.map(async (node, index) => {
+          try {
+            progress.report({
+              message: `正在加载 ${node.label} (${index + 1}/${total})`,
+              increment: 100 / total,
+            });
+            await this.expandRecursiveFast(node, 2);
+          } catch (error) {
+            console.error(`加载连接 ${node.label} 失败:`, error);
+          }
+        });
+
+        await Promise.all(nodePromises);
+        this._onDidChangeTreeData.fire();
+      }
+    );
   }
 
   private _onDidChangeTreeData: vscode.EventEmitter<

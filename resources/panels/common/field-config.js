@@ -47,15 +47,9 @@
       required: true,
       colspan: 2,
       fullRow: true,
-      placeholder: "选择分组",
-      options: [
-        { value: "本地", label: "本地" },
-        { value: "开发", label: "开发" },
-        { value: "测试", label: "测试" },
-        { value: "生产", label: "生产" },
-        { value: "其它", label: "其它" }
-      ],
-      value: "其它",
+      options: [{ value: "默认", label: "默认" }],
+      hint: "选项来自侧栏当前分组顺序及已有连接；更多分组请在「管理连接分组」中添加",
+      value: "默认",
     },
     saveLocation: {
       type: "radio",
