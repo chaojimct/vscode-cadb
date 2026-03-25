@@ -1,6 +1,7 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from "vscode";
+import path from "path";
 import { DataSourceProvider } from "./provider/database_provider";
 import { Datasource } from "./provider/entity/datasource";
 import {
@@ -125,6 +126,51 @@ export function activate(context: vscode.ExtensionContext) {
   // 创建输出通道用于显示 SQL 执行日志
   const outputChannel = vscode.window.createOutputChannel("CADB SQL");
   context.subscriptions.push(outputChannel);
+  const LAST_ACTIVE_TARGET_STATE_KEY = "cadb.lastActiveTarget";
+  type LastActiveTargetState =
+    | {
+        kind: "file";
+        uri: string;
+        updatedAt: number;
+      }
+    | {
+        kind: "tableData" | "tableEdit";
+        connectionName: string;
+        databaseName: string;
+        tableName: string;
+        updatedAt: number;
+      };
+  const revealLog = (message: string, data?: unknown): void => {
+    const ts = new Date().toISOString();
+    if (data === undefined) {
+      outputChannel.appendLine(`[CADB REVEAL][${ts}] ${message}`);
+      return;
+    }
+    try {
+      outputChannel.appendLine(`[CADB REVEAL][${ts}] ${message} ${JSON.stringify(data)}`);
+    } catch {
+      outputChannel.appendLine(`[CADB REVEAL][${ts}] ${message}`);
+    }
+  };
+  const persistLastActiveFileTarget = (uri: vscode.Uri | undefined): void => {
+    if (!uri) {
+      return;
+    }
+    // notebook 单元格 URI 不能作为可恢复目标（无法直接 openNotebookDocument）
+    // 此类场景应由 onDidChangeActiveNotebookEditor 记录 notebook URI。
+    if (uri.scheme === "vscode-notebook-cell") {
+      return;
+    }
+    const fsPath = (uri.fsPath || "").toLowerCase();
+    if (!fsPath.endsWith(".sql") && !fsPath.endsWith(".jsql")) {
+      return;
+    }
+    void context.workspaceState.update(LAST_ACTIVE_TARGET_STATE_KEY, {
+      kind: "file",
+      uri: uri.toString(),
+      updatedAt: Date.now(),
+    } as LastActiveTargetState);
+  };
 
   const provider = new DataSourceProvider(context);
   const treeView = vscode.window.createTreeView("cadb-datasource-tree", {
@@ -181,8 +227,614 @@ export function activate(context: vscode.ExtensionContext) {
   treeView.onDidChangeVisibility((e) => {
     if (e.visible) {
       provider.refresh();
+      scheduleActiveEditorReveal("treeVisible");
     }
   });
+  let ensureDatasourceVisibleTask: Promise<void> | undefined;
+  const ensureDatasourceVisible = async (): Promise<void> => {
+    if (ensureDatasourceVisibleTask) {
+      return ensureDatasourceVisibleTask;
+    }
+    ensureDatasourceVisibleTask = (async () => {
+      const sleepLocal = (ms: number): Promise<void> =>
+        new Promise((resolve) => setTimeout(resolve, ms));
+      const runCmd = async (cmd: string): Promise<void> => {
+        try { await vscode.commands.executeCommand(cmd); } catch { /* ignore */ }
+      };
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        revealLog("ensureDatasourceVisible: 开始尝试", { attempt, visible: treeView.visible });
+        if (treeView.visible) {
+          revealLog("ensureDatasourceVisible: 视图已可见，直接返回");
+          return;
+        }
+        await runCmd("workbench.action.focusSideBar");
+        await runCmd("workbench.view.extension.cadb-datasource");
+        await runCmd("cadb-datasource-tree.focus");
+        if (!treeView.visible) {
+          await runCmd("workbench.view.explorer");
+          await runCmd("cadb-datasource-tree.focus");
+        }
+        await sleepLocal(180);
+        if (treeView.visible) {
+          revealLog("ensureDatasourceVisible: 命令后视图可见，直接返回", { attempt });
+          return;
+        }
+        await sleepLocal(500);
+      }
+      revealLog("ensureDatasourceVisible: 多次尝试后仍不可见，结束");
+    })().finally(() => {
+      ensureDatasourceVisibleTask = undefined;
+    });
+    return ensureDatasourceVisibleTask;
+  };
+  context.subscriptions.push(
+    vscode.commands.registerCommand("cadb.datasource.focus", async () => {
+      await ensureDatasourceVisible();
+      const roots = provider.getRootNodes();
+      if (roots.length > 0) {
+        try {
+          await treeView.reveal(roots[0], { expand: true, select: false, focus: true });
+        } catch (e) {
+          console.warn("聚焦首个根节点失败:", e);
+        }
+      }
+    })
+  );
+  // reload 后做双阶段拉起，兼容 Workbench 视图恢复延迟
+  setTimeout(() => {
+    void ensureDatasourceVisible();
+  }, 0);
+  setTimeout(() => {
+    void ensureDatasourceVisible();
+  }, 1200);
+
+  const toComparablePath = (inputPath: string): string => {
+    const normalized = path.resolve(inputPath).replace(/\\/g, "/");
+    return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+  };
+
+  const isSameOrSubPath = (targetPath: string, basePath: string): boolean => {
+    if (targetPath === basePath) {
+      return true;
+    }
+    const base = basePath.endsWith("/") ? basePath : `${basePath}/`;
+    return targetPath.startsWith(base);
+  };
+
+  const getChildrenSafe = async (element?: Datasource): Promise<Datasource[]> => {
+    const result = provider.getChildren(element);
+    if (Array.isArray(result)) {
+      return result;
+    }
+    const resolved = await Promise.resolve(result);
+    return resolved ?? [];
+  };
+
+  const findConnectionForUri = (
+    uri: vscode.Uri
+  ): { connectionName: string; fileName: string } | undefined => {
+    revealLog("findConnectionForUri: 开始", {
+      uri: uri.toString(),
+      scheme: uri.scheme,
+      fsPath: uri.fsPath,
+    });
+    const rawPath = uri.fsPath || "";
+    if (!rawPath) {
+      revealLog("findConnectionForUri: fsPath 为空，跳过");
+      return undefined;
+    }
+    const filePath = toComparablePath(rawPath);
+    const ext = path.extname(uri.fsPath).toLowerCase();
+    if (ext !== ".sql" && ext !== ".jsql") {
+      revealLog("findConnectionForUri: 非 sql/jsql，跳过", { ext });
+      return undefined;
+    }
+
+    let bestMatch: { connectionName: string; basePath: string } | undefined;
+    for (const conn of provider.getConnections()) {
+      const connName = (conn.name || "").trim();
+      if (!connName) {
+        continue;
+      }
+      const baseUri = provider.getConnectionFilesDirUri(connName);
+      const basePath = toComparablePath(baseUri.fsPath);
+      if (!isSameOrSubPath(filePath, basePath)) {
+        continue;
+      }
+      if (!bestMatch || basePath.length > bestMatch.basePath.length) {
+        bestMatch = { connectionName: connName, basePath };
+      }
+    }
+    if (!bestMatch) {
+      revealLog("findConnectionForUri: 未命中任何连接", {
+        filePath,
+        connections: provider.getConnections().map((c) => c.name || ""),
+      });
+      return undefined;
+    }
+    revealLog("findConnectionForUri: 命中连接", {
+      connectionName: bestMatch.connectionName,
+      fileName: path.basename(uri.fsPath),
+      basePath: bestMatch.basePath,
+    });
+    return {
+      connectionName: bestMatch.connectionName,
+      fileName: path.basename(uri.fsPath),
+    };
+  };
+
+  const findConnectionNode = (connectionName: string): { group: Datasource; connection: Datasource } | undefined => {
+    const target = process.platform === "win32" ? connectionName.toLowerCase() : connectionName;
+    for (const root of provider.getRootNodes()) {
+      if (root.type !== "group") {
+        continue;
+      }
+      const conn = (root.children || []).find(
+        (child) => {
+          if (child.type !== "datasource") {
+            return false;
+          }
+          const label = child.label?.toString() || "";
+          const comparable = process.platform === "win32" ? label.toLowerCase() : label;
+          return comparable === target;
+        }
+      );
+      if (conn) {
+        revealLog("findConnectionNode: 命中连接节点", {
+          connectionName,
+          group: root.label?.toString() || "",
+          connection: conn.label?.toString() || "",
+        });
+        return { group: root, connection: conn };
+      }
+    }
+    const allConnectionNames = provider
+      .getRootNodes()
+      .flatMap((root) => (root.children || []).filter((c) => c.type === "datasource"))
+      .map((c) => c.label?.toString() || "");
+    revealLog("findConnectionNode: 未命中连接节点", {
+      connectionName,
+      allConnections: allConnectionNames,
+      rootCount: provider.getRootNodes().length,
+    });
+    return undefined;
+  };
+
+  const equalsLabel = (left: string | undefined, right: string | undefined): boolean => {
+    const l = (left || "").trim();
+    const r = (right || "").trim();
+    if (process.platform === "win32") {
+      return l.toLowerCase() === r.toLowerCase();
+    }
+    return l === r;
+  };
+
+  const getFreshChildren = async (element: Datasource): Promise<Datasource[]> => {
+    const children = await getChildrenSafe(element);
+    if (children.length > 0) {
+      return children;
+    }
+    // 某些场景 children 可能被旧缓存卡住，空列表时强制重载一次
+    element.children = [];
+    return getChildrenSafe(element);
+  };
+
+  const revealTableInDatasource = async (target: {
+    connectionName: string;
+    databaseName: string;
+    tableName: string;
+  }): Promise<boolean> => {
+    revealLog("revealTableInDatasource: 开始", target);
+    const found = findConnectionNode(target.connectionName);
+    if (!found) {
+      revealLog("revealTableInDatasource: 连接节点未找到", target);
+      return false;
+    }
+    try {
+      const connectionChildren = await getFreshChildren(found.connection);
+      const datasourceTypeNode = connectionChildren.find((c) => c.type === "datasourceType");
+      if (!datasourceTypeNode) {
+        revealLog("revealTableInDatasource: datasourceType 节点未找到", {
+          connectionChildrenTypes: connectionChildren.map((c) => c.type),
+          connectionChildrenLabels: connectionChildren.map((c) => c.label?.toString() || ""),
+        });
+        return false;
+      }
+      const dbNodes = await getFreshChildren(datasourceTypeNode);
+      const dbNode = dbNodes.find(
+        (db) => db.type === "collection" && equalsLabel(db.label?.toString(), target.databaseName)
+      );
+      if (!dbNode) {
+        revealLog("revealTableInDatasource: database 节点未找到", {
+          targetDatabase: target.databaseName,
+          dbCandidates: dbNodes.map((n) => n.label?.toString() || ""),
+        });
+        return false;
+      }
+      const dbChildren = await getFreshChildren(dbNode);
+      const collectionTypeNode = dbChildren.find((c) => c.type === "collectionType");
+      if (!collectionTypeNode) {
+        revealLog("revealTableInDatasource: collectionType 节点未找到", {
+          database: dbNode.label?.toString() || "",
+          dbChildrenTypes: dbChildren.map((c) => c.type),
+          dbChildrenLabels: dbChildren.map((c) => c.label?.toString() || ""),
+        });
+        return false;
+      }
+      const tableNodes = await getFreshChildren(collectionTypeNode);
+      const tableNode = tableNodes.find(
+        (t) => t.type === "document" && equalsLabel(t.label?.toString(), target.tableName)
+      );
+      if (!tableNode) {
+        revealLog("revealTableInDatasource: table 节点未找到", {
+          targetTable: target.tableName,
+          tableCandidates: tableNodes.map((n) => n.label?.toString() || ""),
+        });
+        return false;
+      }
+      // 仅对最终目标节点执行 reveal，避免中间节点多次滚动造成闪烁
+      await treeView.reveal(tableNode, { expand: false, select: true, focus: false });
+      revealLog("revealTableInDatasource: 定位成功", {
+        table: tableNode.label?.toString() || "",
+      });
+      return true;
+    } catch (error) {
+      revealLog("revealTableInDatasource: 异常", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+      console.error("定位当前表到数据源视图失败:", error);
+      return false;
+    }
+  };
+
+  const getActiveDocumentUri = (): vscode.Uri | undefined => {
+    const editor = vscode.window.activeTextEditor;
+    if (editor) {
+      return editor.document.uri;
+    }
+    const notebookEditor = vscode.window.activeNotebookEditor;
+    if (notebookEditor?.notebook) {
+      return notebookEditor.notebook.uri;
+    }
+    return undefined;
+  };
+
+  const revealTargetInDatasource = async (
+    target: { connectionName: string; fileName: string }
+  ): Promise<boolean> => {
+    revealLog("revealTargetInDatasource: 开始", target);
+    const found = findConnectionNode(target.connectionName);
+    if (!found) {
+      revealLog("revealTargetInDatasource: 连接节点未找到", target);
+      return false;
+    }
+    try {
+      const connectionChildren = await getFreshChildren(found.connection);
+      const fileTypeNode = connectionChildren.find((c) => c.type === "fileType");
+      if (!fileTypeNode) {
+        revealLog("revealTargetInDatasource: fileType 节点未找到", {
+          connectionChildrenTypes: connectionChildren.map((c) => c.type),
+          connectionChildrenLabels: connectionChildren.map((c) => c.label?.toString() || ""),
+        });
+        return false;
+      }
+      let fileNodes = await getFreshChildren(fileTypeNode);
+      let targetFile = fileNodes.find(
+        (file) => file.type === "file" && equalsLabel(file.label?.toString(), target.fileName)
+      );
+      if (!targetFile) {
+        revealLog("revealTargetInDatasource: file 首次未命中，准备强制重载", {
+          targetFile: target.fileName,
+          fileCandidates: fileNodes.map((n) => n.label?.toString() || ""),
+        });
+        // 文件列表可能有缓存，未命中时强制重载一次
+        fileTypeNode.children = [];
+        fileNodes = await getChildrenSafe(fileTypeNode);
+        targetFile = fileNodes.find(
+          (file) => file.type === "file" && equalsLabel(file.label?.toString(), target.fileName)
+        );
+      }
+      if (!targetFile) {
+        revealLog("revealTargetInDatasource: file 仍未命中", {
+          targetFile: target.fileName,
+          fileCandidates: fileNodes.map((n) => n.label?.toString() || ""),
+        });
+        return false;
+      }
+      // 仅对最终目标节点执行 reveal，避免中间节点多次滚动造成闪烁
+      await treeView.reveal(targetFile, { expand: false, select: true, focus: false });
+      revealLog("revealTargetInDatasource: 定位成功", {
+        file: targetFile.label?.toString() || "",
+      });
+      return true;
+    } catch (error) {
+      revealLog("revealTargetInDatasource: 异常", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+      console.error("定位当前文件到数据源视图失败:", error);
+      return false;
+    }
+  };
+
+  const sleep = (ms: number): Promise<void> =>
+    new Promise((resolve) => setTimeout(resolve, ms));
+
+  let revealQueue: Promise<void> = Promise.resolve();
+  let activeEditorRevealTimer: ReturnType<typeof setTimeout> | undefined;
+  let lastActiveEditorRevealKey = "";
+  let lastActiveEditorRevealAt = 0;
+  let lastRevealByPathKey = "";
+  let lastRevealByPathAt = 0;
+  const ACTIVE_EDITOR_REVEAL_DEBOUNCE_MS = 120;
+  const ACTIVE_EDITOR_REVEAL_DEDUP_MS = 400;
+  const REVEAL_BY_PATH_DEDUP_MS = 280;
+  const enqueueReveal = (reason: string, job: () => Promise<void>): void => {
+    revealQueue = revealQueue
+      .then(async () => {
+        revealLog("enqueueReveal: 开始", { reason });
+        await job();
+        revealLog("enqueueReveal: 完成", { reason });
+      })
+      .catch((error) => {
+        revealLog("enqueueReveal: 异常", {
+          reason,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      });
+  };
+
+  const scheduleActiveEditorReveal = (reason: string): void => {
+    if (activeEditorRevealTimer) {
+      clearTimeout(activeEditorRevealTimer);
+    }
+    activeEditorRevealTimer = setTimeout(() => {
+      enqueueReveal(`activeEditor:${reason}`, revealActiveEditorInDatasource);
+    }, ACTIVE_EDITOR_REVEAL_DEBOUNCE_MS);
+  };
+  context.subscriptions.push({
+    dispose: () => {
+      if (activeEditorRevealTimer) {
+        clearTimeout(activeEditorRevealTimer);
+      }
+    },
+  });
+  let treeDataSettleTimer: ReturnType<typeof setTimeout> | undefined;
+  context.subscriptions.push({
+    dispose: () => {
+      if (treeDataSettleTimer) {
+        clearTimeout(treeDataSettleTimer);
+      }
+    },
+  });
+
+  const revealActiveEditorInDatasource = async (): Promise<void> => {
+    if (!treeView.visible) {
+      revealLog("revealActiveEditorInDatasource: 视图不可见，跳过本次定位");
+      return;
+    }
+    const uri = getActiveDocumentUri();
+    if (!uri) {
+      revealLog("revealActiveEditorInDatasource: 当前无激活文档");
+      return;
+    }
+    const target = findConnectionForUri(uri);
+    if (!target) {
+      revealLog("revealActiveEditorInDatasource: 当前文档无关联连接", {
+        uri: uri.toString(),
+      });
+      return;
+    }
+    const activeKey = `${target.connectionName}|${target.fileName}`;
+    const now = Date.now();
+    if (
+      activeKey === lastActiveEditorRevealKey &&
+      now - lastActiveEditorRevealAt < ACTIVE_EDITOR_REVEAL_DEDUP_MS
+    ) {
+      revealLog("revealActiveEditorInDatasource: 命中去重窗口，跳过重复定位", {
+        activeKey,
+        elapsedMs: now - lastActiveEditorRevealAt,
+      });
+      return;
+    }
+    revealLog("revealActiveEditorInDatasource: 解析到目标", target);
+    // 初始化期间根节点/连接节点可能尚未准备好，做短暂重试
+    for (let i = 0; i < 6; i++) {
+      const ok = await revealTargetInDatasource(target);
+      if (ok) {
+        lastActiveEditorRevealKey = activeKey;
+        lastActiveEditorRevealAt = Date.now();
+        revealLog("revealActiveEditorInDatasource: 定位成功", { attempt: i + 1 });
+        return;
+      }
+      revealLog("revealActiveEditorInDatasource: 本轮定位失败，继续重试", { attempt: i + 1 });
+      await sleep(200);
+    }
+    revealLog("revealActiveEditorInDatasource: 重试后仍失败", target);
+  };
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "cadb.datasource.revealByPath",
+      async (payload: {
+        connectionName?: string;
+        databaseName?: string;
+        tableName?: string;
+        fileName?: string;
+      }) => {
+        revealLog("cadb.datasource.revealByPath: 收到请求", payload);
+        enqueueReveal("revealByPath", async () => {
+          const connectionName = String(payload?.connectionName || "").trim();
+          if (!connectionName) {
+            revealLog("cadb.datasource.revealByPath: connectionName 为空，忽略");
+            return;
+          }
+          const dedupKey = payload?.databaseName && payload?.tableName
+            ? `table|${connectionName}|${String(payload.databaseName)}|${String(payload.tableName)}`
+            : payload?.fileName
+              ? `file|${connectionName}|${String(payload.fileName)}`
+              : "";
+          if (dedupKey) {
+            const now = Date.now();
+            if (
+              dedupKey === lastRevealByPathKey &&
+              now - lastRevealByPathAt < REVEAL_BY_PATH_DEDUP_MS
+            ) {
+              revealLog("cadb.datasource.revealByPath: 命中去重窗口，跳过重复请求", {
+                dedupKey,
+                elapsedMs: now - lastRevealByPathAt,
+              });
+              return;
+            }
+            lastRevealByPathKey = dedupKey;
+            lastRevealByPathAt = now;
+          }
+          await ensureDatasourceVisible();
+          if (payload?.databaseName && payload?.tableName) {
+            const target = {
+              connectionName,
+              databaseName: String(payload.databaseName),
+              tableName: String(payload.tableName),
+            };
+            for (let i = 0; i < 6; i++) {
+              const ok = await revealTableInDatasource(target);
+              if (ok) {
+                revealLog("cadb.datasource.revealByPath: 表定位成功", { attempt: i + 1, target });
+                return;
+              }
+              if (i === 2) {
+                revealLog("cadb.datasource.revealByPath: 表定位触发中途 refresh", { attempt: i + 1 });
+                provider.refresh();
+              }
+              await sleep(180);
+            }
+            revealLog("cadb.datasource.revealByPath: 表定位最终失败", target);
+            return;
+          }
+          if (payload?.fileName) {
+            const target = { connectionName, fileName: String(payload.fileName) };
+            for (let i = 0; i < 6; i++) {
+              const ok = await revealTargetInDatasource(target);
+              if (ok) {
+                revealLog("cadb.datasource.revealByPath: 文件定位成功", { attempt: i + 1, target });
+                return;
+              }
+              if (i === 2) {
+                revealLog("cadb.datasource.revealByPath: 文件定位触发中途 refresh", { attempt: i + 1 });
+                provider.refresh();
+              }
+              await sleep(180);
+            }
+            revealLog("cadb.datasource.revealByPath: 文件定位最终失败", target);
+          }
+        });
+      }
+    )
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand("cadb.datasource.revealActiveEditor", async () => {
+      scheduleActiveEditorReveal("manualCommand");
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      revealLog("事件: onDidChangeActiveTextEditor");
+      persistLastActiveFileTarget(editor?.document.uri);
+      scheduleActiveEditorReveal("onDidChangeActiveTextEditor");
+    })
+  );
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveNotebookEditor((editor) => {
+      revealLog("事件: onDidChangeActiveNotebookEditor");
+      persistLastActiveFileTarget(editor?.notebook.uri);
+      scheduleActiveEditorReveal("onDidChangeActiveNotebookEditor");
+    })
+  );
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      revealLog("事件: onDidChangeWorkspaceFolders");
+      provider.refresh();
+      scheduleActiveEditorReveal("onDidChangeWorkspaceFolders");
+    })
+  );
+  if (provider.onDidChangeTreeData) {
+    context.subscriptions.push(
+      provider.onDidChangeTreeData(() => {
+        if (!treeView.visible) {
+          return;
+        }
+        if (treeDataSettleTimer) {
+          clearTimeout(treeDataSettleTimer);
+        }
+        treeDataSettleTimer = setTimeout(() => {
+          scheduleActiveEditorReveal("treeDataSettled");
+        }, 220);
+      })
+    );
+  }
+  // 启动期兜底：树完成首轮恢复后再补一轮当前激活文件定位
+  setTimeout(() => {
+    scheduleActiveEditorReveal("startup-post-1800ms");
+  }, 1800);
+  setTimeout(() => {
+    scheduleActiveEditorReveal("startup-post-3200ms");
+  }, 3200);
+  const restoreLastActiveTarget = async (reason: string): Promise<void> => {
+    const target = context.workspaceState.get<LastActiveTargetState | undefined>(
+      LAST_ACTIVE_TARGET_STATE_KEY
+    );
+    if (!target) {
+      return;
+    }
+    revealLog("restoreLastActiveTarget: 尝试恢复", { reason, target });
+    try {
+      if (target.kind === "file" && target.uri) {
+        let uri = vscode.Uri.parse(target.uri);
+        // 兼容旧状态：若历史保存了 cell-uri，则转成文件 URI 再恢复
+        if (uri.scheme === "vscode-notebook-cell") {
+          uri = vscode.Uri.file(uri.fsPath);
+        }
+        if ((uri.fsPath || "").toLowerCase().endsWith(".jsql")) {
+          const nb = await vscode.workspace.openNotebookDocument(uri);
+          await vscode.window.showNotebookDocument(nb, {
+            preserveFocus: false,
+            preview: false,
+            viewColumn: vscode.ViewColumn.Active,
+          });
+        } else {
+          const doc = await vscode.workspace.openTextDocument(uri);
+          await vscode.window.showTextDocument(doc, {
+            preview: false,
+            viewColumn: vscode.ViewColumn.Active,
+          });
+        }
+        scheduleActiveEditorReveal(`restoreLastActiveTarget:${reason}:file`);
+        return;
+      }
+      if (target.kind === "tableData" || target.kind === "tableEdit") {
+        const ok = await vscode.commands.executeCommand<boolean>("cadb.internal.activateTablePanel", {
+          kind: target.kind,
+          connectionName: target.connectionName,
+          databaseName: target.databaseName,
+          tableName: target.tableName,
+        });
+        if (!ok) {
+          revealLog("restoreLastActiveTarget: 表目标恢复未命中", { reason, target });
+        }
+      }
+    } catch (error) {
+      revealLog("restoreLastActiveTarget: 恢复失败", {
+        reason,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+  setTimeout(() => {
+    void restoreLastActiveTarget("startup-2600ms");
+  }, 2600);
+  setTimeout(() => {
+    void restoreLastActiveTarget("startup-4200ms");
+  }, 4200);
 
   // 数据库管理器（替代 CaEditor，只保留数据库选择功能）
   const databaseManager = new DatabaseManager(provider);
@@ -278,6 +930,13 @@ export function activate(context: vscode.ExtensionContext) {
       }
     })
   );
+  // 重载窗口时当前 SQL 编辑器可能不会触发 onDidChangeActiveTextEditor，需主动恢复一次绑定
+  const initialEditor = vscode.window.activeTextEditor;
+  if (initialEditor?.document.languageId === "sql") {
+    void applyStoredSelectionForDocument(initialEditor.document);
+  }
+  persistLastActiveFileTarget(initialEditor?.document.uri);
+  persistLastActiveFileTarget(vscode.window.activeNotebookEditor?.notebook.uri);
 
   // 数据项命令
   registerDatasourceItemCommands(provider, outputChannel, databaseManager);

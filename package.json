@@ -17,7 +17,9 @@
     ],
     "activationEvents": [
         "onLanguage:sql",
-        "onNotebook:cadb.sqlNotebook"
+        "onNotebook:cadb.sqlNotebook",
+        "onView:cadb-datasource-tree",
+        "onStartupFinished"
     ],
     "main": "./dist/extension.js",
     "icon": "logo.png",
@@ -25,7 +27,7 @@
         "viewsContainers": {
             "activitybar": [
                 {
-                    "id": "datasource",
+                    "id": "cadb-datasource",
                     "title": "CADB",
                     "icon": "./resources/icons/logo.png"
                 }
@@ -39,7 +41,7 @@
             ]
         },
         "views": {
-            "datasource": [
+            "cadb-datasource": [
                 {
                     "id": "cadb-datasource-tree",
                     "name": "数据源",
@@ -82,6 +84,11 @@
                 "command": "cadb.datasource.refresh",
                 "title": "刷新",
                 "icon": "$(refresh)"
+            },
+            {
+                "command": "cadb.datasource.focus",
+                "title": "打开数据源视图",
+                "icon": "$(list-tree)"
             },
             {
                 "command": "cadb.datasource.search",

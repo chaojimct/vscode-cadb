@@ -25,6 +25,7 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
   private treeState: TreeState;
   private rootNodes: Datasource[] = [];
   private workspaceConnections: DatasourceInputData[] = [];
+  private refreshQueue: Promise<void> = Promise.resolve();
 
   public getRootNodes(): Datasource[] {
     return this.rootNodes;
@@ -329,12 +330,19 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
   }
 
   private async initialize() {
-    this.workspaceConnections = await this.loadWorkspaceConnections();
-    this.rootNodes = this.buildRootGroupNodes();
-    this.rebuildConnectionChildrenUnderGroups();
-    this._onDidChangeTreeData.fire();
-    // 每次加载都拉取最新数据，过滤显示仍按 treeState 中的 selectedDatabases/selectedTables 应用
-    this.refreshAndCache();
+    try {
+      this.workspaceConnections = await this.loadWorkspaceConnections();
+      this.rootNodes = this.buildRootGroupNodes();
+      this.rebuildConnectionChildrenUnderGroups();
+      this._onDidChangeTreeData.fire();
+      // 每次加载都拉取最新数据，过滤显示仍按 treeState 中的 selectedDatabases/selectedTables 应用
+      await this.enqueueRefreshAndCache();
+    } catch (error) {
+      console.error("初始化数据源树失败:", error);
+      this.rootNodes = this.buildRootGroupNodes();
+      this.rebuildConnectionChildrenUnderGroups();
+      this._onDidChangeTreeData.fire();
+    }
   }
 
   private normalizeGroupName(name: any): string {
@@ -426,8 +434,18 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
       if (!Array.isArray(parsed)) return [];
       return parsed as DatasourceInputData[];
     } catch {
-      return [];
+      // 读取异常（时序/文件系统瞬时错误）时保留当前内存数据，避免树被误清空
+      return this.workspaceConnections || [];
     }
+  }
+
+  private enqueueRefreshAndCache(): Promise<void> {
+    this.refreshQueue = this.refreshQueue
+      .then(() => this.refreshAndCache())
+      .catch((error) => {
+        console.error("数据源刷新队列执行失败:", error);
+      });
+    return this.refreshQueue;
   }
 
   private async persistWorkspaceConnections(
@@ -595,40 +613,47 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
    * 仍根据 treeState 中的 selectedDatabases/selectedTables 过滤显示。
    */
   public async refreshAndCache() {
-    // 每次同步须重建分组根：连接中的 group 与 globalState 中的分组顺序会变；
-    // 若沿用旧 rootNodes，仅 rebuildConnectionChildrenUnderGroups 无法出现新分组名。
-    this.rootNodes = this.buildRootGroupNodes();
-    this.rebuildConnectionChildrenUnderGroups();
-    this._onDidChangeTreeData.fire();
+    try {
+      // 工作区连接文件可能在激活早期尚不可读；每次刷新前重读一次，避免出现空白树
+      this.workspaceConnections = await this.loadWorkspaceConnections();
+      // 每次同步须重建分组根：连接中的 group 与 globalState 中的分组顺序会变；
+      // 若沿用旧 rootNodes，仅 rebuildConnectionChildrenUnderGroups 无法出现新分组名。
+      this.rootNodes = this.buildRootGroupNodes();
+      this.rebuildConnectionChildrenUnderGroups();
+      this._onDidChangeTreeData.fire();
 
-    const connectionRoots = this.rootNodes.flatMap((g) =>
-      g.type === "group" ? g.children || [] : []
-    );
+      const connectionRoots = this.rootNodes.flatMap((g) =>
+        g.type === "group" ? g.children || [] : []
+      );
 
-    await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Window,
-        title: "正在同步数据库结构...",
-        cancellable: false,
-      },
-      async (progress) => {
-        const total = Math.max(1, connectionRoots.length);
-        const nodePromises = connectionRoots.map(async (node, index) => {
-          try {
-            progress.report({
-              message: `正在加载 ${node.label} (${index + 1}/${total})`,
-              increment: 100 / total,
-            });
-            await this.expandRecursiveFast(node, 2);
-          } catch (error) {
-            console.error(`加载连接 ${node.label} 失败:`, error);
-          }
-        });
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Window,
+          title: "正在同步数据库结构...",
+          cancellable: false,
+        },
+        async (progress) => {
+          const total = Math.max(1, connectionRoots.length);
+          const nodePromises = connectionRoots.map(async (node, index) => {
+            try {
+              progress.report({
+                message: `正在加载 ${node.label} (${index + 1}/${total})`,
+                increment: 100 / total,
+              });
+              await this.expandRecursiveFast(node, 2);
+            } catch (error) {
+              console.error(`加载连接 ${node.label} 失败:`, error);
+            }
+          });
 
-        await Promise.all(nodePromises);
-        this._onDidChangeTreeData.fire();
-      }
-    );
+          await Promise.all(nodePromises);
+          this._onDidChangeTreeData.fire();
+        }
+      );
+    } catch (error) {
+      console.error("刷新数据源树失败:", error);
+      this._onDidChangeTreeData.fire();
+    }
   }
 
   private _onDidChangeTreeData: vscode.EventEmitter<
@@ -761,6 +786,10 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
       });
     }
     // Root items
+    if (this.rootNodes.length === 0) {
+      // 自愈：若初始为空，后台再触发一次刷新（常见于启动时序问题）
+      void this.refreshAndCache();
+    }
     return this.rootNodes;
   }
   
@@ -781,7 +810,7 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
       item.children = [];
       this._onDidChangeTreeData.fire(item);
     } else {
-      this.refreshAndCache();
+      void this.enqueueRefreshAndCache();
     }
     // 刷新后保存树状态
     this.saveTreeState();
