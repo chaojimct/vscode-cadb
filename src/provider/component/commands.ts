@@ -10,6 +10,7 @@ import {
 } from "../connection_groups";
 import { Datasource, type DatasourceInputData } from "../entity/datasource";
 import path from "path";
+import { readFileSync } from "fs";
 import { FormResult, type ListDataSortCol, type TableResult } from "../entity/dataloader";
 import { MySQLDataloader } from "../entity/mysql_dataloader";
 import { OssDataLoader } from "../entity/oss_dataloader";
@@ -1567,10 +1568,23 @@ export function registerDatasourceCommands(
   disposables.push(
     vscode.commands.registerCommand("cadb.drivers.manage", async () => {
       const panel = createWebview(provider, "settings", "数据库驱动");
+      const readExtensionVersion = (): string => {
+        try {
+          const raw = readFileSync(
+            path.join(provider.context.extensionPath, "package.json"),
+            "utf-8"
+          );
+          const v = (JSON.parse(raw) as { version?: string }).version;
+          return typeof v === "string" ? v.trim() : "";
+        } catch {
+          return "";
+        }
+      };
       const sendLoad = () => {
         panel.webview.postMessage({
           command: "load",
           configType: "drivers",
+          extensionVersion: readExtensionVersion(),
           drivers: getDriversManagementPayload(provider.context),
         });
       };

@@ -23,8 +23,8 @@ function registerMysql(): void {
   const driver: RegisteredDatabaseDriver = {
     id: "mysql",
     displayName: "MySQL",
-    description: "MySQL / MariaDB 等兼容协议",
-    npmDependencyNames: ["mysql2", "mysql"],
+    description: "MySQL / MariaDB（客户端：mysql2，连接池与查询）",
+    npmDependencyNames: ["mysql2"],
     capabilities: {
       createDatabase: true,
       sqlExecutionTarget: true,
@@ -67,7 +67,7 @@ function registerRedis(): void {
   const driver: RegisteredDatabaseDriver = {
     id: "redis",
     displayName: "Redis",
-    description: "Redis 键值与数据结构",
+    description: "Redis 键值与数据结构（官方 Node 客户端 redis）",
     npmDependencyNames: ["redis"],
     capabilities: { createDatabase: false, sqlExecutionTarget: false },
     applyPresentation(treeItem: Datasource, input: DatasourceInputData) {
@@ -86,7 +86,7 @@ function registerOss(): void {
   const driver: RegisteredDatabaseDriver = {
     id: "oss",
     displayName: "OSS",
-    description: "对象存储（S3 兼容等）",
+    description: "对象存储 S3 兼容（AWS SDK v3：@aws-sdk/client-s3）",
     npmDependencyNames: ["@aws-sdk/client-s3"],
     capabilities: { createDatabase: false, sqlExecutionTarget: false },
     applyPresentation(treeItem: Datasource, input: DatasourceInputData) {

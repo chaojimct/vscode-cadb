@@ -181,10 +181,14 @@ function initDatasourceForm(data = {}, driverOptionsFromHost) {
 /**
  * 数据库驱动管理（安装=启用 / 卸载=停用，立即生效）
  */
-function initDriversForm(drivers) {
+function initDriversForm(drivers, extensionVersion) {
   $("#pageTitle").text("数据库驱动");
+  const ver =
+    extensionVersion != null && String(extensionVersion).trim()
+      ? ` 当前扩展 v${String(extensionVersion).trim()}。`
+      : "";
   $("#pageSubtitle").text(
-    "「安装」启用驱动并出现在新建连接中；「卸载」停用驱动。操作立即保存。"
+    `「安装」启用驱动并出现在新建连接中；「卸载」停用驱动，操作立即保存。${ver}下方「运行时依赖」为扩展内置 npm 包：版本优先取自扩展目录 node_modules 中已解析版本，若无则显示根 package.json 中的 semver 范围。`
   );
   dynamicForm = null;
   const list = Array.isArray(drivers) ? drivers : [];
@@ -207,7 +211,8 @@ function initDriversForm(drivers) {
       });
       pkgsHtml += "</ul>";
     } else {
-      pkgsHtml = '<p class="driver-packages__empty">未声明 npm 依赖包</p>';
+      pkgsHtml =
+        '<p class="driver-packages__empty">未声明运行时 npm 依赖（由扩展侧注册表提供）</p>';
     }
 
     const installDisabled = d.enabled ? " disabled" : "";
@@ -228,7 +233,7 @@ function initDriversForm(drivers) {
         d.marketplaceExtensionId
       )}</code></p>`;
     }
-    html += `<div class="driver-packages"><div class="driver-packages__label">NPM 包</div>${pkgsHtml}</div>`;
+    html += `<div class="driver-packages"><div class="driver-packages__label">运行时依赖（npm）</div>${pkgsHtml}</div>`;
     html += `</div>`;
     html += `<div class="driver-card__actions">`;
     html += `<button type="button" class="driver-btn driver-btn-install"${installDisabled} data-driver-action="install" data-driver-id="${escapeHtml(
@@ -653,7 +658,7 @@ window.addEventListener("message", (event) => {
           initDatasourceForm(defaultData, message.driverOptions || null);
         }
       } else if (currentConfigType === CONFIG_TYPES.DRIVERS) {
-        initDriversForm(message.drivers);
+        initDriversForm(message.drivers, message.extensionVersion);
       } else if (currentConfigType === CONFIG_TYPES.CONNECTION_GROUPS) {
         initConnectionGroupsForm(message.groups);
       } else if (currentConfigType === CONFIG_TYPES.USER) {
