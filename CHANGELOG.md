@@ -1,5 +1,21 @@
 # 更新日志
 
+## [0.1.2]
+
+### 新增
+
+- **MySQL 连接池**：按「主机 + 端口 + 用户 + 密码」复用 `mysql2` 连接池；新增配置项 `cadb.mysql.connectionPoolLimit`（默认 10，范围 1–100）。SQL 执行、Notebook、悬浮提示、库属性更新（`ALTER DATABASE`）及带事务的 SQL 文件执行等路径统一经池获取连接；需同一会话的场景使用 `withMysqlSession`（含 `changeUser`、事务）并在结束后 `release`。
+- **扩展卸载**：`deactivate` 时关闭并清理全部 MySQL 连接池。
+
+### 优化
+
+- **驱动管理页**：校正各内置驱动对应的 npm 包说明（MySQL 仅展示 `mysql2`）；副标题补充运行时依赖版本解析说明；展示当前扩展版本；卡片区标签改为「运行时依赖（npm）」。
+- **依赖精简**：移除未使用的 `mysql` 与 `@types/mysql`。
+
+### 修复
+
+- **类型与转义**：`Pool` 类型不包含 `escape` 时改为使用 `mysql2` 模块导出的 `escape`，消除编译错误并与运行时一致。
+
 ## [0.1.1]
 
 ### 新增
