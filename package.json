@@ -206,6 +206,26 @@
                 "icon": "$(play)"
             },
             {
+                "command": "cadb.sql.runCurrent",
+                "title": "运行当前语句",
+                "icon": "$(debug-step-over)"
+            },
+            {
+                "command": "cadb.sql.runLine",
+                "title": "运行当前行",
+                "icon": "$(play)"
+            },
+            {
+                "command": "cadb.sql.runSelection",
+                "title": "运行选中 SQL",
+                "icon": "$(run-selection)"
+            },
+            {
+                "command": "cadb.sql.runAll",
+                "title": "运行全部 SQL",
+                "icon": "$(play-circle)"
+            },
+            {
                 "command": "cadb.sql.explain",
                 "title": "解释 SQL",
                 "icon": "$(search)"
@@ -400,6 +420,40 @@
                     "when": "notebookType == cadb.sqlNotebook",
                     "group": "right"
                 }
+            ],
+            "editor/title": [
+                {
+                    "command": "cadb.sql.runCurrent",
+                    "when": "resourceLangId == sql",
+                    "group": "navigation@1"
+                },
+                {
+                    "command": "cadb.sql.runSelection",
+                    "when": "resourceLangId == sql && editorHasSelection",
+                    "group": "navigation@2"
+                },
+                {
+                    "command": "cadb.sql.runAll",
+                    "when": "resourceLangId == sql",
+                    "group": "navigation@3"
+                }
+            ],
+            "editor/context": [
+                {
+                    "command": "cadb.sql.runCurrent",
+                    "when": "resourceLangId == sql",
+                    "group": "navigation@1"
+                },
+                {
+                    "command": "cadb.sql.runSelection",
+                    "when": "resourceLangId == sql && editorHasSelection",
+                    "group": "navigation@2"
+                },
+                {
+                    "command": "cadb.sql.runAll",
+                    "when": "resourceLangId == sql",
+                    "group": "navigation@3"
+                }
             ]
         },
         "submenus": [
@@ -456,6 +510,46 @@
         },
         "keybindings": [
             {
+                "command": "cadb.sql.runLine",
+                "key": "ctrl+alt+enter",
+                "when": "editorTextFocus && editorLangId == sql && !notebookEditorFocused && !editorHasSelection"
+            },
+            {
+                "command": "cadb.sql.runLine",
+                "key": "cmd+alt+enter",
+                "when": "editorTextFocus && editorLangId == sql && !notebookEditorFocused && !editorHasSelection"
+            },
+            {
+                "command": "notebook.cell.execute",
+                "key": "ctrl+alt+enter",
+                "when": "notebookEditorFocused && notebookType == cadb.sqlNotebook"
+            },
+            {
+                "command": "notebook.cell.execute",
+                "key": "cmd+alt+enter",
+                "when": "notebookEditorFocused && notebookType == cadb.sqlNotebook"
+            },
+            {
+                "command": "cadb.sql.runSelection",
+                "key": "ctrl+alt+enter",
+                "when": "editorTextFocus && editorLangId == sql && editorHasSelection"
+            },
+            {
+                "command": "cadb.sql.runSelection",
+                "key": "cmd+alt+enter",
+                "when": "editorTextFocus && editorLangId == sql && editorHasSelection"
+            },
+            {
+                "command": "cadb.sql.runAll",
+                "key": "ctrl+shift+enter",
+                "when": "editorTextFocus && editorLangId == sql"
+            },
+            {
+                "command": "cadb.sql.runAll",
+                "key": "cmd+shift+enter",
+                "when": "editorTextFocus && editorLangId == sql"
+            },
+            {
                 "command": "cadb.grid.toggleSidePanel",
                 "key": "ctrl+f",
                 "when": "cadb.datasourceTableGridFocused"
@@ -508,8 +602,11 @@
         "dayjs": "^1.11.19",
         "jquery": "^3.7.1",
         "layui": "^2.13.2",
+        "monaco-editor": "^0.55.1",
+        "mysql": "^2.18.1",
         "mysql2": "^3.15.3",
         "redis": "^5.10.0",
-        "sql-formatter": "^15.6.2"
+        "sql-formatter": "^15.7.2",
+        "tabulator-tables": "^6.3.1"
     }
 }

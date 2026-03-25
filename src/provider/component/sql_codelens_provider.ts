@@ -1,11 +1,6 @@
 import * as vscode from 'vscode';
 import type { DatabaseManager } from './database_manager';
-import { normalizeSqlLinePrefix } from './sql_limit_guard';
 
-/** 可执行 SQL 语句的关键字（行首、词边界匹配，用于 CodeLens） */
-const SQL_STATEMENT_KEYWORDS =
-  'SELECT|CREATE|DROP|UPDATE|ALTER|DESC|SHOW|INSERT|DELETE|TRUNCATE|REPLACE|MERGE';
-/** 支持 Explain 的语句（查询类） */
 const QUERY_KEYWORDS = /^(SELECT|DESC|SHOW)\b/i;
 
 export class SqlCodeLensProvider implements vscode.CodeLensProvider {
@@ -22,191 +17,48 @@ export class SqlCodeLensProvider implements vscode.CodeLensProvider {
     _token: vscode.CancellationToken
   ): vscode.CodeLens[] | Thenable<vscode.CodeLens[]> {
     const codeLenses: vscode.CodeLens[] = [];
-    const text = document.getText();
-    const lines = text.split('\n');
+    if (document.lineCount === 0) return codeLenses;
+    if (document.uri.scheme === 'vscode-notebook-cell') return codeLenses;
 
-    // 行首匹配任意可执行语句关键字（\b 保证 "select" 单独一行也匹配）
-    const statementRegex = new RegExp(`^\\s*(${SQL_STATEMENT_KEYWORDS})\\b`, 'i');
+    // 文件顶部：运行全部
+    const topRange = document.lineAt(0).range;
+    codeLenses.push(
+      new vscode.CodeLens(topRange, {
+        title: '$(play-circle) 运行全部',
+        command: 'cadb.sql.runAll',
+      })
+    );
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const trimmedLine = normalizeSqlLinePrefix(line);
-
-      if (!trimmedLine || trimmedLine.startsWith('--') || trimmedLine.startsWith('/*')) {
+    // 每个非空非注释行：运行当前行
+    for (let i = 0; i < document.lineCount; i++) {
+      const lineObj = document.lineAt(i);
+      const rawLine = lineObj.text;
+      const trimmedLine = rawLine.trim();
+      if (!trimmedLine || trimmedLine.startsWith('--') || trimmedLine.startsWith('#') || trimmedLine.startsWith('/*')) {
         continue;
       }
 
-      const match = trimmedLine.match(statementRegex);
-      if (!match) continue;
+      const lineRange = lineObj.range;
+      codeLenses.push(
+        new vscode.CodeLens(lineRange, {
+          title: '▶ 运行',
+          command: 'cadb.sql.runLine',
+          arguments: [document.uri.toString(), i],
+        })
+      );
 
-      const sqlRange = this._findSqlStatementRange(document, i, lines);
-      if (!sqlRange) continue;
-
-      const runCommand: vscode.CodeLens = new vscode.CodeLens(sqlRange, {
-        title: '$(play) Run',
-        command: 'cadb.sql.run',
-        arguments: [document.uri.toString(), sqlRange],
-      });
-      codeLenses.push(runCommand);
-
-      if (QUERY_KEYWORDS.test(match[1])) {
+      if (QUERY_KEYWORDS.test(trimmedLine)) {
         codeLenses.push(
-          new vscode.CodeLens(sqlRange, {
-            title: '$(search) Explain',
+          new vscode.CodeLens(lineRange, {
+            title: '⚡ Explain',
             command: 'cadb.sql.explain',
-            arguments: [document.uri.toString(), sqlRange],
+            arguments: [document.uri.toString(), lineRange],
           })
         );
       }
     }
 
     return codeLenses;
-  }
-
-  /**
-   * 从文档开头到 (line, 0) 的括号深度（忽略字符串与注释）
-   */
-  private _parenDepthBefore(lines: string[], line: number): number {
-    let depth = 0;
-    let inString = false;
-    let stringChar = '';
-    let inComment = false;
-    let commentType: 'single' | 'multi' | null = null;
-    for (let i = 0; i < line && i < lines.length; i++) {
-      const lineStr = lines[i];
-      for (let j = 0; j < lineStr.length; j++) {
-        const char = lineStr[j];
-        const nextChar = j < lineStr.length - 1 ? lineStr[j + 1] : '';
-        if (!inComment) {
-          if ((char === '"' || char === "'" || char === '`') && (j === 0 || lineStr[j - 1] !== '\\')) {
-            if (!inString) {
-              inString = true;
-              stringChar = char;
-            } else if (char === stringChar) {
-              inString = false;
-              stringChar = '';
-            }
-            continue;
-          }
-        }
-        if (!inString) {
-          if (!inComment && char === '-' && nextChar === '-') break;
-          if (!inComment && char === '/' && nextChar === '*') {
-            inComment = true;
-            commentType = 'multi';
-            j++;
-            continue;
-          }
-          if (inComment && commentType === 'multi' && char === '*' && nextChar === '/') {
-            inComment = false;
-            commentType = null;
-            j++;
-            continue;
-          }
-        }
-        if (!inString && !inComment) {
-          if (char === '(') depth++;
-          else if (char === ')') depth--;
-        }
-      }
-    }
-    return depth;
-  }
-
-  /**
-   * 查找 SQL 语句的范围（可能跨多行）；对嵌套子查询用括号深度区分，避免多个 SELECT 共用一个范围
-   */
-  private _findSqlStatementRange(
-    document: vscode.TextDocument,
-    startLine: number,
-    lines: string[]
-  ): vscode.Range | null {
-    const startParenDepth = this._parenDepthBefore(lines, startLine);
-    let endLine = startLine;
-    let inString = false;
-    let stringChar = '';
-    let inComment = false;
-    let commentType: 'single' | 'multi' | null = null;
-    let depth = startParenDepth;
-
-    for (let i = startLine; i < lines.length; i++) {
-      const line = lines[i];
-
-      for (let j = 0; j < line.length; j++) {
-        const char = line[j];
-        const nextChar = j < line.length - 1 ? line[j + 1] : '';
-
-        if (!inComment) {
-          if ((char === '"' || char === "'" || char === '`') && (j === 0 || line[j - 1] !== '\\')) {
-            if (!inString) {
-              inString = true;
-              stringChar = char;
-            } else if (char === stringChar) {
-              inString = false;
-              stringChar = '';
-            }
-            continue;
-          }
-        }
-
-        if (!inString) {
-          if (!inComment && char === '-' && nextChar === '-') {
-            break;
-          }
-          if (!inComment && char === '/' && nextChar === '*') {
-            inComment = true;
-            commentType = 'multi';
-            j++;
-            continue;
-          }
-          if (inComment && commentType === 'multi' && char === '*' && nextChar === '/') {
-            inComment = false;
-            commentType = null;
-            j++;
-            continue;
-          }
-        }
-
-        if (!inString && !inComment) {
-          if (char === '(') depth++;
-          else if (char === ')') {
-            depth--;
-            // 子查询：仅在「从外层括号内开始的 SELECT」时，在匹配的 ) 处结束；顶层 stray ) 不提前截断
-            if (startParenDepth > 0 && depth === startParenDepth - 1) {
-              const startPos = new vscode.Position(startLine, 0);
-              const endPos = new vscode.Position(i, j + 1);
-              return new vscode.Range(startPos, endPos);
-            }
-          }
-        }
-
-        if (!inString && !inComment && char === ';') {
-          const startPos = new vscode.Position(startLine, 0);
-          const endPos = new vscode.Position(i, j + 1);
-          return new vscode.Range(startPos, endPos);
-        }
-      }
-
-      // 仅顶层：下一行为同级新语句时在此行末结束
-      if (!inString && !inComment && i > startLine && startParenDepth === 0 && depth === 0) {
-        const nextLine = i < lines.length - 1 ? lines[i + 1] : '';
-        const trimmedNext = nextLine.trim();
-        if (trimmedNext && new RegExp(`^\\s*(${SQL_STATEMENT_KEYWORDS})\\b`, 'i').test(trimmedNext)) {
-          const startPos = new vscode.Position(startLine, 0);
-          const endPos = new vscode.Position(i, lines[i].length);
-          return new vscode.Range(startPos, endPos);
-        }
-      }
-
-      endLine = i;
-    }
-
-    if (endLine >= startLine) {
-      const startPos = new vscode.Position(startLine, 0);
-      const endPos = new vscode.Position(endLine, lines[endLine].length);
-      return new vscode.Range(startPos, endPos);
-    }
-    return null;
   }
 
   /**
