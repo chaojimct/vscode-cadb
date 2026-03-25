@@ -1,22 +1,14 @@
-import * as vscode from 'vscode';
-import { DataSourceProvider } from '../database_provider';
-import { Datasource } from '../entity/datasource';
-import type { DatabaseManager } from './database_manager';
-
-interface ConnectionCache {
-  datasourceName: string;
-  databaseName: string;
-  connection: any;
-  lastUsed: number;
-}
+import * as vscode from "vscode";
+import { DataSourceProvider } from "../database_provider";
+import type { DatasourceInputData } from "../entity/datasource";
+import type { DatabaseManager } from "./database_manager";
+import { withMysqlSession } from "../mysql/pool_registry";
 
 export class SqlNotebookController {
   private readonly _controller: vscode.NotebookController;
   private readonly _provider: DataSourceProvider;
   private readonly _context: vscode.ExtensionContext;
   private readonly _databaseManager: DatabaseManager;
-  private readonly _connectionCache = new Map<string, ConnectionCache>();
-  private readonly _connectionTimeout = 5 * 60 * 1000; // 5 分钟超时
 
   constructor(
     id: string,
@@ -47,12 +39,7 @@ export class SqlNotebookController {
     this._databaseManager.onDidChangeDatabase(() => {
       this._updateDescription();
     });
-    
-    // 定期清理过期的连接
-    setInterval(() => {
-      this._cleanupConnections();
-    }, 60000); // 每分钟检查一次
-    
+
     // 监听 Active Notebook 变化，自动恢复连接状态
     vscode.window.onDidChangeActiveNotebookEditor((editor) => {
       if (editor && editor.notebook.notebookType === notebookType) {
@@ -200,22 +187,33 @@ export class SqlNotebookController {
       const finalDatabase = this._databaseManager.getCurrentDatabase();
       if (!finalConnection || !finalDatabase) return;
 
-      const connection = await this._getConnection(datasourceName, databaseName);
+      const datasourceData = this._provider
+        .getConnections()
+        .find((ds) => ds.name === datasourceName);
+      if (!datasourceData) {
+        throw new Error(`找不到数据源: ${datasourceName}`);
+      }
+
       const sql = cell.document.getText().trim();
 
       if (!sql) {
         return;
       }
 
-      const result = await new Promise<any>((resolve, reject) => {
-        connection.query(sql, (err: any, results: any) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(results);
-          }
-        });
-      });
+      const result = await withMysqlSession(
+        datasourceData as DatasourceInputData,
+        databaseName,
+        async (connection) =>
+          new Promise<any>((resolve, reject) => {
+            connection.query(sql, (err: any, results: any) => {
+              if (err) {
+                reject(err);
+              } else {
+                resolve(results);
+              }
+            });
+          })
+      );
       const executionTime = Date.now() - startTime;
 
       await this._saveNotebookMetadata(cell.notebook, datasourceName, databaseName);
@@ -316,78 +314,6 @@ export class SqlNotebookController {
    */
   public dispose(): void {
     this._controller.dispose();
-    this._connectionCache.forEach((cache) => {
-      if (cache.connection && typeof cache.connection.end === 'function') {
-        try {
-          cache.connection.end();
-        } catch (error) {
-          console.error('关闭连接失败:', error);
-        }
-      }
-    });
-    this._connectionCache.clear();
-  }
-
-  /**
-   * 获取或创建数据库连接（带缓存）
-   */
-  private async _getConnection(
-    datasourceName: string,
-    databaseName: string
-  ): Promise<any> {
-    const cacheKey = `${datasourceName}/${databaseName}`;
-    
-    // 检查缓存
-    const cached = this._connectionCache.get(cacheKey);
-    if (cached) {
-      const now = Date.now();
-      if (now - cached.lastUsed < this._connectionTimeout) {
-        // 缓存有效，更新最后使用时间
-        cached.lastUsed = now;
-        return cached.connection;
-      } else {
-        // 缓存过期，清除
-        this._connectionCache.delete(cacheKey);
-      }
-    }
-
-    // 创建新连接
-    const datasourceData = this._provider.getConnections().find(
-      (ds) => ds.name === datasourceName
-    );
-
-    if (!datasourceData) {
-      throw new Error(`找不到数据源: ${datasourceName}`);
-    }
-
-    const dsInstance = new Datasource(datasourceData);
-    await dsInstance.connect();
-
-    if (!dsInstance.dataloader) {
-      throw new Error(`数据源 ${datasourceName} 没有数据加载器`);
-    }
-
-    // 切换到指定数据库
-    const connection = dsInstance.dataloader.getConnection();
-    await new Promise<void>((resolve, reject) => {
-      connection.changeUser({ database: databaseName }, (err: any) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve();
-        }
-      });
-    });
-
-    // 缓存连接
-    this._connectionCache.set(cacheKey, {
-      datasourceName,
-      databaseName,
-      connection,
-      lastUsed: Date.now(),
-    });
-
-    return connection;
   }
 
   /**
@@ -447,26 +373,6 @@ export class SqlNotebookController {
       await vscode.workspace.applyEdit(edit);
     } catch (error) {
       console.error('[Notebook] 保存 Cell 元数据失败:', error);
-    }
-  }
-
-  /**
-   * 清理过期的连接
-   */
-  private _cleanupConnections(): void {
-    const now = Date.now();
-    for (const [key, cache] of this._connectionCache.entries()) {
-      if (now - cache.lastUsed > this._connectionTimeout) {
-        // 关闭连接
-        if (cache.connection && typeof cache.connection.end === 'function') {
-          try {
-            cache.connection.end();
-          } catch (error) {
-            console.error(`关闭连接失败 ${key}:`, error);
-          }
-        }
-        this._connectionCache.delete(key);
-      }
     }
   }
 }

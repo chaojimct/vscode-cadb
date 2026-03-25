@@ -1,6 +1,10 @@
 import * as vscode from "vscode";
 import * as fs from "fs/promises";
-import { Connection, createConnection } from "mysql2";
+import { escape as mysqlEscape, type Pool } from "mysql2";
+import {
+  getMysqlPoolRegistry,
+  withMysqlSession,
+} from "../mysql/pool_registry";
 import {
   ColDef,
   Dataloader,
@@ -20,37 +24,12 @@ import { readdirSync } from "fs";
 import path from "path";
 
 export class MySQLDataloader implements Dataloader {
-  private conn: Connection;
+  private pool: Pool;
   private ds: Datasource;
-  private connectionConfig: any;
-  private reconnecting: Promise<void> | null = null;
 
   constructor(ds: Datasource, input: DatasourceInputData) {
     this.ds = ds;
-    this.connectionConfig = {
-      host: input.host,
-      port: input.port,
-      user: input.username,
-      password: input.password,
-      database: input.database,
-      connectTimeout: 2000, // 连接超时缩短到 2 秒
-      enableKeepAlive: true, // 启用 TCP keep-alive
-      keepAliveInitialDelay: 10000, // keep-alive 初始延迟 10 秒
-      typeCast: (field: any, next: () => any) => {
-        // BIT 类型：mysql2 返回 Buffer，转为数字便于显示
-        if (field.type === "BIT" || field.type === 16) {
-          const buf = field.buffer();
-          if (buf && Buffer.isBuffer(buf)) {
-            if (buf.length === 1) return buf[0]; // BIT(1) -> 0 或 1
-            let n = 0;
-            for (let i = 0; i < buf.length; i++) n = (n << 8) | buf[i];
-            return n;
-          }
-        }
-        return next();
-      },
-    };
-    this.conn = createConnection(this.connectionConfig);
+    this.pool = getMysqlPoolRegistry().getPool(input);
   }
 	rootNode(): Datasource {
 		return this.ds;
@@ -61,7 +40,7 @@ export class MySQLDataloader implements Dataloader {
 	listCollations(_: Datasource): Promise<Datasource[]> {
 		return new Promise((resolve) => {
 			this.ensureConnection().then(() => {
-				this.conn.query("SHOW COLLATION", (err, results: any[]) => {
+				this.pool.query("SHOW COLLATION", (err, results: any[]) => {
 					if (err) {
 						resolve([]);
 						return;
@@ -90,7 +69,7 @@ export class MySQLDataloader implements Dataloader {
         sql += ` COLLATE ${collation}`;
       }
       this.ensureConnection().then(() => {
-        this.conn.query(sql, (err) => {
+        this.pool.query(sql, (err) => {
           if (err) {
             reject(err);
           } else {
@@ -105,86 +84,17 @@ export class MySQLDataloader implements Dataloader {
 		return Promise.resolve([]);
 	}
 
-  /**
-   * 确保连接可用，如果断开则重新连接
-   */
+  /** 通过池探测连通性（池内会自动丢弃失效连接） */
   private async ensureConnection(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const conn = this.conn;
-      let settled = false;
-
-      const finish = (fn: () => void) => {
-        if (settled) return;
-        settled = true;
-        fn();
-      };
-
-      const pingTimeout = setTimeout(() => {
-        if (conn !== this.conn) return;
-        finish(() => {
-          void this.reconnect().then(resolve).catch(reject);
-        });
-      }, 2000);
-
-      try {
-        conn.ping((err) => {
-          if (conn !== this.conn) return;
-          clearTimeout(pingTimeout);
-          if (err) {
-            finish(() => {
-              void this.reconnect().then(resolve).catch(reject);
-            });
-          } else {
-            finish(resolve);
-          }
-        });
-      } catch (e) {
-        if (conn !== this.conn) return;
-        clearTimeout(pingTimeout);
-        finish(() => {
-          void this.reconnect().then(resolve).catch(reject);
-        });
-      }
-    });
-  }
-  
-  /**
-   * 重新连接到数据库
-   */
-  private async reconnect(): Promise<void> {
-    if (this.reconnecting) {
-      return this.reconnecting;
-    }
-    this.reconnecting = new Promise<void>((resolve, reject) => {
-      const oldConn = this.conn;
-      try {
-        oldConn.destroy();
-      } catch (_) {}
-
-      const nextConn = createConnection(this.connectionConfig);
-      this.conn = nextConn;
-
-      const connectTimeout = setTimeout(() => {
-        if (this.conn === nextConn) {
-          try {
-            nextConn.destroy();
-          } catch (_) {}
-        }
-        this.reconnecting = null;
-        reject(new Error("连接超时"));
-      }, 4000);
-
-      nextConn.connect((connectErr) => {
-        clearTimeout(connectTimeout);
-        this.reconnecting = null;
-        if (connectErr) {
-          reject(connectErr);
+      this.pool.query("SELECT 1", (err) => {
+        if (err) {
+          reject(err);
         } else {
           resolve();
         }
       });
     });
-    return this.reconnecting;
   }
   descStructure(): string[] {
     return ["Field", "Type", "Null", "Key", "Default", "Extra"];
@@ -198,7 +108,7 @@ export class MySQLDataloader implements Dataloader {
     return new Promise<FormResult | undefined>((resolve) => {
 			const label = ds.label ? ds.label.toString() : "";
 			const [user, host] = label.split("@");
-      this.conn.query(`SELECT * FROM mysql.user WHERE HOST = '${host}' AND USER = '${user}'`, (err, results) => {
+      this.pool.query(`SELECT * FROM mysql.user WHERE HOST = '${host}' AND USER = '${user}'`, (err, results) => {
         if (err) {
           vscode.window.showErrorMessage(err.message);
           return resolve(undefined);
@@ -225,7 +135,7 @@ export class MySQLDataloader implements Dataloader {
     }
 
     return new Promise<FormResult | undefined>((resolve) => {
-      this.conn.query(
+      this.pool.query(
         "SELECT DEFAULT_COLLATION_NAME AS collation FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?",
         [databaseName],
         (err, results: any[]) => {
@@ -249,7 +159,7 @@ export class MySQLDataloader implements Dataloader {
     const database = (ds.parent.parent.label?.toString() ?? "").trim();
     return new Promise<FormResult | undefined>((resolve) => {
       // 使用 SHOW FULL COLUMNS 而不是 DESC，可以获取字段注释
-      this.conn.query(
+      this.pool.query(
         `SHOW FULL COLUMNS FROM \`${database}\`.\`${table}\``,
         async (err, results) => {
           if (err) {
@@ -282,7 +192,7 @@ export class MySQLDataloader implements Dataloader {
     Array<{ id: string; name: string; type: string; fields: string[]; unique: boolean }>
   > {
     return new Promise((resolve, reject) => {
-      this.conn.query(
+      this.pool.query(
         `
 SELECT INDEX_NAME, COLUMN_NAME, SEQ_IN_INDEX, NON_UNIQUE, INDEX_TYPE
 FROM information_schema.STATISTICS
@@ -331,7 +241,7 @@ ORDER BY INDEX_NAME, SEQ_IN_INDEX
   }
   descColumn(ds: Datasource): Promise<FormResult | undefined> {
     return new Promise<FormResult | undefined>((resolve) => {
-      this.conn.query(``, (err, results) => {
+      this.pool.query(``, (err, results) => {
         if (err) {
           vscode.window.showErrorMessage(err.message);
           return resolve(undefined);
@@ -341,7 +251,7 @@ ORDER BY INDEX_NAME, SEQ_IN_INDEX
   }
   descIndex(ds: Datasource): Promise<FormResult | undefined> {
     return new Promise<FormResult | undefined>((resolve) => {
-      this.conn.query(``, (err, results) => {
+      this.pool.query(``, (err, results) => {
         if (err) {
           vscode.window.showErrorMessage(err.message);
           return resolve(undefined);
@@ -350,22 +260,21 @@ ORDER BY INDEX_NAME, SEQ_IN_INDEX
     });
   }
 
-  getConnection(): Connection {
-    return this.conn;
+  /** 返回共享连接池；需会话级事务时请用扩展侧 withMysqlSession */
+  getConnection(): Pool {
+    return this.pool;
   }
 
   test(): Promise<PromiseResult> {
     return new Promise<PromiseResult>((resolve) => {
-      // 设置测试超时时间为 3 秒
       const timeout = setTimeout(() => {
-        this.conn?.destroy();
         resolve({
           success: false,
-          message: '连接超时（3秒）',
+          message: "连接超时（3秒）",
         });
       }, 3000);
-      
-      this.conn?.connect((err) => {
+
+      this.pool.query("SELECT 1", (err) => {
         clearTimeout(timeout);
         if (err) {
           resolve({
@@ -375,6 +284,7 @@ ORDER BY INDEX_NAME, SEQ_IN_INDEX
         } else {
           resolve({
             success: true,
+            message: "",
           });
         }
       });
@@ -382,49 +292,14 @@ ORDER BY INDEX_NAME, SEQ_IN_INDEX
   }
 
   connect(): Promise<void> {
-    return new Promise<void>((resolve, reject) => {
-      // 设置总超时时间为 3 秒
-      const timeout = setTimeout(() => {
-        reject(new Error('连接超时（3秒）'));
-      }, 3000);
-      
-      if (this.conn.authorized) {
-        this.conn.ping((err) => {
-          clearTimeout(timeout);
-          if (err) {
-            vscode.window.showErrorMessage(err.message);
-            reject(err);
-          } else {
-            resolve();
-          }
-        });
-      } else {
-        this.conn.connect((err) => {
-          if (err) {
-            clearTimeout(timeout);
-            vscode.window.showErrorMessage(`连接失败：${err.message}`);
-            reject(err);
-            return;
-          }
-          this.conn.ping((err) => {
-            clearTimeout(timeout);
-            if (err) {
-              vscode.window.showErrorMessage(err.message);
-              reject(err);
-            } else {
-              resolve();
-            }
-          });
-        });
-      }
-    });
+    return this.ensureConnection();
   }
   async listAllUsers(ds: Datasource): Promise<Datasource[]> {
     try {
       await this.ensureConnection();
       
       return new Promise<Datasource[]>((resolve) => {
-        this.conn.query(`SELECT * FROM mysql.user;`, (err, results) => {
+        this.pool.query(`SELECT * FROM mysql.user;`, (err, results) => {
           if (err) {
             vscode.window.showErrorMessage(`查询数据库失败：${err.message}`);
             return resolve([]);
@@ -463,7 +338,7 @@ ORDER BY INDEX_NAME, SEQ_IN_INDEX
       await this.ensureConnection();
       
       return new Promise<Datasource[]>((resolve) => {
-        this.conn.query(
+        this.pool.query(
           `
 SELECT DISTINCT USER as name, HOST as host
 FROM mysql.DB
@@ -609,7 +484,7 @@ WHERE db = '${this.ds.parent?.label}';
       await this.ensureConnection();
       
       return new Promise<Datasource[]>((resolve) => {
-        this.conn.query(
+        this.pool.query(
           `
 SELECT 
 	INDEX_NAME AS iname,
@@ -678,7 +553,7 @@ ORDER BY
       await this.ensureConnection();
       
       return new Promise<Datasource[]>((resolve) => {
-        this.conn.query(
+        this.pool.query(
           `
 SELECT 
 	COLUMN_NAME AS name,
@@ -731,7 +606,7 @@ ORDER BY
       await this.ensureConnection();
       
       return new Promise<Datasource[]>((resolve) => {
-        this.conn.query(
+        this.pool.query(
           `
 SELECT TABLE_NAME as name, TABLE_COMMENT as tc
 FROM information_schema.TABLES
@@ -771,7 +646,7 @@ WHERE TABLE_SCHEMA = '${ds.parent?.label}';
       await this.ensureConnection();
       
       return new Promise<Datasource[]>((resolve) => {
-        this.conn.query(
+        this.pool.query(
           `
 SELECT 
 	s.SCHEMA_NAME AS name,
@@ -831,7 +706,7 @@ ORDER BY
       }
       const showSql = `SHOW FULL COLUMNS FROM \`${database}\`.\`${table}\``;
       options?.sqlLogger?.(showSql);
-      this.conn.query(showSql, (err, results) => {
+      this.pool.query(showSql, (err, results) => {
         if (err) {
           vscode.window.showErrorMessage(err.message);
           return resolve([]);
@@ -873,7 +748,7 @@ ORDER BY
       if (!baseTable) return resolve([]);
       const selectSql = `SELECT * FROM ${baseTable}${whereClause}${orderClause} LIMIT ${Number(offset)} , ${Number(limit)}`;
       options?.sqlLogger?.(selectSql);
-      this.conn.query(
+      this.pool.query(
         selectSql,
         (err, results) => {
           if (err) {
@@ -904,138 +779,117 @@ ORDER BY
    */
   async saveData(params: SaveDataParams): Promise<SaveResult> {
     const { tableName, databaseName, primaryKeyField, rows, deletedRows } = params;
+    const input = this.ds.data;
 
-    await this.ensureConnection();
-    await new Promise<void>((resolve, reject) => {
-      this.conn.changeUser({ database: databaseName }, (err: any) => {
-        if (err) reject(err);
-        else resolve();
-      });
-    });
+    return withMysqlSession(input, databaseName, async (conn) => {
+      let successCount = 0;
+      let errorCount = 0;
+      const errors: string[] = [];
+      const executedSql: string[] = [];
 
-    let successCount = 0;
-    let errorCount = 0;
-    const errors: string[] = [];
-    const executedSql: string[] = [];
+      const escapeVal = (v: any): string => {
+        if (v === null || v === undefined) return "NULL";
+        if (v === true || String(v).toLowerCase() === "true") return "1";
+        if (v === false || String(v).toLowerCase() === "false") return "0";
+        const s = String(v).replace(/'/g, "''");
+        return `'${s}'`;
+      };
 
-    const escapeVal = (v: any): string => {
-      if (v === null || v === undefined) return "NULL";
-      if (v === true || String(v).toLowerCase() === "true") return "1";
-      if (v === false || String(v).toLowerCase() === "false") return "0";
-      const s = String(v).replace(/'/g, "''");
-      return `'${s}'`;
-    };
+      const runQ = (sql: string) =>
+        new Promise<void>((resolve, reject) => {
+          conn.query(sql, (err: any) => (err ? reject(err) : resolve()));
+        });
 
-    // 先执行标记删除的行的 DELETE
-    if (deletedRows?.length) {
-      for (const { id } of deletedRows) {
+      if (deletedRows?.length) {
+        for (const { id } of deletedRows) {
+          try {
+            const deleteSql = `DELETE FROM \`${databaseName}\`.\`${tableName}\` WHERE \`${primaryKeyField}\` = ${escapeVal(id)}`;
+            executedSql.push(deleteSql);
+            await runQ(deleteSql);
+            successCount++;
+          } catch (error) {
+            errorCount++;
+            errors.push(error instanceof Error ? error.message : String(error));
+          }
+        }
+      }
+
+      for (const row of rows) {
         try {
-          const deleteSql = `DELETE FROM \`${databaseName}\`.\`${tableName}\` WHERE \`${primaryKeyField}\` = ${escapeVal(id)}`;
-          executedSql.push(deleteSql);
-          await new Promise<void>((resolve, reject) => {
-            this.conn.query(deleteSql, (err: any) => {
-              if (err) reject(err);
-              else resolve();
-            });
-          });
+          const isNew = !!row.isNew;
+          const full = row.full || row.original || {};
+          const updated = row.updated || {};
+
+          if (isNew) {
+            const allKeys = Object.keys(full).filter((k) => !String(k).startsWith("__"));
+            const insertKeys = allKeys.filter(
+              (k) =>
+                k !== primaryKeyField ||
+                (full[k] != null && String(full[k]).trim() !== "")
+            );
+            if (insertKeys.length === 0) {
+              errors.push("新行无有效字段");
+              errorCount++;
+              continue;
+            }
+            const cols = insertKeys.map((k) => `\`${k}\``).join(", ");
+            const insertVal = (v: any): string => {
+              const s = String(v ?? "").trim().toUpperCase();
+              if (s === "CURRENT_TIMESTAMP" || s === "CURRENT_DATE") return s;
+              return escapeVal(v);
+            };
+            const vals = insertKeys.map((k) => insertVal(full[k])).join(", ");
+            const insertSql = `INSERT INTO \`${databaseName}\`.\`${tableName}\` (${cols}) VALUES (${vals})`;
+            executedSql.push(insertSql);
+            await runQ(insertSql);
+            successCount++;
+            continue;
+          }
+
+          const id = row.id;
+          if (id === undefined || id === null || id === "") {
+            errors.push("行缺少主键值");
+            errorCount++;
+            continue;
+          }
+
+          if (!updated || Object.keys(updated).length === 0) {
+            continue;
+          }
+
+          const setClause = Object.keys(updated)
+            .map((key) => {
+              const value = updated[key];
+              if (value === null || value === undefined) {
+                return `\`${key}\` = NULL`;
+              }
+              if (value === true || value === "true" || value === 1) {
+                return `\`${key}\` = 1`;
+              }
+              if (value === false || value === "false" || value === 0) {
+                return `\`${key}\` = 0`;
+              }
+              return `\`${key}\` = '${String(value).replace(/'/g, "''")}'`;
+            })
+            .join(", ");
+
+          const updateSql = `UPDATE \`${databaseName}\`.\`${tableName}\` SET ${setClause} WHERE \`${primaryKeyField}\` = ${escapeVal(id)}`;
+          executedSql.push(updateSql);
+          await runQ(updateSql);
           successCount++;
         } catch (error) {
           errorCount++;
           errors.push(error instanceof Error ? error.message : String(error));
         }
       }
-    }
 
-    for (const row of rows) {
-      try {
-        const isNew = !!row.isNew;
-        const full = row.full || row.original || {};
-        const updated = row.updated || {};
-
-        if (isNew) {
-          // 新行：INSERT（主键为空时省略该列以支持自增）
-          const allKeys = Object.keys(full).filter((k) => !String(k).startsWith("__"));
-          const insertKeys = allKeys.filter(
-            (k) =>
-              k !== primaryKeyField ||
-              (full[k] != null && String(full[k]).trim() !== "")
-          );
-          if (insertKeys.length === 0) {
-            errors.push("新行无有效字段");
-            errorCount++;
-            continue;
-          }
-          const cols = insertKeys.map((k) => `\`${k}\``).join(", ");
-          const insertVal = (v: any): string => {
-            const s = String(v ?? "").trim().toUpperCase();
-            if (s === "CURRENT_TIMESTAMP" || s === "CURRENT_DATE") return s;
-            return escapeVal(v);
-          };
-          const vals = insertKeys.map((k) => insertVal(full[k])).join(", ");
-          const insertSql = `INSERT INTO \`${databaseName}\`.\`${tableName}\` (${cols}) VALUES (${vals})`;
-          executedSql.push(insertSql);
-          await new Promise<void>((resolve, reject) => {
-            this.conn.query(insertSql, (err: any) => {
-              if (err) reject(err);
-              else resolve();
-            });
-          });
-          successCount++;
-          continue;
-        }
-
-        const id = row.id;
-        if (id === undefined || id === null || id === "") {
-          errors.push("行缺少主键值");
-          errorCount++;
-          continue;
-        }
-
-        if (!updated || Object.keys(updated).length === 0) {
-          continue;
-        }
-
-        const setClause = Object.keys(updated)
-          .map((key) => {
-            const value = updated[key];
-            if (value === null || value === undefined) {
-              return `\`${key}\` = NULL`;
-            }
-            if (value === true || value === "true" || value === 1) {
-              return `\`${key}\` = 1`;
-            }
-            if (value === false || value === "false" || value === 0) {
-              return `\`${key}\` = 0`;
-            }
-            return `\`${key}\` = '${String(value).replace(/'/g, "''")}'`;
-          })
-          .join(", ");
-
-        const updateSql = `UPDATE \`${databaseName}\`.\`${tableName}\` SET ${setClause} WHERE \`${primaryKeyField}\` = ${escapeVal(id)}`;
-        executedSql.push(updateSql);
-
-        await new Promise<void>((resolve, reject) => {
-          this.conn.query(updateSql, (err: any) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-
-        successCount++;
-      } catch (error) {
-        errorCount++;
-        errors.push(
-          error instanceof Error ? error.message : String(error)
-        );
-      }
-    }
-
-    return {
-      successCount,
-      errorCount,
-      errors,
-      executedSql,
-    };
+      return {
+        successCount,
+        errorCount,
+        errors,
+        executedSql,
+      };
+    });
   }
 
   /**
@@ -1066,7 +920,7 @@ ORDER BY
     if (operation === "drop" && originalName) {
       const sql = `ALTER TABLE ${table} DROP COLUMN \`${this.escapeId(originalName)}\``;
       return new Promise((resolve, reject) => {
-        this.conn.query(sql, (err) => {
+        this.pool.query(sql, (err) => {
           if (err) reject(err);
           else resolve(sql);
         });
@@ -1088,7 +942,7 @@ ORDER BY
         }
       }
       return new Promise((resolve, reject) => {
-        this.conn.query(sql, (err) => {
+        this.pool.query(sql, (err) => {
           if (err) reject(err);
           else resolve(sql);
         });
@@ -1173,14 +1027,14 @@ ORDER BY
       } else if (["CURRENT_TIMESTAMP", "CURRENT_DATE"].includes(v.toUpperCase())) {
         parts.push(`DEFAULT ${v.toUpperCase()}`);
       } else {
-        parts.push(`DEFAULT ${this.conn.escape(v)}`);
+        parts.push(`DEFAULT ${mysqlEscape(v)}`);
       }
     }
     if (field.autoIncrement === true || String(field.autoIncrement) === "true") {
       parts.push("AUTO_INCREMENT");
     }
     if (field.comment) {
-      parts.push(`COMMENT ${this.conn.escape(field.comment)}`);
+      parts.push(`COMMENT ${mysqlEscape(field.comment)}`);
     }
     return parts.join(" ");
   }
@@ -1209,7 +1063,7 @@ ORDER BY
 
     const runSql = (sql: string): Promise<void> =>
       new Promise((resolve, reject) => {
-        this.conn.query(sql, (err) => {
+        this.pool.query(sql, (err) => {
           if (err) reject(err);
           else resolve();
         });
@@ -1244,7 +1098,7 @@ ORDER BY
         addSql = `ALTER TABLE ${table} ADD ${uniqueKw}INDEX \`${this.escapeId(index.name)}\` (${cols})`;
       }
       if (index.comment && index.type !== "primary") {
-        addSql += ` COMMENT ${this.conn.escape(index.comment)}`;
+        addSql += ` COMMENT ${mysqlEscape(index.comment)}`;
       }
 
       if (operation === "modify" && originalName) {

@@ -8,7 +8,7 @@ import {
   normalizeConnectionGroupsOrderForSave,
   setConnectionGroupsOrder,
 } from "../connection_groups";
-import { Datasource } from "../entity/datasource";
+import { Datasource, type DatasourceInputData } from "../entity/datasource";
 import path from "path";
 import { FormResult, type ListDataSortCol, type TableResult } from "../entity/dataloader";
 import { MySQLDataloader } from "../entity/mysql_dataloader";
@@ -22,6 +22,7 @@ import type { RedisClientType } from "redis";
 import { resolveTableDatasource } from "../workspace_symbol_provider";
 import { fuzzyMatch } from "../utils";
 import { ensureSelectRowLimit } from "./sql_limit_guard";
+import { getMysqlPoolRegistry, withMysqlSession } from "../mysql/pool_registry";
 import {
   driverSupportsCreateDatabase,
   driverSupportsTreeDelete,
@@ -877,14 +878,10 @@ async function updateDatabaseConfig(
     throw new Error("排序规则格式非法");
   }
 
-  if (!item.dataloader) {
-    throw new Error("无法获取数据库连接");
-  }
-
-  await item.connect();
-  const conn: any = item.dataloader.getConnection();
-  if (!conn || typeof conn.query !== "function") {
-    throw new Error("当前数据源不支持编辑数据库");
+  const dsNode = findAncestorByType(item, "datasource");
+  const input = dsNode?.data as DatasourceInputData | undefined;
+  if (!input) {
+    throw new Error("无法解析数据源配置");
   }
 
   const escapedDbName = originalName.replace(/`/g, "``");
@@ -892,8 +889,10 @@ async function updateDatabaseConfig(
   if (!/^[0-9A-Za-z_]+$/.test(charset)) {
     throw new Error("字符集格式非法");
   }
+
+  const pool = getMysqlPoolRegistry().getPool(input);
   await new Promise<void>((resolve, reject) => {
-    conn.query(
+    pool.query(
       `ALTER DATABASE \`${escapedDbName}\` CHARACTER SET ${charset} COLLATE ${collation}`,
       (err: any) => {
         if (err) {
@@ -2779,7 +2778,6 @@ async function executeSqlFileWithTransaction(
       cancellable: false,
     },
     async () => {
-      // 创建数据源实例
       const connectionData = provider
         .getConnections()
         .find((ds) => ds.name === connection.label?.toString());
@@ -2787,178 +2785,146 @@ async function executeSqlFileWithTransaction(
         throw new Error("数据源不存在");
       }
 
-      const datasource = await Datasource.createInstance(
-        provider.getConnections(),
-        provider.context,
-        connectionData,
-        false
-      );
-
-      if (!datasource.dataloader) {
-        throw new Error("无法创建数据库连接");
-      }
-
-      // 获取连接
-      let connectionObj = datasource.dataloader.getConnection();
-      if (!connectionObj) {
-        await datasource.dataloader.connect();
-        connectionObj = datasource.dataloader.getConnection();
-        if (!connectionObj) {
-          throw new Error("无法获取数据库连接");
-        }
-      }
-
       const databaseName = database.label?.toString() || "";
       const timestamp = formatTimestamp(new Date());
 
-      // 切换到指定数据库
-      await new Promise<void>((resolve, reject) => {
-        connectionObj.changeUser({ database: databaseName }, (err: any) => {
-          if (err) {
-            const errorMsg = `[${timestamp} ${databaseName}, ERROR] ${err.message}`;
-            outputChannel.appendLine(errorMsg);
-            outputChannel.show(true);
-            return reject(err);
-          }
-          resolve();
-        });
-      });
+      await withMysqlSession(
+        connectionData as DatasourceInputData,
+        databaseName,
+        async (connectionObj) => {
+          const sqlStatements = splitSqlStatements(sqlContent);
 
-      // 分割 SQL 语句（按分号分割，但要注意字符串中的分号）
-      const sqlStatements = splitSqlStatements(sqlContent);
+          outputChannel.appendLine(`[${timestamp} ${databaseName}] 开始事务`);
+          outputChannel.show(true);
 
-      // 开始事务
-      outputChannel.appendLine(`[${timestamp} ${databaseName}] 开始事务`);
-      outputChannel.show(true);
-
-      await new Promise<void>((resolve, reject) => {
-        connectionObj.query("START TRANSACTION", (err: any) => {
-          if (err) {
-            const errorMsg = `[${timestamp} ${databaseName}, ERROR] 开始事务失败: ${err.message}`;
-            outputChannel.appendLine(errorMsg);
-            outputChannel.show(true);
-            return reject(err);
-          }
-          resolve();
-        });
-      });
-
-      let executedCount = 0;
-      let errorOccurred = false;
-      let errorMessage = "";
-
-      const cadbCfg = vscode.workspace.getConfiguration("cadb");
-      const autoLimit = cadbCfg.get<boolean>("query.autoAppendSelectLimit", true);
-      const limitRows = cadbCfg.get<number>("grid.pageSize", 2000);
-
-      // 执行每个 SQL 语句
-      for (const sql of sqlStatements) {
-        const trimmedSql = sql.trim();
-        if (!trimmedSql) {
-          continue; // 跳过空语句
-        }
-
-        const toRun = autoLimit ? ensureSelectRowLimit(trimmedSql, limitRows) : trimmedSql;
-
-        const statementTimestamp = formatTimestamp(new Date());
-        const startTime = Date.now();
-
-        // 显示正在执行的语句
-        const sqlOneLine = toRun.replace(/\s+/g, " ").trim();
-        outputChannel.appendLine(
-          `[${statementTimestamp} ${databaseName}] 执行: ${sqlOneLine}`
-        );
-        outputChannel.show(true);
-
-        try {
           await new Promise<void>((resolve, reject) => {
-            connectionObj.query(toRun, (error: any, results: any) => {
-              const executionTime = (Date.now() - startTime) / 1000;
-              const spendTime =
-                executionTime < 0.001
-                  ? "<0.001s"
-                  : `${executionTime.toFixed(3)}s`;
-
-              if (error) {
-                const errorMsg = `[${statementTimestamp} ${databaseName}, ERROR] ${error.message} - ${sqlOneLine}`;
+            connectionObj.query("START TRANSACTION", (err: any) => {
+              if (err) {
+                const errorMsg = `[${timestamp} ${databaseName}, ERROR] 开始事务失败: ${err.message}`;
                 outputChannel.appendLine(errorMsg);
                 outputChannel.show(true);
-                errorOccurred = true;
-                errorMessage = error.message;
-                return reject(error);
+                return reject(err);
               }
-
-              // 成功日志
-              const rowCount = Array.isArray(results)
-                ? results.length
-                : results.affectedRows || 0;
-              const logMsg = `[${statementTimestamp} ${databaseName}, ${spendTime}] (${rowCount} rows) ${sqlOneLine}`;
-              outputChannel.appendLine(logMsg);
-              outputChannel.show(true);
-
-              executedCount++;
               resolve();
             });
           });
-        } catch (error) {
-          // 发生错误，跳出循环
-          break;
+
+          let executedCount = 0;
+          let errorOccurred = false;
+          let errorMessage = "";
+
+          const cadbCfg = vscode.workspace.getConfiguration("cadb");
+          const autoLimit = cadbCfg.get<boolean>(
+            "query.autoAppendSelectLimit",
+            true
+          );
+          const limitRows = cadbCfg.get<number>("grid.pageSize", 2000);
+
+          for (const sql of sqlStatements) {
+            const trimmedSql = sql.trim();
+            if (!trimmedSql) {
+              continue;
+            }
+
+            const toRun = autoLimit
+              ? ensureSelectRowLimit(trimmedSql, limitRows)
+              : trimmedSql;
+
+            const statementTimestamp = formatTimestamp(new Date());
+            const startTime = Date.now();
+
+            const sqlOneLine = toRun.replace(/\s+/g, " ").trim();
+            outputChannel.appendLine(
+              `[${statementTimestamp} ${databaseName}] 执行: ${sqlOneLine}`
+            );
+            outputChannel.show(true);
+
+            try {
+              await new Promise<void>((resolve, reject) => {
+                connectionObj.query(toRun, (error: any, results: any) => {
+                  const executionTime = (Date.now() - startTime) / 1000;
+                  const spendTime =
+                    executionTime < 0.001
+                      ? "<0.001s"
+                      : `${executionTime.toFixed(3)}s`;
+
+                  if (error) {
+                    const errorMsg = `[${statementTimestamp} ${databaseName}, ERROR] ${error.message} - ${sqlOneLine}`;
+                    outputChannel.appendLine(errorMsg);
+                    outputChannel.show(true);
+                    errorOccurred = true;
+                    errorMessage = error.message;
+                    return reject(error);
+                  }
+
+                  const rowCount = Array.isArray(results)
+                    ? results.length
+                    : results.affectedRows || 0;
+                  const logMsg = `[${statementTimestamp} ${databaseName}, ${spendTime}] (${rowCount} rows) ${sqlOneLine}`;
+                  outputChannel.appendLine(logMsg);
+                  outputChannel.show(true);
+
+                  executedCount++;
+                  resolve();
+                });
+              });
+            } catch {
+              break;
+            }
+          }
+
+          const finalTimestamp = formatTimestamp(new Date());
+          if (errorOccurred) {
+            outputChannel.appendLine(
+              `[${finalTimestamp} ${databaseName}] 发生错误，回滚事务`
+            );
+            outputChannel.show(true);
+
+            await new Promise<void>((resolve, reject) => {
+              connectionObj.query("ROLLBACK", (err: any) => {
+                if (err) {
+                  const errorMsg = `[${finalTimestamp} ${databaseName}, ERROR] 回滚失败: ${err.message}`;
+                  outputChannel.appendLine(errorMsg);
+                  outputChannel.show(true);
+                  return reject(err);
+                }
+                const rollbackMsg = `[${finalTimestamp} ${databaseName}] 事务已回滚`;
+                outputChannel.appendLine(rollbackMsg);
+                outputChannel.show(true);
+                resolve();
+              });
+            });
+
+            vscode.window.showErrorMessage(
+              `SQL 执行失败: ${errorMessage}。已回滚所有更改。`
+            );
+          } else {
+            outputChannel.appendLine(
+              `[${finalTimestamp} ${databaseName}] 提交事务`
+            );
+            outputChannel.show(true);
+
+            await new Promise<void>((resolve, reject) => {
+              connectionObj.query("COMMIT", (err: any) => {
+                if (err) {
+                  const errorMsg = `[${finalTimestamp} ${databaseName}, ERROR] 提交失败: ${err.message}`;
+                  outputChannel.appendLine(errorMsg);
+                  outputChannel.show(true);
+                  return reject(err);
+                }
+                const commitMsg = `[${finalTimestamp} ${databaseName}] 事务已提交 (共执行 ${executedCount} 条语句)`;
+                outputChannel.appendLine(commitMsg);
+                outputChannel.show(true);
+                resolve();
+              });
+            });
+
+            vscode.window.showInformationMessage(
+              `SQL 执行成功！共执行 ${executedCount} 条语句。`
+            );
+          }
         }
-      }
-
-      // 根据执行结果提交或回滚
-      const finalTimestamp = formatTimestamp(new Date());
-      if (errorOccurred) {
-        // 回滚事务
-        outputChannel.appendLine(
-          `[${finalTimestamp} ${databaseName}] 发生错误，回滚事务`
-        );
-        outputChannel.show(true);
-
-        await new Promise<void>((resolve, reject) => {
-          connectionObj.query("ROLLBACK", (err: any) => {
-            if (err) {
-              const errorMsg = `[${finalTimestamp} ${databaseName}, ERROR] 回滚失败: ${err.message}`;
-              outputChannel.appendLine(errorMsg);
-              outputChannel.show(true);
-              return reject(err);
-            }
-            const rollbackMsg = `[${finalTimestamp} ${databaseName}] 事务已回滚`;
-            outputChannel.appendLine(rollbackMsg);
-            outputChannel.show(true);
-            resolve();
-          });
-        });
-
-        vscode.window.showErrorMessage(
-          `SQL 执行失败: ${errorMessage}。已回滚所有更改。`
-        );
-      } else {
-        // 提交事务
-        outputChannel.appendLine(
-          `[${finalTimestamp} ${databaseName}] 提交事务`
-        );
-        outputChannel.show(true);
-
-        await new Promise<void>((resolve, reject) => {
-          connectionObj.query("COMMIT", (err: any) => {
-            if (err) {
-              const errorMsg = `[${finalTimestamp} ${databaseName}, ERROR] 提交失败: ${err.message}`;
-              outputChannel.appendLine(errorMsg);
-              outputChannel.show(true);
-              return reject(err);
-            }
-            const commitMsg = `[${finalTimestamp} ${databaseName}] 事务已提交 (共执行 ${executedCount} 条语句)`;
-            outputChannel.appendLine(commitMsg);
-            outputChannel.show(true);
-            resolve();
-          });
-        });
-
-        vscode.window.showInformationMessage(
-          `SQL 执行成功！共执行 ${executedCount} 条语句。`
-        );
-      }
+      );
     }
   );
 }

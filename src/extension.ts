@@ -26,6 +26,7 @@ import {
   resolveTableDatasource,
 } from "./provider/workspace_symbol_provider";
 import { registerBuiltinDatabaseDrivers } from "./provider/drivers/builtin_drivers";
+import { getMysqlPoolRegistry } from "./provider/mysql/pool_registry";
 import { format as formatSql } from "sql-formatter";
 
 interface SqlStatementSpan {
@@ -522,6 +523,9 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.languages.registerHoverProvider({ language: "sql" }, sqlHoverProvider)
   );
+  context.subscriptions.push(
+    new vscode.Disposable(() => sqlHoverProvider.dispose())
+  );
 
   // 表名悬浮弹窗的快捷命令：进入表数据、表编辑
   // 使用无参 command 链接，点击时从 lastHoveredTableInfo 读取（hover 内传参在某些环境下不生效）
@@ -816,4 +820,6 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 // This method is called when your extension is deactivated
-export function deactivate() {}
+export function deactivate() {
+  getMysqlPoolRegistry().dispose();
+}

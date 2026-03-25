@@ -505,6 +505,13 @@
                     "type": "boolean",
                     "default": true,
                     "description": "执行 SELECT/WITH 时若语句末尾未写 LIMIT，则自动追加 LIMIT（条数见 cadb.grid.pageSize）"
+                },
+                "cadb.mysql.connectionPoolLimit": {
+                    "type": "number",
+                    "default": 10,
+                    "minimum": 1,
+                    "maximum": 100,
+                    "description": "MySQL 连接池每个「主机+端口+账号」的最大连接数"
                 }
             }
         },
