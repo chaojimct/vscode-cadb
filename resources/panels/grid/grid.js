@@ -110,13 +110,26 @@
     },
   };
 
-  // 侧边面板：恢复展开/收起与宽度
+  // 侧边面板：恢复展开/收起与宽度（宽度由 style.width 控制，CSS 使用 flex:0 0 auto）
   (function initSidePanel() {
     const body = document.body;
     const panel = document.getElementById("grid-side-panel");
     const resizer = document.querySelector("[data-resizer]");
     const STORAGE_KEY_COLLAPSED = "cadb.grid.sidePanelCollapsed";
     const STORAGE_KEY_WIDTH = "cadb.grid.sidePanelWidth";
+
+    function sidePanelWidthBounds() {
+      const minW = 180;
+      const maxW = Math.max(minW, Math.floor(window.innerWidth * 0.5));
+      return { minW, maxW };
+    }
+
+    function applySidePanelWidthPx(px) {
+      if (!panel) return;
+      const { minW, maxW } = sidePanelWidthBounds();
+      const w = Math.max(minW, Math.min(maxW, Math.round(px)));
+      panel.style.width = w + "px";
+    }
 
     try {
       const collapsed = localStorage.getItem(STORAGE_KEY_COLLAPSED);
@@ -141,41 +154,58 @@
       const w = localStorage.getItem(STORAGE_KEY_WIDTH);
       if (panel && w) {
         const num = parseInt(w, 10);
-        if (num >= 180 && num <= 2000) panel.style.width = num + "px";
+        if (!Number.isNaN(num)) applySidePanelWidthPx(num);
       }
     } catch (_) {}
 
     if (resizer && panel) {
       let startX = 0;
       let startWidth = 0;
+
+      function endResize() {
+        body.classList.remove("is-resizing-side-panel");
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        try {
+          localStorage.setItem(STORAGE_KEY_WIDTH, String(panel.offsetWidth));
+        } catch (_) {}
+      }
+
       resizer.addEventListener("mousedown", function (e) {
+        if (body.classList.contains("grid-side-panel-collapsed")) return;
+        if (e.button !== 0) return;
         e.preventDefault();
         startX = e.clientX;
         startWidth = panel.offsetWidth;
-        const minW = 180;
-        const maxW = Math.max(minW, Math.floor(window.innerWidth * 0.5));
+        body.classList.add("is-resizing-side-panel");
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
 
         function move(ev) {
           const dx = startX - ev.clientX;
           let w = startWidth + dx;
+          const { minW, maxW } = sidePanelWidthBounds();
           w = Math.max(minW, Math.min(maxW, w));
           panel.style.width = w + "px";
         }
         function up() {
           document.removeEventListener("mousemove", move);
           document.removeEventListener("mouseup", up);
-          document.body.style.cursor = "";
-          document.body.style.userSelect = "";
-          try {
-            localStorage.setItem(STORAGE_KEY_WIDTH, String(panel.offsetWidth));
-          } catch (_) {}
+          endResize();
         }
-        document.body.style.cursor = "col-resize";
-        document.body.style.userSelect = "none";
         document.addEventListener("mousemove", move);
         document.addEventListener("mouseup", up);
       });
     }
+
+    window.addEventListener(
+      "resize",
+      function () {
+        if (!panel || body.classList.contains("grid-side-panel-collapsed")) return;
+        applySidePanelWidthPx(panel.offsetWidth);
+      },
+      { passive: true }
+    );
   })();
 
   /** 侧栏展开后聚焦搜索框（等布局稳定再 focus，避免被 transition 抢焦点） */

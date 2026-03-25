@@ -138,12 +138,13 @@ class DatabaseTableData {
     const gridOptions = {
       columnDefs,
       rowData,
+      /** 表头 headerTooltip（字段备注）使用浏览器原生提示，无需企业版 Tooltip 模块 */
+      enableBrowserTooltips: true,
       defaultColDef: {
         sortable: true,
         resizable: true,
         filter: true,
         editable: true,
-        maxWidth: 220,
         valueFormatter: (params) => {
           const v = params.value;
           if (v == null) return "";
@@ -245,12 +246,17 @@ class DatabaseTableData {
       const isBit1 = /^bit\s*\(\s*1\s*\)$/.test(type) || (type.startsWith("bit") && type.includes("1"));
       const isBitN = /^bit\s*\(\s*\d+\s*\)$/.test(type) || (type.startsWith("bit") && !type.includes("1"));
       const isDateType = /^(date|datetime|timestamp|time)(\s|\(|$)/.test(typeTrim);
+      const commentStr =
+        c.comment != null && String(c.comment).trim() !== ""
+          ? String(c.comment).trim()
+          : "";
       const colDef = {
         field: c.field,
         headerName: (c.headerName != null ? c.headerName : c.field.toUpperCase()),
         width: c.width != null ? c.width : 120,
         minWidth: c.minWidth != null ? c.minWidth : 60,
-        maxWidth: c.maxWidth != null ? c.maxWidth : 220,
+        ...(c.maxWidth != null ? { maxWidth: c.maxWidth } : {}),
+        ...(commentStr ? { headerTooltip: commentStr } : {}),
         ...this._getFilterConfig(c, type),
         ...this._getComparatorConfig(c, type),
         // 透传 AG Grid 列扩展配置（如 cellEditor、cellEditorPopup 等）

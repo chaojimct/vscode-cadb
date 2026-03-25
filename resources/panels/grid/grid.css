@@ -7,7 +7,7 @@
   --grid-side-panel-width: 280px;
   --grid-side-panel-min-width: 180px;
   --grid-side-panel-max-width: 50%;
-  --grid-resizer-width: 5px;
+  --grid-resizer-width: 6px;
   /* 确保有 table.css 未定义时的回退 */
   --grid-bg: var(--vscode-editor-background, var(--vscode-bg, #1e1e1e));
   --grid-fg: var(--vscode-editor-foreground, var(--vscode-fg, #d4d4d4));
@@ -37,8 +37,12 @@
   flex: 0 0 var(--grid-resizer-width);
   width: var(--grid-resizer-width);
   min-width: var(--grid-resizer-width);
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
   background: var(--grid-border);
   cursor: col-resize;
+  touch-action: none;
   transition: background 0.15s;
 }
 .grid-resizer:hover,
@@ -49,8 +53,10 @@
   display: none;
 }
 
+/* flex-basis 勿写死为固定 px，否则仅改 style.width 无法调整侧栏宽度（flex 优先使用 flex-basis） */
 .grid-side-panel {
-  flex: 0 0 var(--grid-side-panel-width);
+  box-sizing: border-box;
+  flex: 0 0 auto;
   width: var(--grid-side-panel-width);
   min-width: var(--grid-side-panel-min-width);
   max-width: var(--grid-side-panel-max-width);
@@ -59,7 +65,11 @@
   background: var(--grid-bg);
   border-left: 1px solid var(--grid-border);
   overflow: hidden;
-  transition: width 0.2s ease, min-width 0.2s ease, flex 0.2s ease;
+  transition: width 0.2s ease, min-width 0.2s ease;
+}
+
+.grid-body.is-resizing-side-panel .grid-side-panel {
+  transition: none;
 }
 .grid-body.grid-side-panel-collapsed .grid-side-panel {
   width: 0 !important;
