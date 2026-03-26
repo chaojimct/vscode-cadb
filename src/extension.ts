@@ -28,6 +28,10 @@ import {
 } from "./provider/workspace_symbol_provider";
 import { registerBuiltinDatabaseDrivers } from "./provider/drivers/builtin_drivers";
 import { getMysqlPoolRegistry } from "./provider/mysql/pool_registry";
+import {
+  CADB_GLOBAL_DATASOURCE_SIDEBAR_LAST_VISIBLE_KEY,
+  CADB_WORKSPACE_OPEN_TABLE_PANELS_KEY,
+} from "./provider/cadb_storage_keys";
 import { format as formatSql } from "sql-formatter";
 
 interface SqlStatementSpan {
@@ -126,20 +130,9 @@ export function activate(context: vscode.ExtensionContext) {
   // 创建输出通道用于显示 SQL 执行日志
   const outputChannel = vscode.window.createOutputChannel("CADB SQL");
   context.subscriptions.push(outputChannel);
-  const LAST_ACTIVE_TARGET_STATE_KEY = "cadb.lastActiveTarget";
-  type LastActiveTargetState =
-    | {
-        kind: "file";
-        uri: string;
-        updatedAt: number;
-      }
-    | {
-        kind: "tableData" | "tableEdit";
-        connectionName: string;
-        databaseName: string;
-        tableName: string;
-        updatedAt: number;
-      };
+  const shouldAutoShowDatasourceSidebar =
+    context.globalState.get<boolean>(CADB_GLOBAL_DATASOURCE_SIDEBAR_LAST_VISIBLE_KEY) ===
+    true;
   const revealLog = (message: string, data?: unknown): void => {
     const ts = new Date().toISOString();
     if (data === undefined) {
@@ -152,25 +145,11 @@ export function activate(context: vscode.ExtensionContext) {
       outputChannel.appendLine(`[CADB REVEAL][${ts}] ${message}`);
     }
   };
-  const persistLastActiveFileTarget = (uri: vscode.Uri | undefined): void => {
-    if (!uri) {
-      return;
-    }
-    // notebook 单元格 URI 不能作为可恢复目标（无法直接 openNotebookDocument）
-    // 此类场景应由 onDidChangeActiveNotebookEditor 记录 notebook URI。
-    if (uri.scheme === "vscode-notebook-cell") {
-      return;
-    }
-    const fsPath = (uri.fsPath || "").toLowerCase();
-    if (!fsPath.endsWith(".sql") && !fsPath.endsWith(".jsql")) {
-      return;
-    }
-    void context.workspaceState.update(LAST_ACTIVE_TARGET_STATE_KEY, {
-      kind: "file",
-      uri: uri.toString(),
-      updatedAt: Date.now(),
-    } as LastActiveTargetState);
-  };
+
+  if (!shouldAutoShowDatasourceSidebar) {
+    void context.workspaceState.update(CADB_WORKSPACE_OPEN_TABLE_PANELS_KEY, []);
+    revealLog("启动：上次未停留在数据源侧栏，已清空 openTablePanels（不自动恢复表面板）");
+  }
 
   const provider = new DataSourceProvider(context);
   const treeView = vscode.window.createTreeView("cadb-datasource-tree", {
@@ -188,8 +167,11 @@ export function activate(context: vscode.ExtensionContext) {
   );
   datasourceCommands.forEach((cmd) => context.subscriptions.push(cmd));
 
-  // 恢复展开状态（延迟执行，等待树视图初始化完成）
+  // 恢复展开状态（延迟执行，等待树视图初始化完成）；上次未停在数据源侧栏时不做，减少 reveal 与 Workbench 抢焦点
   setTimeout(() => {
+    if (!shouldAutoShowDatasourceSidebar) {
+      return;
+    }
     (async () => {
       try {
         const treeState = provider.getTreeState();
@@ -224,12 +206,40 @@ export function activate(context: vscode.ExtensionContext) {
     })();
   }, 1000);
 
+  /** 启动后短时内忽略 visible=true，减轻 Workbench 先恢复 CADB 侧栏导致的误判 */
+  const ignoreDatasourceSidebarTrueUntil = Date.now() + 2600;
+  const persistDatasourceSidebarVisible = (visible: boolean): void => {
+    if (
+      visible &&
+      !shouldAutoShowDatasourceSidebar &&
+      Date.now() < ignoreDatasourceSidebarTrueUntil
+    ) {
+      return;
+    }
+    void context.globalState.update(CADB_GLOBAL_DATASOURCE_SIDEBAR_LAST_VISIBLE_KEY, visible);
+  };
   treeView.onDidChangeVisibility((e) => {
+    persistDatasourceSidebarVisible(e.visible);
     if (e.visible) {
       provider.refresh();
       scheduleActiveEditorReveal("treeVisible");
     }
   });
+  /** 扩展停用/重载时落盘，避免仅依赖 visibility 事件（异常退出时上一轮值仍可用） */
+  context.subscriptions.push({
+    dispose: () => {
+      void context.globalState.update(
+        CADB_GLOBAL_DATASOURCE_SIDEBAR_LAST_VISIBLE_KEY,
+        treeView.visible
+      );
+    },
+  });
+  setTimeout(() => {
+    void context.globalState.update(
+      CADB_GLOBAL_DATASOURCE_SIDEBAR_LAST_VISIBLE_KEY,
+      treeView.visible
+    );
+  }, 3000);
   let ensureDatasourceVisibleTask: Promise<void> | undefined;
   const ensureDatasourceVisible = async (): Promise<void> => {
     if (ensureDatasourceVisibleTask) {
@@ -280,13 +290,28 @@ export function activate(context: vscode.ExtensionContext) {
       }
     })
   );
-  // reload 后做双阶段拉起，兼容 Workbench 视图恢复延迟
-  setTimeout(() => {
-    void ensureDatasourceVisible();
-  }, 0);
-  setTimeout(() => {
-    void ensureDatasourceVisible();
-  }, 1200);
+  // 仅当用户上次关闭前停留在 CADB 数据源视图时，启动后再尝试拉起侧栏（避免每次打开 VS Code 都强制切 Activity Bar）
+  if (shouldAutoShowDatasourceSidebar) {
+    revealLog("启动：上次停留在数据源视图，尝试自动聚焦侧栏");
+    setTimeout(() => {
+      void ensureDatasourceVisible();
+    }, 500);
+  } else {
+    revealLog("启动：上次未停留在数据源视图，跳过自动聚焦侧栏");
+    const focusExplorerSidebar = async (): Promise<void> => {
+      try {
+        await vscode.commands.executeCommand("workbench.view.explorer");
+      } catch {
+        /* ignore */
+      }
+    };
+    setTimeout(() => {
+      void focusExplorerSidebar();
+    }, 500);
+    setTimeout(() => {
+      void focusExplorerSidebar();
+    }, 1600);
+  }
 
   const toComparablePath = (inputPath: string): string => {
     const normalized = path.resolve(inputPath).replace(/\\/g, "/");
@@ -737,16 +762,14 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   context.subscriptions.push(
-    vscode.window.onDidChangeActiveTextEditor((editor) => {
+    vscode.window.onDidChangeActiveTextEditor(() => {
       revealLog("事件: onDidChangeActiveTextEditor");
-      persistLastActiveFileTarget(editor?.document.uri);
       scheduleActiveEditorReveal("onDidChangeActiveTextEditor");
     })
   );
   context.subscriptions.push(
-    vscode.window.onDidChangeActiveNotebookEditor((editor) => {
+    vscode.window.onDidChangeActiveNotebookEditor(() => {
       revealLog("事件: onDidChangeActiveNotebookEditor");
-      persistLastActiveFileTarget(editor?.notebook.uri);
       scheduleActiveEditorReveal("onDidChangeActiveNotebookEditor");
     })
   );
@@ -772,70 +795,6 @@ export function activate(context: vscode.ExtensionContext) {
       })
     );
   }
-  // 启动期兜底：树完成首轮恢复后再补一轮当前激活文件定位
-  setTimeout(() => {
-    scheduleActiveEditorReveal("startup-post-1800ms");
-  }, 1800);
-  setTimeout(() => {
-    scheduleActiveEditorReveal("startup-post-3200ms");
-  }, 3200);
-  const restoreLastActiveTarget = async (reason: string): Promise<void> => {
-    const target = context.workspaceState.get<LastActiveTargetState | undefined>(
-      LAST_ACTIVE_TARGET_STATE_KEY
-    );
-    if (!target) {
-      return;
-    }
-    revealLog("restoreLastActiveTarget: 尝试恢复", { reason, target });
-    try {
-      if (target.kind === "file" && target.uri) {
-        let uri = vscode.Uri.parse(target.uri);
-        // 兼容旧状态：若历史保存了 cell-uri，则转成文件 URI 再恢复
-        if (uri.scheme === "vscode-notebook-cell") {
-          uri = vscode.Uri.file(uri.fsPath);
-        }
-        if ((uri.fsPath || "").toLowerCase().endsWith(".jsql")) {
-          const nb = await vscode.workspace.openNotebookDocument(uri);
-          await vscode.window.showNotebookDocument(nb, {
-            preserveFocus: false,
-            preview: false,
-            viewColumn: vscode.ViewColumn.Active,
-          });
-        } else {
-          const doc = await vscode.workspace.openTextDocument(uri);
-          await vscode.window.showTextDocument(doc, {
-            preview: false,
-            viewColumn: vscode.ViewColumn.Active,
-          });
-        }
-        scheduleActiveEditorReveal(`restoreLastActiveTarget:${reason}:file`);
-        return;
-      }
-      if (target.kind === "tableData" || target.kind === "tableEdit") {
-        const ok = await vscode.commands.executeCommand<boolean>("cadb.internal.activateTablePanel", {
-          kind: target.kind,
-          connectionName: target.connectionName,
-          databaseName: target.databaseName,
-          tableName: target.tableName,
-        });
-        if (!ok) {
-          revealLog("restoreLastActiveTarget: 表目标恢复未命中", { reason, target });
-        }
-      }
-    } catch (error) {
-      revealLog("restoreLastActiveTarget: 恢复失败", {
-        reason,
-        message: error instanceof Error ? error.message : String(error),
-      });
-    }
-  };
-  setTimeout(() => {
-    void restoreLastActiveTarget("startup-2600ms");
-  }, 2600);
-  setTimeout(() => {
-    void restoreLastActiveTarget("startup-4200ms");
-  }, 4200);
-
   // 数据库管理器（替代 CaEditor，只保留数据库选择功能）
   const databaseManager = new DatabaseManager(provider);
   provider.setDatabaseManager(databaseManager);
@@ -935,11 +894,11 @@ export function activate(context: vscode.ExtensionContext) {
   if (initialEditor?.document.languageId === "sql") {
     void applyStoredSelectionForDocument(initialEditor.document);
   }
-  persistLastActiveFileTarget(initialEditor?.document.uri);
-  persistLastActiveFileTarget(vscode.window.activeNotebookEditor?.notebook.uri);
 
   // 数据项命令
-  registerDatasourceItemCommands(provider, outputChannel, databaseManager);
+  registerDatasourceItemCommands(provider, outputChannel, databaseManager, {
+    restorePersistedTablePanelsOnStartup: shouldAutoShowDatasourceSidebar,
+  });
 
   // 查询结果 Webview（底部面板）
   const resultProvider = new ResultWebviewProvider(context);

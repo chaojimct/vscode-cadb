@@ -35,6 +35,7 @@ import {
   isDriverEnabled,
   setDriverEnabled,
 } from "../drivers/enabled_store";
+import { CADB_WORKSPACE_OPEN_TABLE_PANELS_KEY } from "../cadb_storage_keys";
 
 /**
  * 将 unknown 错误转换为可展示的消息文本
@@ -384,12 +385,6 @@ async function editEntry(
         outputChannel,
         "existingTableEditReveal"
       );
-      persistLastActiveTarget(provider.context, {
-        kind: "tableEdit",
-        connectionName,
-        databaseName,
-        tableName,
-      });
       try {
         const data = tableNode?.dataloader
           ? await tableNode.dataloader.descTable(tableNode!)
@@ -419,13 +414,11 @@ async function editEntry(
       kind: "edit",
     };
     openTableEditPanels.set(editPanelKey, tableEditPanel);
-    attachTablePanelRevealTracking(
-      tableEditPanel,
-      { connectionName, databaseName, tableName },
-      outputChannel,
-      provider.context,
-      "tableEdit"
-    );
+    attachTablePanelRevealTracking(tableEditPanel, {
+      connectionName,
+      databaseName,
+      tableName,
+    }, outputChannel);
     void upsertPersistedTablePanel(provider.context, persistedState);
     tableEditPanel.onDidDispose(() => {
       openTableEditPanels.delete(editPanelKey);
@@ -1691,55 +1684,6 @@ export function registerDatasourceCommands(
 const openTablePanels = new Map<string, vscode.WebviewPanel>();
 /** 当前聚焦的表数据 WebviewPanel（用于快捷键切换侧栏） */
 let lastActiveDatasourceTablePanel: vscode.WebviewPanel | undefined;
-const LAST_ACTIVE_TARGET_STATE_KEY = "cadb.lastActiveTarget";
-type LastActiveTargetState =
-  | {
-      kind: "tableData";
-      connectionName: string;
-      databaseName: string;
-      tableName: string;
-      updatedAt: number;
-    }
-  | {
-      kind: "tableEdit";
-      connectionName: string;
-      databaseName: string;
-      tableName: string;
-      updatedAt: number;
-    }
-  | {
-      kind: "file";
-      uri: string;
-      updatedAt: number;
-    };
-type LastActiveTargetInput =
-  | {
-      kind: "tableData";
-      connectionName: string;
-      databaseName: string;
-      tableName: string;
-    }
-  | {
-      kind: "tableEdit";
-      connectionName: string;
-      databaseName: string;
-      tableName: string;
-    }
-  | {
-      kind: "file";
-      uri: string;
-    };
-
-function persistLastActiveTarget(
-  context: vscode.ExtensionContext,
-  target: LastActiveTargetInput
-) {
-  void context.workspaceState.update(LAST_ACTIVE_TARGET_STATE_KEY, {
-    ...target,
-    updatedAt: Date.now(),
-  } as LastActiveTargetState);
-}
-
 /** 与 package.json 中 Cmd/Ctrl+F 的 when 一致；勿用 activeWebviewPanelId==='datasourceTable'（扩展内多为带前缀的 viewType） */
 const CONTEXT_DATASOURCE_TABLE_GRID_FOCUSED = "cadb.datasourceTableGridFocused";
 
@@ -1832,9 +1776,7 @@ function triggerRevealForTablePanel(
 function attachTablePanelRevealTracking(
   panel: vscode.WebviewPanel,
   meta: TablePanelRevealMeta,
-  outputChannel: vscode.OutputChannel,
-  context: vscode.ExtensionContext,
-  panelKind: "tableData" | "tableEdit"
+  outputChannel: vscode.OutputChannel
 ) {
   panelRevealMetaMap.set(panel, meta);
   panel.onDidChangeViewState((e) => {
@@ -1846,12 +1788,6 @@ function attachTablePanelRevealTracking(
       return;
     }
     triggerRevealForTablePanel(currentMeta, outputChannel, "panelActive");
-    persistLastActiveTarget(context, {
-      kind: panelKind,
-      connectionName: currentMeta.connectionName,
-      databaseName: currentMeta.databaseName,
-      tableName: currentMeta.tableName,
-    });
   });
 }
 
@@ -1862,13 +1798,12 @@ interface PersistedTablePanelState {
   tableName: string;
   kind: PersistedTablePanelKind;
 }
-const OPEN_TABLE_PANELS_STATE_KEY = "cadb.openTablePanels";
 let hasScheduledPersistedTablePanelRestore = false;
 
 function readPersistedTablePanels(
   context: vscode.ExtensionContext
 ): PersistedTablePanelState[] {
-  const raw = context.workspaceState.get<unknown>(OPEN_TABLE_PANELS_STATE_KEY, []);
+  const raw = context.workspaceState.get<unknown>(CADB_WORKSPACE_OPEN_TABLE_PANELS_KEY, []);
   if (!Array.isArray(raw)) {
     return [];
   }
@@ -1896,7 +1831,7 @@ async function writePersistedTablePanels(
   context: vscode.ExtensionContext,
   states: PersistedTablePanelState[]
 ): Promise<void> {
-  await context.workspaceState.update(OPEN_TABLE_PANELS_STATE_KEY, states);
+  await context.workspaceState.update(CADB_WORKSPACE_OPEN_TABLE_PANELS_KEY, states);
 }
 
 async function upsertPersistedTablePanel(
@@ -1940,28 +1875,6 @@ async function restorePersistedTablePanels(
   provider: DataSourceProvider,
   outputChannel: vscode.OutputChannel
 ): Promise<void> {
-  const lastActiveTarget = provider.context.workspaceState.get<LastActiveTargetState | undefined>(
-    LAST_ACTIVE_TARGET_STATE_KEY
-  );
-  const lastTargetIsTable =
-    lastActiveTarget?.kind === "tableData" || lastActiveTarget?.kind === "tableEdit";
-  const activeTextBeforeRestore = vscode.window.activeTextEditor;
-  const activeNotebookBeforeRestore = vscode.window.activeNotebookEditor;
-  const activeSqlTextUri =
-    activeTextBeforeRestore?.document &&
-    (activeTextBeforeRestore.document.languageId === "sql" ||
-      activeTextBeforeRestore.document.fileName.toLowerCase().endsWith(".sql") ||
-      activeTextBeforeRestore.document.fileName.toLowerCase().endsWith(".jsql"))
-      ? activeTextBeforeRestore.document.uri
-      : undefined;
-  const activeJsqlNotebookUri =
-    activeNotebookBeforeRestore?.notebook &&
-    activeNotebookBeforeRestore.notebook.uri.fsPath
-      .toLowerCase()
-      .endsWith(".jsql")
-      ? activeNotebookBeforeRestore.notebook.uri
-      : undefined;
-
   const states = readPersistedTablePanels(provider.context);
   if (states.length === 0) {
     return;
@@ -2000,39 +1913,6 @@ async function restorePersistedTablePanels(
         )
     );
     await writePersistedTablePanels(provider.context, next);
-  }
-
-  // 若上次激活目标是表面板，则不回拉到 SQL/JSQL，交给后续表激活恢复流程处理。
-  if (lastTargetIsTable) {
-    return;
-  }
-
-  // 恢复表面板后还原窗口原本活跃的 SQL/JSQL 编辑器，避免表面板抢焦点
-  if (activeSqlTextUri) {
-    try {
-      const doc = await vscode.workspace.openTextDocument(activeSqlTextUri);
-      await vscode.window.showTextDocument(doc, {
-        preview: false,
-        viewColumn: vscode.ViewColumn.Active,
-      });
-      void vscode.commands.executeCommand("cadb.datasource.revealActiveEditor");
-      return;
-    } catch (error) {
-      console.warn("恢复原 SQL 编辑器焦点失败:", error);
-    }
-  }
-  if (activeJsqlNotebookUri) {
-    try {
-      const nb = await vscode.workspace.openNotebookDocument(activeJsqlNotebookUri);
-      await vscode.window.showNotebookDocument(nb, {
-        preserveFocus: false,
-        preview: false,
-        viewColumn: vscode.ViewColumn.Active,
-      });
-      void vscode.commands.executeCommand("cadb.datasource.revealActiveEditor");
-    } catch (error) {
-      console.warn("恢复原 JSQL Notebook 焦点失败:", error);
-    }
   }
 }
 
@@ -2132,12 +2012,6 @@ async function sqlResultView(
       outputChannel,
       "existingTableDataReveal"
     );
-    persistLastActiveTarget(provider.context, {
-      kind: "tableData",
-      connectionName,
-      databaseName,
-      tableName,
-    });
     void upsertPersistedTablePanel(provider.context, persistedState);
     setTimeout(() => refreshDatasourceTableGridFocusContext(), 0);
     setTimeout(() => {
@@ -2153,13 +2027,11 @@ async function sqlResultView(
     data?.title || "未命名页"
   );
   openTablePanels.set(panelKey, panel);
-  attachTablePanelRevealTracking(
-    panel,
-    { connectionName, databaseName, tableName },
-    outputChannel,
-    provider.context,
-    "tableData"
-  );
+  attachTablePanelRevealTracking(panel, {
+    connectionName,
+    databaseName,
+    tableName,
+  }, outputChannel);
   void upsertPersistedTablePanel(provider.context, persistedState);
   panel.onDidDispose(() => {
     openTablePanels.delete(panelKey);
@@ -2603,13 +2475,17 @@ async function openRedisPubsubView(
 export function registerDatasourceItemCommands(
   provider: DataSourceProvider,
   outputChannel: vscode.OutputChannel,
-  databaseManager: DatabaseManager
+  databaseManager: DatabaseManager,
+  options?: { restorePersistedTablePanelsOnStartup?: boolean }
 ) {
+  const restorePersistedOnStartup = options?.restorePersistedTablePanelsOnStartup === true;
   if (!hasScheduledPersistedTablePanelRestore) {
     hasScheduledPersistedTablePanelRestore = true;
-    setTimeout(() => {
-      void restorePersistedTablePanels(provider, outputChannel);
-    }, 1500);
+    if (restorePersistedOnStartup) {
+      setTimeout(() => {
+        void restorePersistedTablePanels(provider, outputChannel);
+      }, 1500);
+    }
   }
   vscode.commands.registerCommand(
     "cadb.internal.activateTablePanel",
