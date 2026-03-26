@@ -35,6 +35,12 @@ import {
   isDriverEnabled,
   setDriverEnabled,
 } from "../drivers/enabled_store";
+import { getRegisteredPreviewPlugin } from "../preview_plugins/registry";
+import {
+  getPreviewPluginsManagementPayload,
+  isPreviewPluginEnabled,
+  setPreviewPluginEnabled,
+} from "../preview_plugins/enabled_store";
 import { CADB_WORKSPACE_OPEN_TABLE_PANELS_KEY } from "../cadb_storage_keys";
 
 /**
@@ -55,6 +61,69 @@ function postWebviewStatus(
     command: "status",
     success: payload.success,
     message: payload.message,
+  });
+}
+
+/** 未注册类型或专项预览未启用时，回退到纯文本（需「纯文本」预览已启用） */
+const DEFAULT_CELL_PREVIEW_PLUGIN_ID = "preview-text";
+
+/** 表格 Ctrl/Cmd+点击单元格：校验预览插件启用后把原始内容发回 webview 渲染 */
+function postDatasourceTableCellPreviewReply(
+  context: vscode.ExtensionContext,
+  panel: vscode.WebviewPanel,
+  message: {
+    pluginId?: string;
+    rawValue?: string;
+    columnField?: string;
+  }
+) {
+  const rawValue = message.rawValue != null ? String(message.rawValue) : "";
+  const columnField = message.columnField;
+  let pluginId = String(message.pluginId ?? "").trim();
+
+  let reg = getRegisteredPreviewPlugin(pluginId);
+  if (!reg) {
+    pluginId = DEFAULT_CELL_PREVIEW_PLUGIN_ID;
+    reg = getRegisteredPreviewPlugin(pluginId);
+  }
+  if (!reg) {
+    panel.webview.postMessage({
+      command: "showCellPreview",
+      success: false,
+      message: "预览插件配置异常",
+    });
+    return;
+  }
+
+  if (!isPreviewPluginEnabled(context, pluginId)) {
+    const textReg = getRegisteredPreviewPlugin(DEFAULT_CELL_PREVIEW_PLUGIN_ID);
+    const textOk =
+      !!textReg && isPreviewPluginEnabled(context, DEFAULT_CELL_PREVIEW_PLUGIN_ID);
+    if (textOk && pluginId !== DEFAULT_CELL_PREVIEW_PLUGIN_ID) {
+      pluginId = DEFAULT_CELL_PREVIEW_PLUGIN_ID;
+      reg = textReg;
+    } else {
+      panel.webview.postMessage({
+        command: "showCellPreview",
+        success: false,
+        pluginId: message.pluginId,
+        dataFormatLabel: reg.dataFormatLabel,
+        message:
+          pluginId === DEFAULT_CELL_PREVIEW_PLUGIN_ID
+            ? `预览插件「${reg.dataFormatLabel}」未启用，请在「管理数据库驱动」→「预览插件」中安装启用。`
+            : `预览插件「${reg.dataFormatLabel}」未启用，且默认「纯文本」预览也未启用，无法展示内容。`,
+      });
+      return;
+    }
+  }
+
+  panel.webview.postMessage({
+    command: "showCellPreview",
+    success: true,
+    pluginId,
+    rawValue,
+    dataFormatLabel: reg.dataFormatLabel,
+    columnField,
   });
 }
 
@@ -1255,7 +1324,7 @@ export function registerDatasourceCommands(
     })
   );
 
-  // 搜索数据源：Ctrl+F / Cmd+F 弹出 QuickPick，模糊匹配并定位到节点
+  // 搜索数据源：Windows/Linux 为 Ctrl+F、macOS 为 Cmd+F（见 package.json keybindings）
   disposables.push(
     vscode.commands.registerCommand("cadb.datasource.search", async () => {
       const allNodes = provider.getFlattenedNodes();
@@ -1615,6 +1684,7 @@ export function registerDatasourceCommands(
           configType: "drivers",
           extensionVersion: readExtensionVersion(),
           drivers: getDriversManagementPayload(provider.context),
+          previewPlugins: getPreviewPluginsManagementPayload(provider.context),
         });
       };
       sendLoad();
@@ -1635,6 +1705,26 @@ export function registerDatasourceCommands(
             postWebviewStatus(panel.webview, {
               success: true,
               message: enabled ? "✔️ 已安装（启用）驱动" : "✔️ 已卸载（停用）驱动",
+            });
+          }
+          sendLoad();
+        }
+        if (message.command === "setPreviewPluginEnabled") {
+          const id = String((message as { id?: string }).id ?? "").trim();
+          const enabled = !!(message as { enabled?: boolean }).enabled;
+          if (!id) {
+            return;
+          }
+          const r = await setPreviewPluginEnabled(provider.context, id, enabled);
+          if (!r.ok) {
+            postWebviewStatus(panel.webview, {
+              success: false,
+              message: r.message ?? "操作失败",
+            });
+          } else {
+            postWebviewStatus(panel.webview, {
+              success: true,
+              message: enabled ? "✔️ 已启用预览插件" : "✔️ 已停用预览插件",
             });
           }
           sendLoad();
@@ -1684,23 +1774,8 @@ export function registerDatasourceCommands(
 const openTablePanels = new Map<string, vscode.WebviewPanel>();
 /** 当前聚焦的表数据 WebviewPanel（用于快捷键切换侧栏） */
 let lastActiveDatasourceTablePanel: vscode.WebviewPanel | undefined;
-/** 与 package.json 中 Cmd/Ctrl+F 的 when 一致；勿用 activeWebviewPanelId==='datasourceTable'（扩展内多为带前缀的 viewType） */
+/** 表格 Webview 聚焦等场景下由扩展设置，供兼容或其它功能引用 */
 const CONTEXT_DATASOURCE_TABLE_GRID_FOCUSED = "cadb.datasourceTableGridFocused";
-
-function debugGridSidePanelShortcut(label: string, detail?: Record<string, unknown>) {
-  try {
-    const on = vscode.workspace
-      .getConfiguration("cadb")
-      .get<boolean>("grid.debugSidePanelShortcut", false);
-    if (!on) {
-      return;
-    }
-    const tail = detail && Object.keys(detail).length ? ` ${JSON.stringify(detail)}` : "";
-    console.log(`[CADB grid shortcut] ${label}${tail}`);
-  } catch (_e) {
-    /* ignore */
-  }
-}
 
 /** 根据 openTablePanels 中 WebviewPanel.active 同步快捷键 when 上下文与 lastActive */
 function refreshDatasourceTableGridFocusContext() {
@@ -1721,10 +1796,6 @@ function refreshDatasourceTableGridFocusContext() {
     CONTEXT_DATASOURCE_TABLE_GRID_FOCUSED,
     !!activePanel
   );
-  debugGridSidePanelShortcut("refreshFocusContext", {
-    openPanels: openTablePanels.size,
-    activeMatch: !!activePanel,
-  });
 }
 
 /** Webview 内 window 获得焦点时调用（iframe/内部焦点有时不同步 panel.active） */
@@ -1741,7 +1812,6 @@ function markDatasourceTableGridDomFocused(panel: vscode.WebviewPanel) {
   }
   lastActiveDatasourceTablePanel = panel;
   void vscode.commands.executeCommand("setContext", CONTEXT_DATASOURCE_TABLE_GRID_FOCUSED, true);
-  debugGridSidePanelShortcut("gridPanelDomFocus");
 }
 
 function attachDatasourceTablePanelFocusTracking(panel: vscode.WebviewPanel) {
@@ -2076,6 +2146,14 @@ async function sqlResultView(
       }
       return;
     }
+    if (message.command === "cellPreview") {
+      postDatasourceTableCellPreviewReply(provider.context, panel, message as {
+        pluginId?: string;
+        rawValue?: string;
+        columnField?: string;
+      });
+      return;
+    }
     if (message.command === "switchToTableEdit") {
       const conn = message.connectionName ?? connectionName;
       const db = message.databaseName ?? databaseName;
@@ -2286,6 +2364,14 @@ async function keyValueResultView(
       } else {
         vscode.window.showWarningMessage(msg);
       }
+      return;
+    }
+    if (message.command === "cellPreview") {
+      postDatasourceTableCellPreviewReply(provider.context, panel, message as {
+        pluginId?: string;
+        rawValue?: string;
+        columnField?: string;
+      });
       return;
     }
     switch (message.command) {
@@ -3305,13 +3391,11 @@ export function registerResultCommands(resultProvider: ResultWebviewProvider) {
   );
 }
 
-/** 表数据网格：快捷键切换右侧字段侧栏（由 package.json 绑定 Cmd/Ctrl+F） */
+/** 表数据网格：命令面板「切换表格右侧工具栏」→ 向 webview postMessage；表格内为 ⌘F/Ctrl+F（见 grid.js） */
 export function registerGridSidePanelCommand(): vscode.Disposable {
   void vscode.commands.executeCommand("setContext", CONTEXT_DATASOURCE_TABLE_GRID_FOCUSED, false);
 
   return vscode.commands.registerCommand("cadb.grid.toggleSidePanel", () => {
-    debugGridSidePanelShortcut("toggleSidePanel invoked");
-
     let p: vscode.WebviewPanel | undefined;
     for (const cand of openTablePanels.values()) {
       try {
@@ -3326,7 +3410,6 @@ export function registerGridSidePanelCommand(): vscode.Disposable {
     p ??= lastActiveDatasourceTablePanel;
 
     if (!p?.webview) {
-      debugGridSidePanelShortcut("no target panel");
       return;
     }
     let stillOpen = false;
@@ -3342,7 +3425,6 @@ export function registerGridSidePanelCommand(): vscode.Disposable {
       return;
     }
     void p.webview.postMessage({ command: "toggleSidePanel" });
-    debugGridSidePanelShortcut("postMessage toggleSidePanel");
   });
 }
 

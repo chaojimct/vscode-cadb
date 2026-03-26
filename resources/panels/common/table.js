@@ -7,6 +7,11 @@ class DatabaseTableData {
   constructor(options) {
     this.tableSelector = options.tableSelector;
     this.vscode = options.vscode || null;
+    /** 为 true 时：Ctrl/Cmd+点击单元格可向扩展请求侧栏预览（由 grid 页启用） */
+    this.cellCtrlClickPreview = !!options.cellCtrlClickPreview;
+    /** 发起 cellPreview 消息前回调（用于展开侧栏、切换预览 Tab） */
+    this.onCellPreviewRequest =
+      typeof options.onCellPreviewRequest === "function" ? options.onCellPreviewRequest : null;
 
     this.newRow = {};
     this.gridApi = null;
@@ -58,6 +63,27 @@ class DatabaseTableData {
 
   getDataOffset() {
     return this.dataOffset ?? 0;
+  }
+
+  /** 与列 valueFormatter 一致，供 Ctrl+预览将单元格值转为字符串 */
+  cellValueToPreviewString(value) {
+    if (value == null) {
+      return "";
+    }
+    if (typeof value === "object") {
+      if (value.type === "Buffer" && Array.isArray(value.data)) {
+        const hex = value.data
+          .map((b) => String(Number(b).toString(16).padStart(2, "0")))
+          .join("");
+        return "0x" + hex.toUpperCase();
+      }
+      try {
+        return JSON.stringify(value);
+      } catch (_e) {
+        return String(value);
+      }
+    }
+    return String(value);
   }
 
   /** 服务端分页时随请求带给扩展，用于生成 SQL WHERE */
@@ -212,6 +238,39 @@ class DatabaseTableData {
         });
       },
       onPaginationChanged: boundUpdatePaginationUI,
+      onCellClicked: (e) => {
+        if (!self.cellCtrlClickPreview || !self.vscode) {
+          return;
+        }
+        const ev = e.event;
+        if (!ev || !(ev.ctrlKey || ev.metaKey)) {
+          return;
+        }
+        const colId = e.column?.getColId?.();
+        if (!colId || colId === "__cadb_rownum__") {
+          return;
+        }
+        const det = typeof window !== "undefined" && window.CadbCellPreviewDetector;
+        if (!det || typeof det.detectCellPreviewType !== "function") {
+          return;
+        }
+        const val = e.data != null ? e.data[colId] : e.value;
+        const str = self.cellValueToPreviewString(val);
+        const { pluginId, raw } = det.detectCellPreviewType(str);
+        if (typeof self.onCellPreviewRequest === "function") {
+          try {
+            self.onCellPreviewRequest({ pluginId, rawValue: raw, columnField: colId });
+          } catch (_e) {
+            /* 忽略侧栏 UI 回调异常 */
+          }
+        }
+        self.vscode.postMessage({
+          command: "cellPreview",
+          pluginId,
+          rawValue: raw,
+          columnField: colId,
+        });
+      },
     };
 
     if (typeof agGrid !== "undefined" && agGrid.createGrid) {
@@ -222,6 +281,7 @@ class DatabaseTableData {
   _buildColumnDefs() {
     const defs = [
       {
+        colId: "__cadb_rownum__",
         headerName: "#",
         valueGetter: (params) => {
           if (this.serverPagination) {

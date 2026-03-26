@@ -8,6 +8,23 @@
   const dbTable = new DatabaseTableData({
     tableSelector: "#grid",
     vscode: vscode,
+    cellCtrlClickPreview: true,
+    onCellPreviewRequest: () => {
+      ensureSidePanelOpenForPreview();
+      activateGridSideTab("preview");
+      const metaEl = document.getElementById("grid-preview-meta");
+      const bodyEl = document.getElementById("grid-preview-body");
+      if (metaEl) {
+        metaEl.textContent = "正在请求预览…";
+      }
+      if (bodyEl) {
+        bodyEl.innerHTML = "";
+        const p = document.createElement("p");
+        p.className = "grid-preview-panel__loading";
+        p.textContent = "已识别内容类型，正在向扩展校验预览插件…";
+        bodyEl.appendChild(p);
+      }
+    },
   });
 
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -222,6 +239,44 @@
     requestAnimationFrame(() => requestAnimationFrame(run));
   }
 
+  /** 侧栏 Tab：字段 / 预览 */
+  function activateGridSideTab(tabName) {
+    document.querySelectorAll(".grid-side-panel__tab-btn").forEach((btn) => {
+      const t = btn.getAttribute("data-tab");
+      const active = t === tabName;
+      btn.classList.toggle("is-active", active);
+      btn.setAttribute("aria-selected", String(active));
+    });
+    document.querySelectorAll("[data-tab-content]").forEach((panel) => {
+      const t = panel.getAttribute("data-tab-content");
+      const on = t === tabName;
+      panel.classList.toggle("is-hidden", !on);
+      if (on) {
+        panel.removeAttribute("hidden");
+      } else {
+        panel.setAttribute("hidden", "");
+      }
+    });
+  }
+
+  function ensureSidePanelOpenForPreview() {
+    if (document.body.classList.contains("grid-side-panel-collapsed")) {
+      actions.toggleSidePanel();
+    }
+  }
+
+  document.querySelector(".grid-side-panel__tabs")?.addEventListener("click", (e) => {
+    const btn = e.target.closest(".grid-side-panel__tab-btn[data-tab]");
+    if (!btn) {
+      return;
+    }
+    e.preventDefault();
+    const tab = btn.getAttribute("data-tab");
+    if (tab) {
+      activateGridSideTab(tab);
+    }
+  });
+
   /** 根据当前表格列刷新侧边栏「字段」列表 */
   function refreshColumnList() {
     const listEl = document.getElementById("grid-column-list");
@@ -385,6 +440,34 @@
     if (action) action();
   });
 
+  /**
+   * 右侧工具栏显示/隐藏：在 Webview 内处理 ⌘F / Ctrl+F，不依赖扩展 package.json 快捷键与 setContext。
+   * 捕获阶段优先于 AG Grid，避免与 Workbench 键绑定抢键失败。
+   * 在输入框、单元格编辑（contenteditable）内不拦截。
+   */
+  document.addEventListener(
+    "keydown",
+    function (e) {
+      if (e.key !== "f" && e.key !== "F") {
+        return;
+      }
+      if (!(e.metaKey || e.ctrlKey)) {
+        return;
+      }
+      const el = e.target;
+      if (el instanceof HTMLElement) {
+        const tag = el.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable) {
+          return;
+        }
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      actions.toggleSidePanel();
+    },
+    true
+  );
+
   // VSCode 消息
   window.addEventListener("message", (event) => {
     const { command } = event.data || {};
@@ -416,9 +499,30 @@
       dbTable.updatePaginationUI?.();
       userColumnVisibility = new Map();
       updateFieldSearchToggleUI();
+      activateGridSideTab("fields");
       setTimeout(() => {
         applyFieldSearch();
       }, 0);
+      return;
+    }
+
+    if (command === "showCellPreview") {
+      const data = event.data || {};
+      ensureSidePanelOpenForPreview();
+      activateGridSideTab("preview");
+      const render = typeof window !== "undefined" && window.CadbGridPreviewRender;
+      if (render && typeof render.applyPreviewMessage === "function") {
+        render.applyPreviewMessage({
+          metaEl: document.getElementById("grid-preview-meta"),
+          bodyEl: document.getElementById("grid-preview-body"),
+          success: !!data.success,
+          message: data.message,
+          pluginId: data.pluginId,
+          dataFormatLabel: data.dataFormatLabel,
+          columnField: data.columnField,
+          rawValue: data.rawValue,
+        });
+      }
       return;
     }
 
@@ -446,8 +550,7 @@
     }
   });
 
-  // 同步扩展侧快捷键上下文：扩展内 Webview 的 activeWebviewPanelId 往往不等于裸字符串 datasourceTable，
-  // 故用 setContext(cadb.datasourceTableGridFocused)；window focus 可补全「点在表格里但 panel.active 未更新」的情况（尤其 macOS）
+  // 同步扩展侧上下文 cadb.datasourceTableGridFocused（兼容）；侧栏切换由本页 keydown ⌘F/Ctrl+F 处理
   window.addEventListener(
     "focus",
     () => {

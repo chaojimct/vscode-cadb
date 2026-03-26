@@ -157,6 +157,242 @@
   padding: 12px;
 }
 
+.grid-side-panel__tab-content.is-hidden {
+  display: none !important;
+}
+
+.grid-preview-panel__tip {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--grid-desc-fg);
+  line-height: 1.45;
+}
+
+.grid-preview-panel__tip kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  font-size: 11px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  border: 1px solid var(--grid-border);
+  border-radius: 3px;
+  background: var(--vscode-keybindingTable-headerBackground, rgba(128, 128, 128, 0.15));
+  color: var(--grid-fg);
+}
+
+.grid-preview-panel {
+  min-height: 80px;
+}
+
+.grid-preview-panel__meta {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--grid-desc-fg);
+  margin-bottom: 8px;
+  word-break: break-word;
+}
+
+.grid-preview-panel__body {
+  border: 1px solid var(--grid-border);
+  border-radius: 4px;
+  padding: 8px;
+  background: var(--vscode-editor-background, var(--grid-bg));
+  min-height: 48px;
+  overflow: auto;
+  max-height: min(70vh, 520px);
+}
+
+.grid-preview-panel__pre {
+  margin: 0;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--grid-fg);
+}
+
+.grid-preview-panel__img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+}
+
+.grid-preview-panel__url a {
+  color: var(--vscode-textLink-foreground, #3794ff);
+  word-break: break-all;
+  font-size: 12px;
+}
+
+.grid-preview-panel__hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--grid-desc-fg);
+}
+
+.grid-preview-panel__err {
+  margin: 0;
+  font-size: 12px;
+  color: var(--vscode-errorForeground, #f48771);
+}
+
+.grid-preview-panel__loading {
+  margin: 0;
+  font-size: 12px;
+  color: var(--grid-desc-fg);
+}
+
+/* jsoneditor（JSON 单元格预览）：跟随 VS Code 主题 + 隐藏滚动条（仍可滚轮滚动） */
+.grid-preview-jsoneditor-host {
+  min-height: 260px;
+  width: 100%;
+  box-sizing: border-box;
+  color: var(--vscode-editor-foreground, var(--grid-fg));
+}
+
+.grid-preview-panel__body.grid-preview-panel__body--jsoneditor {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.grid-preview-panel__body.grid-preview-panel__body--jsoneditor::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.grid-preview-jsoneditor-host .jsoneditor,
+.grid-preview-jsoneditor-host div.jsoneditor-outer {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.grid-preview-jsoneditor-host .jsoneditor::-webkit-scrollbar,
+.grid-preview-jsoneditor-host div.jsoneditor-outer::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.grid-preview-jsoneditor-host .jsoneditor {
+  border: 1px solid var(--vscode-widget-border, var(--grid-border)) !important;
+  background-color: var(--vscode-editor-background, var(--grid-bg)) !important;
+  color: var(--vscode-editor-foreground, var(--grid-fg)) !important;
+}
+
+.grid-preview-jsoneditor-host div.jsoneditor-tree {
+  background: var(--vscode-editor-background, var(--grid-bg)) !important;
+  color: var(--vscode-editor-foreground, var(--grid-fg));
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.grid-preview-jsoneditor-host div.jsoneditor-tree::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.grid-preview-jsoneditor-host .jsoneditor-frame {
+  background-color: var(--vscode-editor-background, var(--grid-bg)) !important;
+}
+
+.grid-preview-jsoneditor-host div.jsoneditor-readonly,
+.grid-preview-jsoneditor-host div.jsoneditor-default {
+  color: var(--vscode-descriptionForeground, var(--grid-desc-fg)) !important;
+}
+
+.grid-preview-jsoneditor-host div.jsoneditor-field {
+  color: var(--vscode-editor-foreground, var(--grid-fg));
+}
+
+.grid-preview-jsoneditor-host div.jsoneditor-value.jsoneditor-string {
+  color: var(--vscode-debugTokenExpression-string, var(--vscode-charts-green, #89d185));
+}
+
+.grid-preview-jsoneditor-host div.jsoneditor-value.jsoneditor-number {
+  color: var(--vscode-debugTokenExpression-number, var(--vscode-charts-orange, #f08b13));
+}
+
+.grid-preview-jsoneditor-host div.jsoneditor-value.jsoneditor-boolean {
+  color: var(--vscode-debugTokenExpression-boolean, var(--vscode-charts-yellow, #cca700));
+}
+
+.grid-preview-jsoneditor-host div.jsoneditor-value.jsoneditor-null {
+  color: var(--vscode-debugTokenExpression-null, var(--vscode-charts-blue, #3794ff));
+}
+
+/* 数组/对象折叠时显示的 [n] / {n} 计数（jsoneditor 默认色在深色主题下对比度不足） */
+.grid-preview-jsoneditor-host div.jsoneditor-value.jsoneditor-array,
+.grid-preview-jsoneditor-host div.jsoneditor-value.jsoneditor-object {
+  color: var(--vscode-descriptionForeground, var(--grid-desc-fg)) !important;
+}
+
+.grid-preview-jsoneditor-host div.jsoneditor-value.jsoneditor-invalid,
+.grid-preview-jsoneditor-host div.jsoneditor-value.jsoneditor-color-value {
+  color: var(--vscode-editor-foreground, var(--grid-fg));
+}
+
+.grid-preview-jsoneditor-host div.jsoneditor td.jsoneditor-separator {
+  color: var(--vscode-descriptionForeground, var(--grid-desc-fg));
+}
+
+.grid-preview-jsoneditor-host div.jsoneditor-empty {
+  border-color: var(--vscode-input-border, var(--grid-border));
+}
+
+.grid-preview-jsoneditor-host div.jsoneditor-tree button.jsoneditor-button:focus {
+  background-color: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.2)) !important;
+  outline: 1px solid var(--vscode-focusBorder, var(--grid-border));
+}
+
+.grid-preview-jsoneditor-host div.jsoneditor-field.jsoneditor-highlight,
+.grid-preview-jsoneditor-host div.jsoneditor-value.jsoneditor-highlight {
+  background-color: var(--vscode-editor-selectionBackground, rgba(100, 150, 255, 0.22)) !important;
+}
+
+.grid-preview-jsoneditor-host div.jsoneditor-field.jsoneditor-highlight-active,
+.grid-preview-jsoneditor-host div.jsoneditor-value.jsoneditor-highlight-active {
+  background-color: var(
+    --vscode-editor-selectionHighlightBackground,
+    var(--vscode-list-activeSelectionBackground, rgba(0, 120, 212, 0.25))
+  ) !important;
+}
+
+.grid-preview-jsoneditor-host a.jsoneditor-value.jsoneditor-url,
+.grid-preview-jsoneditor-host div.jsoneditor-value.jsoneditor-url {
+  color: var(--vscode-textLink-foreground, #3794ff);
+}
+
+.grid-preview-jsoneditor-host .jsoneditor-statusbar {
+  color: var(--vscode-descriptionForeground, var(--grid-desc-fg));
+  background-color: var(
+    --vscode-sideBarSectionHeader-background,
+    var(--vscode-editorWidget-background, var(--vscode-editor-background))
+  ) !important;
+  border-top-color: var(--vscode-widget-border, var(--grid-border)) !important;
+}
+
+.grid-preview-jsoneditor-host .jsoneditor-treepath.show-all {
+  background-color: var(--vscode-editorHoverWidget-background, var(--vscode-editor-background)) !important;
+  color: var(--vscode-editorHoverWidget-foreground, var(--vscode-editor-foreground));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.grid-preview-jsoneditor-host .jsoneditor-menu {
+  background-color: var(--vscode-editorGroupHeader-tabsBackground, var(--vscode-sideBar-background)) !important;
+  border-bottom-color: var(--vscode-widget-border, var(--grid-border)) !important;
+  color: var(--vscode-editor-foreground, var(--grid-fg)) !important;
+}
+
+.grid-preview-jsoneditor-host .jsoneditor-menu > button,
+.grid-preview-jsoneditor-host .jsoneditor-menu > .jsoneditor-modes > button {
+  color: var(--vscode-editor-foreground, var(--grid-fg)) !important;
+  opacity: 0.95;
+}
+
+.grid-preview-jsoneditor-host .jsoneditor-menu > button:hover,
+.grid-preview-jsoneditor-host .jsoneditor-menu > .jsoneditor-modes > button:hover {
+  background-color: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.2)) !important;
+  border-color: var(--vscode-toolbar-hoverOutline, transparent) !important;
+}
+
 .grid-side-panel__toolbar {
   display: flex;
   gap: 8px;

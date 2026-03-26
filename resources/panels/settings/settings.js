@@ -179,20 +179,22 @@ function initDatasourceForm(data = {}, driverOptionsFromHost) {
 }
 
 /**
- * 数据库驱动管理（安装=启用 / 卸载=停用，立即生效）
+ * 数据库驱动 + 预览插件管理（Tab：驱动 / 预览插件；安装=启用 / 卸载=停用）
  */
-function initDriversForm(drivers, extensionVersion) {
-  $("#pageTitle").text("数据库驱动");
+function initDriversForm(drivers, previewPlugins, extensionVersion) {
+  $("#pageTitle").text("驱动与预览");
   const ver =
     extensionVersion != null && String(extensionVersion).trim()
-      ? ` 当前扩展 v${String(extensionVersion).trim()}。`
+      ? `当前扩展 v${String(extensionVersion).trim()}。`
       : "";
   $("#pageSubtitle").text(
-    `「安装」启用驱动并出现在新建连接中；「卸载」停用驱动，操作立即保存。${ver}下方「运行时依赖」为扩展内置 npm 包：版本优先取自扩展目录 node_modules 中已解析版本，若无则显示根 package.json 中的 semver 范围。`
+    `使用上方标签切换「驱动」与「预览插件」。驱动：「安装」后出现在新建连接中；表格中 Ctrl/Cmd+单击单元格时按内容类型选用已启用的预览插件。${ver}`
   );
   dynamicForm = null;
   const list = Array.isArray(drivers) ? drivers : [];
-  let html = '<div class="drivers-manage">';
+  const plist = Array.isArray(previewPlugins) ? previewPlugins : [];
+
+  let driversInner = '<div class="drivers-manage">';
   list.forEach((d) => {
     const id = escapeHtml(d.id);
     const rawId = d.id;
@@ -218,36 +220,105 @@ function initDriversForm(drivers, extensionVersion) {
     const installDisabled = d.enabled ? " disabled" : "";
     const uninstallDisabled = !d.enabled ? " disabled" : "";
 
-    html += `<article class="driver-card" data-driver-id="${escapeHtml(rawId)}">`;
-    html += '<div class="driver-card__main">';
-    html += `<div class="driver-card__head">`;
-    html += `<h2 class="driver-card__title">${escapeHtml(d.displayName)}`;
-    html += ` <span class="driver-card__id">${id}</span></h2>`;
-    html += `<span class="driver-card__status ${statusClass}">${statusText}</span>`;
-    html += `</div>`;
+    driversInner += `<article class="driver-card" data-driver-id="${escapeHtml(rawId)}">`;
+    driversInner += '<div class="driver-card__main">';
+    driversInner += `<div class="driver-card__head">`;
+    driversInner += `<h2 class="driver-card__title">${escapeHtml(d.displayName)}`;
+    driversInner += ` <span class="driver-card__id">${id}</span></h2>`;
+    driversInner += `<span class="driver-card__status ${statusClass}">${statusText}</span>`;
+    driversInner += `</div>`;
     if (desc) {
-      html += `<p class="driver-card__desc">${desc}</p>`;
+      driversInner += `<p class="driver-card__desc">${desc}</p>`;
     }
     if (d.marketplaceExtensionId) {
-      html += `<p class="driver-card__marketplace">扩展：<code>${escapeHtml(
+      driversInner += `<p class="driver-card__marketplace">扩展：<code>${escapeHtml(
         d.marketplaceExtensionId
       )}</code></p>`;
     }
-    html += `<div class="driver-packages"><div class="driver-packages__label">运行时依赖（npm）</div>${pkgsHtml}</div>`;
-    html += `</div>`;
-    html += `<div class="driver-card__actions">`;
-    html += `<button type="button" class="driver-btn driver-btn-install"${installDisabled} data-driver-action="install" data-driver-id="${escapeHtml(
+    driversInner += `<div class="driver-packages"><div class="driver-packages__label">运行时依赖（npm）</div>${pkgsHtml}</div>`;
+    driversInner += `</div>`;
+    driversInner += `<div class="driver-card__actions">`;
+    driversInner += `<button type="button" class="driver-btn driver-btn-install"${installDisabled} data-driver-action="install" data-driver-id="${escapeHtml(
       rawId
     )}" title="启用此驱动">`;
-    html += `<i class="codicon codicon-download" aria-hidden="true"></i><span>安装</span></button>`;
-    html += `<button type="button" class="driver-btn driver-btn-uninstall"${uninstallDisabled} data-driver-action="uninstall" data-driver-id="${escapeHtml(
+    driversInner += `<i class="codicon codicon-download" aria-hidden="true"></i><span>安装</span></button>`;
+    driversInner += `<button type="button" class="driver-btn driver-btn-uninstall"${uninstallDisabled} data-driver-action="uninstall" data-driver-id="${escapeHtml(
       rawId
     )}" title="停用此驱动">`;
-    html += `<i class="codicon codicon-trash" aria-hidden="true"></i><span>卸载</span></button>`;
-    html += `</div></article>`;
+    driversInner += `<i class="codicon codicon-trash" aria-hidden="true"></i><span>卸载</span></button>`;
+    driversInner += `</div></article>`;
   });
+  driversInner += "</div>";
+
+  let previewInner = '<div class="preview-plugins-manage">';
+  previewInner += `<p class="preview-plugins-hint">与数据表格侧栏「预览」配合：仅对已启用的类型进行渲染。渲染包为扩展内置或与驱动管理页相同的 npm 版本解析规则。</p>`;
+  plist.forEach((p) => {
+    const rawId = p.id;
+    const fmt = escapeHtml(p.dataFormatLabel || p.id);
+    const desc = p.description ? escapeHtml(p.description) : "";
+    const statusClass = p.enabled ? "is-on" : "is-off";
+    const statusText = p.enabled ? "已安装" : "未安装";
+    let pkgsHtml = "";
+    const pkgs = Array.isArray(p.packages) ? p.packages : [];
+    if (pkgs.length > 0) {
+      pkgsHtml += '<ul class="driver-packages__list">';
+      pkgs.forEach((pkg) => {
+        const pn = escapeHtml(pkg.name);
+        const pv = escapeHtml(pkg.version);
+        pkgsHtml += `<li><code class="driver-pkg-name">${pn}</code><span class="driver-pkg-ver">${pv}</span></li>`;
+      });
+      pkgsHtml += "</ul>";
+    } else {
+      pkgsHtml = '<p class="driver-packages__empty">—</p>';
+    }
+    const installDisabled = p.enabled ? " disabled" : "";
+    const uninstallDisabled = !p.enabled ? " disabled" : "";
+    previewInner += `<article class="preview-plugin-card" data-preview-id="${escapeHtml(rawId)}">`;
+    previewInner += '<div class="preview-plugin-card__main">';
+    previewInner += `<div class="preview-plugin-card__head"><h2 class="preview-plugin-card__title">${fmt}</h2>`;
+    previewInner += `<span class="driver-card__status ${statusClass}">${statusText}</span></div>`;
+    if (desc) {
+      previewInner += `<p class="driver-card__desc">${desc}</p>`;
+    }
+    previewInner += `<div class="driver-packages"><div class="driver-packages__label">渲染插件（npm / 内置）</div>${pkgsHtml}</div>`;
+    previewInner += "</div>";
+    previewInner += `<div class="preview-plugin-card__actions">`;
+    previewInner += `<button type="button" class="driver-btn driver-btn-install"${installDisabled} data-preview-action="install" data-preview-id="${escapeHtml(
+      rawId
+    )}" title="启用此预览插件">`;
+    previewInner += `<i class="codicon codicon-download" aria-hidden="true"></i><span>安装</span></button>`;
+    previewInner += `<button type="button" class="driver-btn driver-btn-uninstall"${uninstallDisabled} data-preview-action="uninstall" data-preview-id="${escapeHtml(
+      rawId
+    )}" title="停用此预览插件">`;
+    previewInner += `<i class="codicon codicon-trash" aria-hidden="true"></i><span>卸载</span></button>`;
+    previewInner += "</div></article>";
+  });
+  previewInner += "</div>";
+
+  let html = '<div class="drivers-manage-page">';
+  html += '<div class="dm-tabs" role="tablist">';
+  html +=
+    '<button type="button" class="dm-tab is-active" data-dm-tab="drivers" role="tab" aria-selected="true">驱动</button>';
+  html +=
+    '<button type="button" class="dm-tab" data-dm-tab="preview" role="tab" aria-selected="false">预览插件</button>';
   html += "</div>";
+  html += `<div class="dm-panel is-active" data-dm-panel="drivers" role="tabpanel">${driversInner}</div>`;
+  html += `<div class="dm-panel" data-dm-panel="preview" role="tabpanel" hidden>${previewInner}</div>`;
+  html += "</div>";
+
   $("#formContainer").html(html);
+
+  $("#formContainer")
+    .off("click.dmTab")
+    .on("click.dmTab", ".dm-tab", function (e) {
+      e.preventDefault();
+      const tab = $(this).attr("data-dm-tab");
+      if (!tab) return;
+      $("#formContainer .dm-tab").removeClass("is-active").attr("aria-selected", "false");
+      $(this).addClass("is-active").attr("aria-selected", "true");
+      $("#formContainer .dm-panel").removeClass("is-active").attr("hidden", "hidden");
+      $(`#formContainer .dm-panel[data-dm-panel="${tab}"]`).addClass("is-active").removeAttr("hidden");
+    });
 
   $("#formContainer")
     .off("click.driversManage")
@@ -266,6 +337,26 @@ function initDriversForm(drivers, extensionVersion) {
         vscode.postMessage({ command: "setDriverEnabled", id: driverId, enabled: true });
       } else if (action === "uninstall") {
         vscode.postMessage({ command: "setDriverEnabled", id: driverId, enabled: false });
+      }
+    });
+
+  $("#formContainer")
+    .off("click.previewPluginsManage")
+    .on("click.previewPluginsManage", "[data-preview-action]", function (e) {
+      e.preventDefault();
+      const $btn = $(this);
+      if ($btn.prop("disabled")) {
+        return;
+      }
+      const action = $btn.attr("data-preview-action");
+      const id = $btn.attr("data-preview-id");
+      if (!id) {
+        return;
+      }
+      if (action === "install") {
+        vscode.postMessage({ command: "setPreviewPluginEnabled", id, enabled: true });
+      } else if (action === "uninstall") {
+        vscode.postMessage({ command: "setPreviewPluginEnabled", id, enabled: false });
       }
     });
 }
@@ -658,7 +749,7 @@ window.addEventListener("message", (event) => {
           initDatasourceForm(defaultData, message.driverOptions || null);
         }
       } else if (currentConfigType === CONFIG_TYPES.DRIVERS) {
-        initDriversForm(message.drivers, message.extensionVersion);
+        initDriversForm(message.drivers, message.previewPlugins, message.extensionVersion);
       } else if (currentConfigType === CONFIG_TYPES.CONNECTION_GROUPS) {
         initConnectionGroupsForm(message.groups);
       } else if (currentConfigType === CONFIG_TYPES.USER) {

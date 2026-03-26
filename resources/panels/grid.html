@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="{{resources-uri}}/common/layui-theme.css" />
     <link rel="stylesheet" href="{{node-resources-uri}}/@vscode/codicons/dist/codicon.css" />
     <link rel="stylesheet" href="{{resources-uri}}/common/table.css" />
+    <link rel="stylesheet" href="{{node-resources-uri}}/jsoneditor/dist/jsoneditor.min.css" />
     <link rel="stylesheet" href="{{resources-uri}}/grid/grid.css" />
   </head>
   <body class="grid-body">
@@ -99,6 +100,7 @@
       <div class="grid-side-panel__body">
         <div class="grid-side-panel__tabs">
           <button type="button" class="grid-side-panel__tab-btn is-active" data-tab="fields" aria-selected="true">字段</button>
+          <button type="button" class="grid-side-panel__tab-btn" data-tab="preview" aria-selected="false">预览</button>
         </div>
         <div class="grid-side-panel__tab-content" data-tab-content="fields">
           <div class="grid-side-panel__toolbar">
@@ -135,6 +137,13 @@
           </ul>
           <p class="grid-side-panel__empty" id="grid-column-list-empty">暂无列数据，请先加载表格。</p>
         </div>
+        <div class="grid-side-panel__tab-content is-hidden" data-tab-content="preview" hidden>
+          <p class="grid-preview-panel__tip">按住 <kbd>Ctrl</kbd>（macOS 为 <kbd>⌘</kbd>）并单击单元格，将在此根据内容类型加载已启用的预览插件。</p>
+          <div class="grid-preview-panel" id="grid-preview-root">
+            <div class="grid-preview-panel__meta" id="grid-preview-meta"></div>
+            <div class="grid-preview-panel__body" id="grid-preview-body"></div>
+          </div>
+        </div>
       </div>
     </aside>
     <button type="button" class="grid-side-panel__tab" data-action="toggleSidePanel" title="展开侧边面板" aria-label="展开侧边面板" aria-expanded="false">
@@ -144,7 +153,10 @@
     <script nonce="{{resource-nonce}}" src="{{node-resources-uri}}/jquery/dist/jquery.min.js"></script>
     <script nonce="{{resource-nonce}}" src="{{node-resources-uri}}/layui/dist/layui.js"></script>
     <script nonce="{{resource-nonce}}" src="{{resources-uri}}/common/ag-grid-community.min.js"></script>
+    <script nonce="{{resource-nonce}}" src="{{resources-uri}}/grid/cell-preview-detector.js"></script>
     <script nonce="{{resource-nonce}}" src="{{resources-uri}}/common/table.js"></script>
+    <script nonce="{{resource-nonce}}" src="{{node-resources-uri}}/jsoneditor/dist/jsoneditor.min.js"></script>
+    <script nonce="{{resource-nonce}}" src="{{resources-uri}}/grid/grid-preview-render.js"></script>
     <script nonce="{{resource-nonce}}" src="{{resources-uri}}/grid/grid.js"></script>
   </body>
 </html>

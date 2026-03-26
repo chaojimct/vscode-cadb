@@ -95,7 +95,7 @@
             },
             {
                 "command": "cadb.grid.toggleSidePanel",
-                "title": "切换表格字段侧栏"
+                "title": "切换表格右侧工具栏（表格内 ⌘F / Ctrl+F）"
             },
             {
                 "command": "cadb.datasource.edit",
@@ -502,11 +502,6 @@
                     "maximum": 10000,
                     "description": "表格每页查询条数；亦为 SELECT 自动追加 LIMIT 时的默认条数"
                 },
-                "cadb.grid.debugSidePanelShortcut": {
-                    "type": "boolean",
-                    "default": false,
-                    "description": "在扩展宿主日志中输出表格 Cmd/Ctrl+F 侧栏快捷键相关调试信息（帮助 → 切换开发人员工具 → 控制台）"
-                },
                 "cadb.query.autoAppendSelectLimit": {
                     "type": "boolean",
                     "default": true,
@@ -563,24 +558,14 @@
                 "when": "editorTextFocus && editorLangId == sql"
             },
             {
-                "command": "cadb.grid.toggleSidePanel",
-                "key": "ctrl+f",
-                "when": "cadb.datasourceTableGridFocused"
-            },
-            {
-                "command": "cadb.grid.toggleSidePanel",
-                "key": "cmd+f",
-                "when": "cadb.datasourceTableGridFocused"
-            },
-            {
                 "command": "cadb.datasource.search",
                 "key": "ctrl+f",
-                "when": "view =~ /datasource/ && !cadb.datasourceTableGridFocused"
+                "when": "view =~ /datasource/ && !isMac"
             },
             {
                 "command": "cadb.datasource.search",
                 "key": "cmd+f",
-                "when": "view =~ /datasource/ && !cadb.datasourceTableGridFocused"
+                "when": "view =~ /datasource/ && isMac"
             }
         ]
     },
@@ -613,6 +598,7 @@
         "@vscode/codicons": "^0.0.44",
         "dayjs": "^1.11.19",
         "jquery": "^3.7.1",
+        "jsoneditor": "^10.4.2",
         "layui": "^2.13.2",
         "monaco-editor": "^0.55.1",
         "mysql2": "^3.15.3",
