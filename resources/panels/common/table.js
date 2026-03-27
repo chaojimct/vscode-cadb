@@ -3,6 +3,9 @@
  * 使用 AG Grid Community 进行数据渲染
  */
 
+/** AG Grid 行号列 id，与内置 Row Numbers 一致（用于排除 Ctrl+预览等） */
+const CADB_AG_ROW_NUMBERS_COL_ID = "ag-Grid-RowNumbersColumn";
+
 class DatabaseTableData {
   constructor(options) {
     this.tableSelector = options.tableSelector;
@@ -31,6 +34,53 @@ class DatabaseTableData {
     this._pendingColumnState = null;
     /** 避免首屏/恢复列状态时 onSortChanged、onFilterChanged 触发多余 loadPage */
     this._allowServerQueryReload = false;
+  }
+
+  /**
+   * 日期/时间列展示：将服务端常见的 ISO 8601 转为本地可读格式（不影响单元格底层值）
+   * @param {unknown} value
+   * @param {boolean} includeTime 是否含时分秒（datetime / timestamp / time）
+   * @param {string} [typeTrim] 列类型小写串，用于区分纯 TIME
+   */
+  static formatDateForDisplay(value, includeTime, typeTrim) {
+    if (value == null || value === "") {
+      return "";
+    }
+    const type = (typeTrim != null ? String(typeTrim) : "").toLowerCase().trim();
+    const isTimeOnlyCol = /^time(\s|\(|$)/.test(type);
+    let d;
+    if (value instanceof Date) {
+      d = value;
+    } else if (typeof value === "number" && Number.isFinite(value)) {
+      d = new Date(value);
+    } else {
+      const s = String(value).trim();
+      if (isTimeOnlyCol) {
+        if (/^\d{1,3}:\d{2}(:\d{2})?(\.\d+)?$/.test(s)) {
+          return s;
+        }
+      }
+      d = new Date(s);
+    }
+    if (Number.isNaN(d.getTime())) {
+      return String(value);
+    }
+    if (includeTime) {
+      return d.toLocaleString(undefined, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      });
+    }
+    return d.toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
   }
 
   /**
@@ -66,7 +116,7 @@ class DatabaseTableData {
   }
 
   /** 与列 valueFormatter 一致，供 Ctrl+预览将单元格值转为字符串 */
-  cellValueToPreviewString(value) {
+  cellValueToPreviewString(value, colId) {
     if (value == null) {
       return "";
     }
@@ -81,6 +131,16 @@ class DatabaseTableData {
         return JSON.stringify(value);
       } catch (_e) {
         return String(value);
+      }
+    }
+    if (typeof value === "string" && colId) {
+      const col = (this.columns || []).find((c) => c.field === colId);
+      if (col) {
+        const typeTrim = String(col.type != null ? col.type : "").toLowerCase().trim();
+        if (/^(date|datetime|timestamp|time)(\s|\(|$)/.test(typeTrim)) {
+          const includeTime = /^(datetime|timestamp|time)(\s|\(|$)/.test(typeTrim);
+          return DatabaseTableData.formatDateForDisplay(value, includeTime, typeTrim);
+        }
       }
     }
     return String(value);
@@ -166,10 +226,20 @@ class DatabaseTableData {
       rowData,
       /** 表头 headerTooltip（字段备注）使用浏览器原生提示，无需企业版 Tooltip 模块 */
       enableBrowserTooltips: true,
+      /** 列宽策略须挂在 gridOptions 根上；放在 defaultColDef 内无效 */
+      autoSizeStrategy: {
+        type: "fitCellContents",
+        defaultMaxWidth: 150,
+        defaultMinWidth: 80,
+      },
       defaultColDef: {
+        minWidth: 80,
         sortable: true,
         resizable: true,
         filter: true,
+        filterParams: {
+          buttons: ["apply", "clear"]
+        },
         editable: true,
         valueFormatter: (params) => {
           const v = params.value;
@@ -199,6 +269,9 @@ class DatabaseTableData {
       rowSelection: { mode: "multiRow", enableClickSelection: false },
       stopEditingWhenCellsLoseFocus: true,
       animateRows: false,
+      rowNumbers: {
+        enableRowResizer: true,
+      },
       getRowId: (params) => params.data.__rowIndex != null ? String(params.data.__rowIndex) : params.id,
       rowClassRules: {
         "grid-row-deleted": (params) => params.data?.__deleted === true,
@@ -247,7 +320,7 @@ class DatabaseTableData {
           return;
         }
         const colId = e.column?.getColId?.();
-        if (!colId || colId === "__cadb_rownum__") {
+        if (!colId || colId === CADB_AG_ROW_NUMBERS_COL_ID) {
           return;
         }
         const det = typeof window !== "undefined" && window.CadbCellPreviewDetector;
@@ -255,7 +328,7 @@ class DatabaseTableData {
           return;
         }
         const val = e.data != null ? e.data[colId] : e.value;
-        const str = self.cellValueToPreviewString(val);
+        const str = self.cellValueToPreviewString(val, colId);
         const { pluginId, raw } = det.detectCellPreviewType(str);
         if (typeof self.onCellPreviewRequest === "function") {
           try {
@@ -279,32 +352,13 @@ class DatabaseTableData {
   }
 
   _buildColumnDefs() {
-    const defs = [
-      {
-        colId: "__cadb_rownum__",
-        headerName: "#",
-        valueGetter: (params) => {
-          if (this.serverPagination) {
-            return this.dataOffset + (params.node?.rowIndex ?? 0) + 1;
-          }
-          const api = params.api;
-          const page = (api?.paginationGetCurrentPage?.() ?? 0);
-          const pageSize = api?.paginationGetPageSize?.() ?? this.paginationSize;
-          return page * pageSize + (params.node?.rowIndex ?? 0) + 1;
-        },
-        width: 50,
-        pinned: "left",
-        suppressMovable: true,
-        sortable: false,
-        filter: false,
-        editable: false,
-      },
-    ];
+    const defs = [];
     this.columns.forEach((c) => {
       const type = (c.type != null ? String(c.type) : "").toLowerCase();
       const typeTrim = type.trim();
       const isBit1 = /^bit\s*\(\s*1\s*\)$/.test(type) || (type.startsWith("bit") && type.includes("1"));
       const isBitN = /^bit\s*\(\s*\d+\s*\)$/.test(type) || (type.startsWith("bit") && !type.includes("1"));
+      const isJsonType = /^json(\s|\(|$)/i.test(typeTrim);
       const isDateType = /^(date|datetime|timestamp|time)(\s|\(|$)/.test(typeTrim);
       const commentStr =
         c.comment != null && String(c.comment).trim() !== ""
@@ -313,8 +367,8 @@ class DatabaseTableData {
       const colDef = {
         field: c.field,
         headerName: (c.headerName != null ? c.headerName : c.field.toUpperCase()),
-        width: c.width != null ? c.width : 120,
-        minWidth: c.minWidth != null ? c.minWidth : 60,
+        ...(c.width != null ? { width: c.width } : {}),
+        minWidth: c.minWidth != null ? c.minWidth : 80,
         ...(c.maxWidth != null ? { maxWidth: c.maxWidth } : {}),
         ...(commentStr ? { headerTooltip: commentStr } : {}),
         ...this._getFilterConfig(c, type),
@@ -350,11 +404,58 @@ class DatabaseTableData {
           return String(v);
         };
       }
+      if (isJsonType) {
+        colDef.cellEditor = "agLargeTextCellEditor";
+        colDef.cellEditorPopup = true;
+        colDef.valueGetter = (params) => {
+          const v = params.data?.[c.field];
+          if (v == null || v === "") {
+            return "";
+          }
+          if (typeof v === "object") {
+            if (v.type === "Buffer" && Array.isArray(v.data)) {
+              const hex = v.data
+                .map((b) => String(Number(b).toString(16).padStart(2, "0")))
+                .join("");
+              return "0x" + hex.toUpperCase();
+            }
+            try {
+              return JSON.stringify(v, null, 2);
+            } catch (_e) {
+              return String(v);
+            }
+          }
+          return String(v);
+        };
+        colDef.valueSetter = (params) => {
+          if (params.data == null) {
+            return false;
+          }
+          const nv = params.newValue;
+          if (nv == null || (typeof nv === "string" && nv.trim() === "")) {
+            params.data[c.field] = null;
+            return true;
+          }
+          if (typeof nv === "object") {
+            params.data[c.field] = nv;
+            return true;
+          }
+          const s = String(nv).trim();
+          try {
+            params.data[c.field] = JSON.parse(s);
+          } catch (_e2) {
+            params.data[c.field] = s;
+          }
+          return true;
+        };
+      }
       if (isDateType) {
         const includeTime = /^(datetime|timestamp|time)(\s|\(|$)/.test(typeTrim);
         colDef.cellEditor = "agDateStringCellEditor";
         colDef.cellEditorParams = { includeTime: !!includeTime };
         colDef.cellEditorPopup = true;
+        colDef.valueFormatter = (params) =>
+          DatabaseTableData.formatDateForDisplay(params.value, includeTime, typeTrim);
       }
       if (this.serverPagination) {
         colDef.comparator = () => 0;
@@ -402,6 +503,29 @@ class DatabaseTableData {
     return {};
   }
 
+  /**
+   * 与原始值对比用字符串（对象/数组用 JSON.stringify，避免 [object Object]）
+   */
+  _normalizeCellValueForDiff(field, value) {
+    if (value == null || value === "") {
+      return "";
+    }
+    if (typeof value === "object") {
+      if (value.type === "Buffer" && Array.isArray(value.data)) {
+        const hex = value.data
+          .map((b) => String(Number(b).toString(16).padStart(2, "0")))
+          .join("");
+        return "0x" + hex.toUpperCase();
+      }
+      try {
+        return JSON.stringify(value);
+      } catch (_e) {
+        return String(value);
+      }
+    }
+    return String(value).trim();
+  }
+
   _onCellValueChanged(e) {
     if (!e.data) return;
     const rowIndex = e.data.__rowIndex;
@@ -410,8 +534,8 @@ class DatabaseTableData {
     if (!orig) return;
 
     const field = e.column?.getColId();
-    const newVal = e.data[field] != null ? String(e.data[field]).trim() : "";
-    const oldVal = orig[field] != null ? String(orig[field]).trim() : "";
+    const newVal = this._normalizeCellValueForDiff(field, e.data[field]);
+    const oldVal = this._normalizeCellValueForDiff(field, orig[field]);
     if (newVal !== oldVal) {
       this.changedRows.set(e.node.id, { original: orig, current: { ...e.data } });
       e.node.setDataValue("__edited", true);
@@ -419,8 +543,8 @@ class DatabaseTableData {
       let hasOther = false;
       for (const k of Object.keys(e.data)) {
         if (k.startsWith("__")) continue;
-        const cv = e.data[k] != null ? String(e.data[k]).trim() : "";
-        const ov = orig[k] != null ? String(orig[k]).trim() : "";
+        const cv = this._normalizeCellValueForDiff(k, e.data[k]);
+        const ov = this._normalizeCellValueForDiff(k, orig[k]);
         if (cv !== ov) {
           hasOther = true;
           break;
@@ -436,6 +560,7 @@ class DatabaseTableData {
   updatePaginationUI() {
     if (!this.gridApi) return;
     const rangeEl = document.getElementById("pagination-range");
+    const firstBtn = document.getElementById("btn-first-page");
     const prevBtn = document.getElementById("btn-prev-page");
     const nextBtn = document.getElementById("btn-next-page");
 
@@ -443,7 +568,9 @@ class DatabaseTableData {
       const from = this.tableData.length === 0 ? 0 : this.dataOffset + 1;
       const to = this.dataOffset + this.tableData.length;
       if (rangeEl) rangeEl.textContent = `${from} - ${to}`;
-      if (prevBtn) prevBtn.disabled = this.dataOffset === 0;
+      const atFirst = this.dataOffset === 0;
+      if (firstBtn) firstBtn.disabled = atFirst;
+      if (prevBtn) prevBtn.disabled = atFirst;
       if (nextBtn) nextBtn.disabled = this.tableData.length < this.pageSize;
       return;
     }
@@ -456,7 +583,9 @@ class DatabaseTableData {
     const text = `${from} - ${to} / ${total}`;
     if (rangeEl) rangeEl.textContent = text;
     const maxPage = Math.max(1, Math.ceil(total / size));
-    if (prevBtn) prevBtn.disabled = page <= 1;
+    const atFirst = page <= 1;
+    if (firstBtn) firstBtn.disabled = atFirst;
+    if (prevBtn) prevBtn.disabled = atFirst;
     if (nextBtn) nextBtn.disabled = page >= maxPage || maxPage <= 0;
   }
 
@@ -484,6 +613,25 @@ class DatabaseTableData {
       return;
     }
     if (this.gridApi) this.gridApi.paginationGoToPreviousPage();
+  }
+
+  /** 回到第一页（客户端分页走 AG Grid；服务端分页请求 offset=0） */
+  firstPage() {
+    if (this.serverPagination && this.vscode) {
+      if (this.dataOffset === 0) {
+        return;
+      }
+      this.vscode.postMessage({
+        command: "loadPage",
+        offset: 0,
+        filterModel: this.getFilterModelForServer(),
+        sortModel: this.getSortModelForServer(),
+      });
+      return;
+    }
+    if (this.gridApi && typeof this.gridApi.paginationGoToFirstPage === "function") {
+      this.gridApi.paginationGoToFirstPage();
+    }
   }
 
   /**
@@ -741,8 +889,8 @@ class DatabaseTableData {
       const changes = {};
       for (const key of Object.keys(current)) {
         if (key.startsWith("__")) continue;
-        const cv = current[key] != null ? String(current[key]).trim() : "";
-        const ov = original[key] != null ? String(original[key]).trim() : "";
+        const cv = this._normalizeCellValueForDiff(key, current[key]);
+        const ov = this._normalizeCellValueForDiff(key, original[key]);
         if (cv !== ov) changes[key] = current[key];
       }
       const hasChanges = Object.keys(changes).length > 0;

@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>数据表格编辑器</title>
+    <title>数据表格</title>
     <meta http-equiv="Content-Security-Policy" content="{{csp}}" />
     <link rel="stylesheet" href="{{node-resources-uri}}/layui/dist/css/layui.css" />
     <link rel="stylesheet" href="{{resources-uri}}/common/layui-theme.css" />
@@ -12,7 +12,7 @@
     <link rel="stylesheet" href="{{node-resources-uri}}/jsoneditor/dist/jsoneditor.min.css" />
     <link rel="stylesheet" href="{{resources-uri}}/grid/grid.css" />
   </head>
-  <body class="grid-body">
+  <body class="grid-body grid-side-panel-collapsed">
     <div class="grid-main">
     <header class="grid-toolbar">
       <div class="grid-toolbar__nav">
@@ -52,7 +52,20 @@
         </button>
       </div>
       <div class="grid-toolbar__pagination" data-pagination>
-        <button id="btn-prev-page" data-action="prev-page" title="上一页" disabled>
+        <span
+          id="grid-toolbar-table-label"
+          class="grid-toolbar__table-name grid-toolbar__table-name--instant-tip"
+          role="note"
+        >
+          <span class="grid-toolbar__table-name-text" aria-hidden="true"></span>
+        </span>
+        <button type="button" id="btn-first-page" data-action="first-page" title="第一页" disabled aria-label="第一页">
+          <span class="grid-pagination-first-icons" aria-hidden="true">
+            <i class="codicon codicon-chevron-left"></i><i class="codicon codicon-chevron-left"></i>
+          </span>
+          <span class="sr-only">第一页</span>
+        </button>
+        <button type="button" id="btn-prev-page" data-action="prev-page" title="上一页" disabled aria-label="上一页">
           <i class="codicon codicon-chevron-left" aria-hidden="true"></i>
         </button>
         <span id="pagination-range" data-pagination-range>0 - 0 / 0</span>
@@ -85,7 +98,7 @@
     </header>
 
     <main class="grid-table-wrapper">
-      <div id="grid" class="ag-theme-quartz" role="grid"></div>
+      <div id="grid" class="ag-theme-quartz" role="grid" tabindex="-1"></div>
     </main>
     </div>
 

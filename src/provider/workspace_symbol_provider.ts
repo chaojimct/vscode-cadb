@@ -85,6 +85,20 @@ export function buildTableUri(
   );
 }
 
+/** 关闭符号跳转打开的 cadb 虚拟文档标签，避免停留在空白中间页 */
+async function closeCadbVirtualTableDocumentTab(uri: vscode.Uri): Promise<void> {
+  const target = uri.toString();
+  for (const group of vscode.window.tabGroups.all) {
+    for (const tab of group.tabs) {
+      const input = tab.input;
+      if (input instanceof vscode.TabInputText && input.uri.toString() === target) {
+        await vscode.window.tabGroups.close(tab);
+        return;
+      }
+    }
+  }
+}
+
 /**
  * 收集所有 MySQL 连接下的表信息 (connectionName, databaseName, tableName)。
  * 仅扫描「显示的数据库」：若连接有勾选的数据库则只处理这些，否则处理全部。
@@ -167,7 +181,7 @@ async function collectAllMySQLTables(
 
 /**
  * 工作区符号提供者：将 MySQL 数据表加入「转到工作区中的符号」(Ctrl/Cmd+T)。
- * 选择某个表符号时会打开 cadb:// 虚拟文档，由 CadbTableDocumentContentProvider 负责打开表数据视图。
+ * 选择某个表符号时会短暂打开 cadb:// 虚拟文档，由 CadbTableDocumentContentProvider 打开表数据后自动关闭该标签。
  */
 export class MySQLTableWorkspaceSymbolProvider
   implements vscode.WorkspaceSymbolProvider
@@ -214,7 +228,7 @@ export class MySQLTableWorkspaceSymbolProvider
 }
 
 /**
- * 为 cadb://table/... 提供虚拟文档内容，并在打开时触发「查看数据」命令以打开表数据面板。
+ * 为 cadb://table/... 提供虚拟文档（内容为空），打开时异步执行「查看数据」并关闭本标签，避免符号搜索出现中间说明页。
  */
 export class CadbTableDocumentContentProvider
   implements vscode.TextDocumentContentProvider
@@ -229,21 +243,30 @@ export class CadbTableDocumentContentProvider
     _token: vscode.CancellationToken
   ): string {
     const parsed = parseTableUri(uri);
-    if (!parsed) return "# 无效的表 URI";
+    if (!parsed) {
+      return "# 无效的表 URI";
+    }
 
-    // 异步打开表数据视图，不阻塞文档内容返回
-    resolveTableDatasource(
-      this.provider,
-      this.context,
-      parsed.connectionName,
-      parsed.databaseName,
-      parsed.tableName
-    ).then((tableDatasource) => {
-      if (tableDatasource) {
-        vscode.commands.executeCommand("cadb.item.showData", tableDatasource);
+    // 不展示中间页：内容为空，打开真实表视图后关闭本虚拟文档标签
+    void (async () => {
+      try {
+        const tableDatasource = await resolveTableDatasource(
+          this.provider,
+          this.context,
+          parsed.connectionName,
+          parsed.databaseName,
+          parsed.tableName
+        );
+        if (tableDatasource) {
+          await vscode.commands.executeCommand("cadb.item.showData", tableDatasource);
+        }
+      } catch {
+        /* 忽略 */
+      } finally {
+        await closeCadbVirtualTableDocumentTab(uri);
       }
-    });
+    })();
 
-    return `# MySQL 表\n\n${parsed.connectionName} / ${parsed.databaseName} / ${parsed.tableName}\n\n正在打开表数据…`;
+    return "";
   }
 }

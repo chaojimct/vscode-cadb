@@ -1060,6 +1060,15 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  context.subscriptions.push(
+    rendererMessaging.onDidReceiveMessage(({ editor, message }) => {
+      if (editor.notebook.notebookType !== 'cadb.sqlNotebook') {
+        return;
+      }
+      void notebookController.handleRendererMessage(editor, message);
+    })
+  );
+
   // 注册 Notebook 数据库状态显示命令（用于工具栏显示）
   context.subscriptions.push(
     vscode.commands.registerCommand('cadb.notebook.showDatabaseStatus', () => {

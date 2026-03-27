@@ -26,7 +26,6 @@ export function createWebview(
       ],
     }
   );
-
   const resourcesUri = panel.webview.asWebviewUri(
     vscode.Uri.joinPath(provider.context.extensionUri, "resources", "panels")
   );

@@ -402,6 +402,31 @@ function validateAndGetFilePath(
   return filePath;
 }
 
+/**
+ * 删除文件或目录。远程 SSH 等环境的 FileSystemProvider 往往不支持回收站，
+ * 若 useTrash 失败则自动改为永久删除（与树删除 SQL 文件时的确认文案一致）。
+ */
+async function workspaceFsDeleteWithTrashFallback(
+  uri: vscode.Uri,
+  options: { recursive?: boolean } = {}
+): Promise<void> {
+  const recursive = options.recursive ?? false;
+  try {
+    await vscode.workspace.fs.delete(uri, { recursive, useTrash: true });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const looksLikeTrashUnsupported =
+      /回收站|无法通过回收站|提供程序不支持|trash|Trash|not support|不支持/i.test(
+        msg
+      );
+    if (looksLikeTrashUnsupported) {
+      await vscode.workspace.fs.delete(uri, { recursive, useTrash: false });
+      return;
+    }
+    throw e;
+  }
+}
+
 async function editEntry(
   provider: DataSourceProvider,
   item: Datasource,
@@ -411,10 +436,10 @@ async function editEntry(
   let configType = "";
 
   if (item.type === "datasource") {
-    panel = createWebview(provider, "settings", `【${item.label}】编辑`);
+    panel = createWebview(provider, "settings", `${item.label} - 编辑`);
     configType = "datasource";
   } else if (item.type === "user") {
-    panel = createWebview(provider, "settings", `【${item.label}】编辑`);
+    panel = createWebview(provider, "settings", `${item.label} - 编辑`);
     configType = "user";
   } else if (item.type === "collection") {
     const datasourceNode = findAncestorByType(item, "datasource");
@@ -423,7 +448,7 @@ async function editEntry(
       vscode.window.showWarningMessage("当前连接类型不支持在此编辑数据库属性");
       return;
     }
-    panel = createWebview(provider, "settings", `【${item.label}】编辑`);
+    panel = createWebview(provider, "settings", `${item.label} - 编辑`);
     configType = "database";
   } else if (
     item.type === "document" ||
@@ -474,7 +499,7 @@ async function editEntry(
     const tableEditPanel = createWebview(
       provider,
       "tableEdit",
-      `【${item.label}】编辑`
+      `${item.label} - 编辑`
     );
     const persistedState: PersistedTablePanelState = {
       connectionName,
@@ -1019,6 +1044,36 @@ export function registerDatasourceCommands(
     getConnectionFilesDirUri: (name) => provider.getConnectionFilesDirUri(name),
   };
 
+  /** 树节点标签转为纯文本（用于复制） */
+  const treeItemLabelAsText = (label: vscode.TreeItem["label"]): string => {
+    if (label == null) {
+      return "";
+    }
+    if (typeof label === "string") {
+      return label;
+    }
+    return label.label ?? "";
+  };
+
+  disposables.push(
+    vscode.commands.registerCommand(
+      "cadb.datasource.copyTreeItemName",
+      async (item?: Datasource) => {
+        const node = item ?? treeView.selection[0];
+        if (!node) {
+          vscode.window.showWarningMessage("请先选择要复制的树节点");
+          return;
+        }
+        const text = treeItemLabelAsText(node.label).trim();
+        if (!text) {
+          vscode.window.showWarningMessage("该节点没有可复制的名称");
+          return;
+        }
+        await vscode.env.clipboard.writeText(text);
+      }
+    )
+  );
+
   // 注册刷新命令，支持完整加载
   disposables.push(
     vscode.commands.registerCommand(
@@ -1224,7 +1279,7 @@ export function registerDatasourceCommands(
             await provider.deleteConnectionRecord(name);
             try {
               const dsPath = vscode.Uri.joinPath(provider.context.globalStorageUri, name);
-              await vscode.workspace.fs.delete(dsPath, { recursive: true, useTrash: true });
+              await workspaceFsDeleteWithTrashFallback(dsPath, { recursive: true });
             } catch (_) {}
             provider.refresh();
             vscode.window.showInformationMessage(`已删除连接 "${name}"`);
@@ -1990,6 +2045,16 @@ function getGridPageSize(): number {
   return vscode.workspace.getConfiguration("cadb").get<number>("grid.pageSize", 2000);
 }
 
+/** 表数据 WebView 标签标题：仅显示表名（或 Redis 键名） */
+function formatGridWebviewTabTitle(
+  _connectionName: string,
+  _databaseName: string,
+  tableOrKey: string
+): string {
+  const t = String(tableOrKey ?? "").trim();
+  return t || "数据表格";
+}
+
 async function sqlResultView(
   datasource: Datasource,
   provider: DataSourceProvider,
@@ -2077,6 +2142,7 @@ async function sqlResultView(
   const existing = openTablePanels.get(panelKey);
   if (existing) {
     existing.reveal();
+    existing.title = formatGridWebviewTabTitle(connectionName, databaseName, tableName);
     triggerRevealForTablePanel(
       { connectionName, databaseName, tableName },
       outputChannel,
@@ -2094,7 +2160,7 @@ async function sqlResultView(
   const panel = createWebview(
     provider,
     "datasourceTable",
-    data?.title || "未命名页"
+    formatGridWebviewTabTitle(connectionName, databaseName, tableName)
   );
   openTablePanels.set(panelKey, panel);
   attachTablePanelRevealTracking(panel, {
@@ -2305,11 +2371,20 @@ async function keyValueResultView(
   const existing = openTablePanels.get(panelKey);
   if (existing) {
     existing.reveal();
+    existing.title = formatGridWebviewTabTitle(connectionName, databaseName, key);
     setTimeout(() => refreshDatasourceTableGridFocusContext(), 0);
     const data = await datasource.listData();
     if (data) {
       setTimeout(() => {
-        existing.webview.postMessage({ command: "load", data });
+        existing.webview.postMessage({
+          command: "load",
+          data: {
+            ...data,
+            connectionName,
+            databaseName,
+            tableName: key,
+          },
+        });
       }, 150);
     }
     return;
@@ -2333,7 +2408,7 @@ async function keyValueResultView(
   const panel = createWebview(
     provider,
     "datasourceTable",
-    data?.title || key || "键值数据"
+    formatGridWebviewTabTitle(connectionName, databaseName, key)
   );
   openTablePanels.set(panelKey, panel);
   panel.onDidDispose(() => {
@@ -2345,6 +2420,13 @@ async function keyValueResultView(
   });
   attachDatasourceTablePanelFocusTracking(panel);
 
+  const redisGridLoadPayload = (payload: NonNullable<Awaited<ReturnType<Datasource["listData"]>>>) => ({
+    ...payload,
+    connectionName,
+    databaseName,
+    tableName: key,
+  });
+
   panel.webview.onDidReceiveMessage(async (message) => {
     if (message.command === "gridPanelDomFocus") {
       markDatasourceTableGridDomFocused(panel);
@@ -2353,7 +2435,10 @@ async function keyValueResultView(
     if (message.command === "ready") {
       const freshData = await datasource.listData();
       if (freshData) {
-        panel.webview.postMessage({ command: "load", data: freshData });
+        panel.webview.postMessage({
+          command: "load",
+          data: redisGridLoadPayload(freshData),
+        });
       }
       return;
     }
@@ -2378,7 +2463,10 @@ async function keyValueResultView(
       case "refresh": {
         const freshData = await datasource.listData();
         if (freshData) {
-          panel.webview.postMessage({ command: "load", data: freshData });
+          panel.webview.postMessage({
+            command: "load",
+            data: redisGridLoadPayload(freshData),
+          });
         }
         break;
       }
@@ -2421,7 +2509,10 @@ async function keyValueResultView(
             });
             const freshData = await datasource.listData();
             if (freshData) {
-              panel.webview.postMessage({ command: "load", data: freshData });
+              panel.webview.postMessage({
+                command: "load",
+                data: redisGridLoadPayload(freshData),
+              });
             }
           } else {
             const errMsg = `保存完成：成功 ${result.successCount}，失败 ${result.errorCount}。${result.errors[0] ?? ""}`;
@@ -3069,10 +3160,7 @@ export function registerDatasourceItemCommands(
 
     try {
       const fileUri = vscode.Uri.file(filePath);
-      await vscode.workspace.fs.delete(fileUri, {
-        recursive: false,
-        useTrash: true,
-      });
+      await workspaceFsDeleteWithTrashFallback(fileUri, { recursive: false });
 
       vscode.window.showInformationMessage(`文件 "${fileName}" 已删除`);
 

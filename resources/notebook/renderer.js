@@ -22,6 +22,83 @@ function formatCellValue(value) {
   return { text: str };
 }
 
+/** 单元格原始值 → 复制用纯文本（与表格展示规则一致：NULL、日期本地化、对象 JSON 全文） */
+function valueToCopyString(raw) {
+  if (raw === null || raw === undefined) {
+    return 'NULL';
+  }
+  if (typeof raw === 'object') {
+    try {
+      return JSON.stringify(raw);
+    } catch (_e) {
+      return String(raw);
+    }
+  }
+  const str = String(raw);
+  if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(str) || (str.includes('T') && str.includes('Z'))) {
+    const date = new Date(str);
+    if (!isNaN(date.getTime())) {
+      return date.toLocaleString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+    }
+  }
+  return str;
+}
+
+/** 双击将 getText() 写入剪贴板（不阻单次点击选中文本） */
+function attachSqlResultCellCopy(el, getText) {
+  if (!el || typeof getText !== 'function') {
+    return;
+  }
+  const hint = '双击复制单元格内容';
+  el.title = el.title ? `${el.title} · ${hint}` : hint;
+  el.addEventListener('dblclick', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    let text;
+    try {
+      text = getText();
+    } catch (_err) {
+      text = '';
+    }
+    if (text === null || text === undefined) {
+      text = '';
+    } else {
+      text = String(text);
+    }
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.cssText = 'position:fixed;left:-9999px;top:0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      const prevO = el.style.outline;
+      const prevOo = el.style.outlineOffset;
+      el.style.outline = '2px solid var(--vscode-focusBorder)';
+      el.style.outlineOffset = '1px';
+      setTimeout(() => {
+        el.style.outline = prevO;
+        el.style.outlineOffset = prevOo;
+      }, 450);
+    } catch (_e2) {
+      /* 复制失败时静默 */
+    }
+  });
+}
+
 function renderSingleResult(data, container) {
   container.style.padding = '8px';
   container.style.fontFamily = 'var(--vscode-editor-font-family)';
@@ -91,6 +168,7 @@ function renderSingleResult(data, container) {
         });
         th.appendChild(handle);
       }
+      attachSqlResultCellCopy(th, () => col.name);
       headerRow.appendChild(th);
     });
     thead.appendChild(headerRow);
@@ -105,7 +183,9 @@ function renderSingleResult(data, container) {
         const td = document.createElement('td');
         const v = formatCellValue(row[col.name]);
         td.textContent = v.text;
-        td.style.cssText = 'padding: 6px 12px; color: ' + (v.muted ? 'var(--vscode-disabledForeground)' : 'var(--vscode-foreground)') + '; font-style: ' + (v.italic ? 'italic' : '') + '; border-right: 1px solid var(--vscode-panel-border); max-width: 220px; overflow: hidden; text-overflow: ellipsis;';
+        td.style.cssText = 'padding: 6px 12px; color: ' + (v.muted ? 'var(--vscode-disabledForeground)' : 'var(--vscode-foreground)') + '; font-style: ' + (v.italic ? 'italic' : '') + '; border-right: 1px solid var(--vscode-panel-border); max-width: 220px; overflow: hidden; text-overflow: ellipsis; user-select: text;';
+        const rawVal = row[col.name];
+        attachSqlResultCellCopy(td, () => valueToCopyString(rawVal));
         tr.appendChild(td);
       });
       tbody.appendChild(tr);
@@ -179,7 +259,13 @@ function createCollapsibleWrapper(contentEl) {
   return wrapper;
 }
 
+/** 渲染器向扩展发消息（删除历史结果等），由 requiresMessaging: always 提供 */
+let postMessageToExtension = null;
+
 export function activate(context) {
+  if (typeof context?.postMessage === 'function') {
+    postMessageToExtension = context.postMessage.bind(context);
+  }
   if (context.onDidReceiveMessage) {
     context.onDidReceiveMessage((e) => {
       const msg = (e && typeof e === 'object' && 'message' in e) ? e.message : e;
@@ -206,8 +292,16 @@ export function activate(context) {
         const container = document.createElement('div');
         container.className = 'sql-notebook-output';
 
-        if (data.type === 'query-results' && Array.isArray(data.results) && data.results.length > 0) {
-          // 多结果：顶部 Tab 栏（最新在左）+ 固定高度内容区 + 可拖拽调节手柄
+        const hasExecErr =
+          data.type === 'query-results' &&
+          typeof data.executionError === 'string' &&
+          data.executionError.length > 0;
+        if (
+          data.type === 'query-results' &&
+          Array.isArray(data.results) &&
+          (data.results.length > 0 || hasExecErr)
+        ) {
+          // 多结果：可选「本次执行错误」横幅 + Tab 栏（最新在左）+ 内容区 + 调节手柄
           const DEFAULT_HEIGHT = 280;
           const MIN_HEIGHT = 120;
           const MAX_HEIGHT = 800;
@@ -216,11 +310,20 @@ export function activate(context) {
           wrapper.className = 'sql-notebook-results-wrapper';
           wrapper.style.cssText = 'display: flex; flex-direction: column; width: 100%;';
 
+          if (hasExecErr) {
+            const errBanner = document.createElement('div');
+            errBanner.className = 'sql-notebook-exec-error-banner';
+            errBanner.style.cssText =
+              'color: var(--vscode-errorForeground); background: var(--vscode-inputValidation-errorBackground); padding: 8px 12px; border-radius: 4px; border: 1px solid var(--vscode-inputValidation-errorBorder); margin-bottom: 8px; font-size: 12px; flex-shrink: 0;';
+            errBanner.textContent = `❌ 本次执行失败（未记入历史）：${data.executionError}`;
+            wrapper.appendChild(errBanner);
+          }
+
           const tabBar = document.createElement('div');
           tabBar.className = 'sql-result-tabs';
           tabBar.style.cssText = `
             display: flex;
-            gap: 2px;
+            gap: 4px;
             padding: 4px 0 8px 0;
             border-bottom: 1px solid var(--vscode-panel-border);
             margin-bottom: 8px;
@@ -230,6 +333,7 @@ export function activate(context) {
             white-space: nowrap;
             scrollbar-width: none;
             -ms-overflow-style: none;
+            align-items: stretch;
           `;
           tabBar.addEventListener('wheel', (e) => {
             const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
@@ -284,50 +388,97 @@ export function activate(context) {
           });
 
           const results = data.results;
-          let selectedIndex = results.length - 1; // 最新（索引最大）
-          const ensureTabVisible = (tabEl) => {
-            if (!tabEl) return;
-            const left = tabEl.offsetLeft;
-            const right = left + tabEl.offsetWidth;
+          let selectedIndex = results.length > 0 ? results.length - 1 : 0;
+          const ensureTabVisible = (tabRowEl) => {
+            if (!tabRowEl) return;
+            const left = tabRowEl.offsetLeft;
+            const right = left + tabRowEl.offsetWidth;
             const viewLeft = tabBar.scrollLeft;
             const viewRight = viewLeft + tabBar.clientWidth;
             if (left < viewLeft) tabBar.scrollLeft = left;
             else if (right > viewRight) tabBar.scrollLeft = right - tabBar.clientWidth;
           };
 
-          // 最新结果在最左边：按索引从大到小追加 tab
+          const applyTabStyles = () => {
+            tabBar.querySelectorAll('.sql-result-tab-label').forEach((t) => {
+              const i = parseInt(t.dataset.idx, 10);
+              const on = i === selectedIndex;
+              t.style.backgroundColor = on ? 'var(--vscode-list-activeSelectionBackground)' : '';
+              t.style.color = on ? 'var(--vscode-list-activeSelectionForeground)' : '';
+            });
+          };
+
+          const canDelete =
+            postMessageToExtension &&
+            data.cadbRef &&
+            typeof data.cadbRef.notebookUri === 'string' &&
+            typeof data.cadbRef.cellIndex === 'number';
+
+          // 最新结果在最左边：按索引从大到小追加 tab + 删除按钮
           for (let idx = results.length - 1; idx >= 0; idx--) {
             const r = results[idx];
+            const row = document.createElement('div');
+            row.className = 'sql-result-tab-row';
+            row.style.cssText =
+              'display: inline-flex; align-items: stretch; flex: 0 0 auto; border-radius: 4px; overflow: hidden; border: 1px solid var(--vscode-panel-border);';
+
             const tab = document.createElement('div');
             const isError = r.type === 'query-error';
             const label = isError ? `结果 #${idx + 1} (错误)` : `结果 #${idx + 1} (${(r.executionTime ?? 0).toFixed(2)}s)`;
+            tab.className = 'sql-result-tab-label';
             tab.textContent = label;
             tab.dataset.idx = String(idx);
             tab.style.cssText = `
-              padding: 4px 12px;
+              padding: 4px 10px;
               font-size: 12px;
               cursor: pointer;
-              border-radius: 4px;
-              border: 1px solid transparent;
               transition: background 0.15s;
               flex: 0 0 auto;
+              display: flex;
+              align-items: center;
             `;
             if (idx === selectedIndex) {
               tab.style.backgroundColor = 'var(--vscode-list-activeSelectionBackground)';
               tab.style.color = 'var(--vscode-list-activeSelectionForeground)';
             }
+
+            const delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.className = 'sql-result-tab-delete';
+            delBtn.title = '删除此条结果';
+            delBtn.setAttribute('aria-label', '删除此条结果');
+            delBtn.textContent = '×';
+            delBtn.style.cssText =
+              'width: 22px; min-width: 22px; padding: 0; margin: 0; border: none; border-left: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); color: var(--vscode-foreground); cursor: pointer; font-size: 16px; line-height: 1; display: flex; align-items: center; justify-content: center;';
+            delBtn.addEventListener('mouseenter', () => {
+              delBtn.style.backgroundColor = 'var(--vscode-list-hoverBackground)';
+            });
+            delBtn.addEventListener('mouseleave', () => {
+              delBtn.style.backgroundColor = 'var(--vscode-editor-background)';
+            });
+            if (canDelete) {
+              delBtn.addEventListener('click', (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                postMessageToExtension({
+                  type: 'deleteSqlResult',
+                  notebookUri: data.cadbRef.notebookUri,
+                  cellIndex: data.cadbRef.cellIndex,
+                  resultIndex: idx,
+                });
+              });
+            } else {
+              delBtn.style.display = 'none';
+            }
+
             tab.addEventListener('click', () => {
               selectedIndex = parseInt(tab.dataset.idx, 10);
-              tabBar.querySelectorAll('[data-idx]').forEach((t) => {
-                const i = parseInt(t.dataset.idx, 10);
-                t.style.backgroundColor = i === selectedIndex ? 'var(--vscode-list-activeSelectionBackground)' : '';
-                t.style.color = i === selectedIndex ? 'var(--vscode-list-activeSelectionForeground)' : '';
-              });
+              applyTabStyles();
               contentArea.innerHTML = '';
               const inner = document.createElement('div');
               renderSingleResult(results[selectedIndex], inner);
               contentArea.appendChild(inner);
-              ensureTabVisible(tab);
+              ensureTabVisible(row);
             });
             tab.addEventListener('mouseenter', () => {
               if (idx !== selectedIndex) tab.style.backgroundColor = 'var(--vscode-list-hoverBackground)';
@@ -335,15 +486,21 @@ export function activate(context) {
             tab.addEventListener('mouseleave', () => {
               if (idx !== selectedIndex) tab.style.backgroundColor = '';
             });
-            tabBar.appendChild(tab);
+
+            row.appendChild(tab);
+            row.appendChild(delBtn);
+            tabBar.appendChild(row);
           }
+
           if (tabBar.firstElementChild) {
             ensureTabVisible(tabBar.firstElementChild);
           }
 
-          const innerContent = document.createElement('div');
-          renderSingleResult(results[selectedIndex], innerContent);
-          contentArea.appendChild(innerContent);
+          if (results.length > 0) {
+            const innerContent = document.createElement('div');
+            renderSingleResult(results[selectedIndex], innerContent);
+            contentArea.appendChild(innerContent);
+          }
 
           wrapper.appendChild(tabBar);
           wrapper.appendChild(contentArea);
@@ -419,6 +576,7 @@ export function activate(context) {
                 });
                 th.appendChild(handle);
               }
+              attachSqlResultCellCopy(th, () => col.name);
               headerRow.appendChild(th);
             });
             thead.appendChild(headerRow);
@@ -443,7 +601,8 @@ export function activate(context) {
                 const value = row[col.name];
                 const fmt = formatCellValue(value);
                 td.textContent = fmt.text;
-                td.style.cssText = 'padding: 6px 12px; color: ' + (fmt.muted ? 'var(--vscode-disabledForeground)' : 'var(--vscode-foreground)') + '; font-style: ' + (fmt.italic ? 'italic' : '') + '; border-right: 1px solid var(--vscode-panel-border); max-width: 220px; overflow: hidden; text-overflow: ellipsis;';
+                td.style.cssText = 'padding: 6px 12px; color: ' + (fmt.muted ? 'var(--vscode-disabledForeground)' : 'var(--vscode-foreground)') + '; font-style: ' + (fmt.italic ? 'italic' : '') + '; border-right: 1px solid var(--vscode-panel-border); max-width: 220px; overflow: hidden; text-overflow: ellipsis; user-select: text;';
+                attachSqlResultCellCopy(td, () => valueToCopyString(value));
                 tr.appendChild(td);
               });
               tbody.appendChild(tr);

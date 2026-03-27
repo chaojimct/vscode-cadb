@@ -225,21 +225,45 @@ export class SqlNotebookController {
       const newResult = this._buildResultItem(result, executionTimeSec);
       const allResults = [...previousResults, newResult].slice(-20); // 最多保留 20 次
 
-      const sqlResults = { type: 'query-results' as const, results: allResults };
+      const sqlResults = {
+        type: 'query-results' as const,
+        results: allResults,
+        cadbRef: {
+          notebookUri: cell.notebook.uri.toString(),
+          cellIndex: cell.index,
+        },
+      };
       const output = new vscode.NotebookCellOutput([
         vscode.NotebookCellOutputItem.json(sqlResults, 'application/x.sql-results'),
       ]);
       await execution.replaceOutput([output]);
     } catch (error: any) {
       const previousResults = this._getPreviousResults(cell);
-      const errorResult = { type: 'query-error' as const, error: error?.message ?? String(error) };
-      const allResults = [...previousResults, errorResult].slice(-20);
-
-      const sqlResults = { type: 'query-results' as const, results: allResults };
-      const output = new vscode.NotebookCellOutput([
-        vscode.NotebookCellOutputItem.json(sqlResults, 'application/x.sql-results'),
-      ]);
-      await execution.replaceOutput([output]);
+      const errMsg = error?.message ?? String(error);
+      // 查询失败不写入历史：仅展示本次错误；若有历史则保留标签页并顶部提示错误
+      if (previousResults.length === 0) {
+        const output = new vscode.NotebookCellOutput([
+          vscode.NotebookCellOutputItem.json(
+            { type: 'query-error' as const, error: errMsg },
+            'application/x.sql-results'
+          ),
+        ]);
+        await execution.replaceOutput([output]);
+      } else {
+        const sqlResults = {
+          type: 'query-results' as const,
+          results: previousResults,
+          executionError: errMsg,
+          cadbRef: {
+            notebookUri: cell.notebook.uri.toString(),
+            cellIndex: cell.index,
+          },
+        };
+        const output = new vscode.NotebookCellOutput([
+          vscode.NotebookCellOutputItem.json(sqlResults, 'application/x.sql-results'),
+        ]);
+        await execution.replaceOutput([output]);
+      }
     } finally {
       execution.end(true, Date.now());
     }
@@ -307,6 +331,131 @@ export class SqlNotebookController {
       executionTime: executionTimeSec,
       message: `执行成功，影响 ${affectedRows} 行`,
     };
+  }
+
+  /**
+   * 处理 Notebook 渲染器 postMessage（删除某条历史查询结果）
+   */
+  public async handleRendererMessage(
+    editor: vscode.NotebookEditor,
+    message: unknown
+  ): Promise<void> {
+    if (!message || typeof message !== "object") {
+      return;
+    }
+    const m = message as {
+      type?: string;
+      notebookUri?: string;
+      cellIndex?: number;
+      resultIndex?: number;
+    };
+    if (m.type !== "deleteSqlResult") {
+      return;
+    }
+    if (
+      typeof m.notebookUri !== "string" ||
+      typeof m.cellIndex !== "number" ||
+      typeof m.resultIndex !== "number"
+    ) {
+      return;
+    }
+    const notebook = editor.notebook;
+    if (notebook.uri.toString() !== m.notebookUri) {
+      return;
+    }
+    const cell = notebook.cellAt(m.cellIndex);
+    if (!cell || cell.index !== m.cellIndex) {
+      return;
+    }
+    const newOutputs = this._cloneCellOutputsWithResultRemoved(cell, m.resultIndex);
+    if (newOutputs === null) {
+      return;
+    }
+    try {
+      const cellData = new vscode.NotebookCellData(
+        cell.kind,
+        cell.document.getText(),
+        cell.document.languageId
+      );
+      cellData.outputs = newOutputs;
+      cellData.metadata = { ...cell.metadata };
+      if (cell.executionSummary) {
+        cellData.executionSummary = cell.executionSummary;
+      }
+      const edit = new vscode.WorkspaceEdit();
+      edit.set(notebook.uri, [
+        vscode.NotebookEdit.replaceCells(
+          new vscode.NotebookRange(cell.index, cell.index + 1),
+          [cellData]
+        ),
+      ]);
+      await vscode.workspace.applyEdit(edit);
+    } catch (e) {
+      console.error("[SqlNotebookController] 删除查询结果失败:", e);
+    }
+  }
+
+  /** 从单元格输出中移除指定下标的 query-results 条目，返回新 outputs；无法处理时返回 null */
+  private _cloneCellOutputsWithResultRemoved(
+    cell: vscode.NotebookCell,
+    resultIndex: number
+  ): vscode.NotebookCellOutput[] | null {
+    if (resultIndex < 0) {
+      return null;
+    }
+    const decoder = new TextDecoder();
+    const found: vscode.NotebookCellOutput[] = [];
+    let hit = false;
+    for (const out of cell.outputs) {
+      const jsonItem = out.items.find((i) => i.mime === "application/x.sql-results");
+      if (!jsonItem) {
+        found.push(this._cloneNotebookOutput(out));
+        continue;
+      }
+      try {
+        const parsed = JSON.parse(decoder.decode(jsonItem.data)) as {
+          type?: string;
+          results?: unknown[];
+          executionError?: string;
+          cadbRef?: unknown;
+        };
+        if (
+          parsed.type !== "query-results" ||
+          !Array.isArray(parsed.results) ||
+          resultIndex >= parsed.results.length
+        ) {
+          found.push(this._cloneNotebookOutput(out));
+          continue;
+        }
+        hit = true;
+        parsed.results.splice(resultIndex, 1);
+        delete parsed.executionError;
+        parsed.cadbRef = {
+          notebookUri: cell.notebook.uri.toString(),
+          cellIndex: cell.index,
+        };
+        if (parsed.results.length === 0) {
+          /* 去掉整条 sql-results 输出 */
+          continue;
+        }
+        found.push(
+          new vscode.NotebookCellOutput(
+            [vscode.NotebookCellOutputItem.json(parsed, "application/x.sql-results")],
+            out.metadata
+          )
+        );
+      } catch {
+        found.push(this._cloneNotebookOutput(out));
+      }
+    }
+    return hit ? found : null;
+  }
+
+  private _cloneNotebookOutput(out: vscode.NotebookCellOutput): vscode.NotebookCellOutput {
+    const items = out.items.map(
+      (it) => new vscode.NotebookCellOutputItem(new Uint8Array(it.data), it.mime)
+    );
+    return new vscode.NotebookCellOutput(items, out.metadata);
   }
 
   /**

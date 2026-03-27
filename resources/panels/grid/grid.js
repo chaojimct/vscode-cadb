@@ -29,6 +29,42 @@
 
   const $ = (sel, root = document) => root.querySelector(sel);
 
+  /** 同步 document.title（仅表名）与分页区表名标签（悬停全路径：连接 / 数据库 / 表） */
+  function applyGridDocumentTitle(meta) {
+    const c = meta && String(meta.connectionName ?? "").trim();
+    const d = meta && String(meta.databaseName ?? "").trim();
+    const t = meta && String(meta.tableName ?? "").trim();
+    const labelEl = document.getElementById("grid-toolbar-table-label");
+    const labelTextEl = labelEl?.querySelector?.(".grid-toolbar__table-name-text");
+    if (c && d && t) {
+      document.title = t;
+      if (labelEl) {
+        if (labelTextEl) {
+          labelTextEl.textContent = t;
+        } else {
+          labelEl.textContent = t;
+        }
+        const fullPath = `${c} / ${d} / ${t}`;
+        /* 不用原生 title（系统延迟长），全路径由 CSS attr(data-path) 即时提示 */
+        labelEl.removeAttribute("title");
+        labelEl.setAttribute("data-path", fullPath);
+        labelEl.setAttribute("aria-label", `当前表 ${t}，全路径 ${fullPath}`);
+      }
+    } else {
+      document.title = "数据表格";
+      if (labelEl) {
+        if (labelTextEl) {
+          labelTextEl.textContent = "";
+        } else {
+          labelEl.textContent = "";
+        }
+        labelEl.removeAttribute("title");
+        labelEl.removeAttribute("data-path");
+        labelEl.removeAttribute("aria-label");
+      }
+    }
+  }
+
   let tableMeta = { connectionName: "", databaseName: "", tableName: "" };
   let hideMatchedFields = false;
   let userColumnVisibility = new Map();
@@ -55,6 +91,7 @@
     delete: () => dbTable.deleteRow(),
     undo: () => dbTable.undo(),
     redo: () => dbTable.redo(),
+    "first-page": () => !$("#btn-first-page")?.disabled && dbTable.firstPage(),
     "prev-page": () => !$("#btn-prev-page")?.disabled && dbTable.prevPage(),
     "next-page": () => !$("#btn-next-page")?.disabled && dbTable.nextPage(),
     upload: () => {},
@@ -124,6 +161,10 @@
       if (wasCollapsed && !collapsed) {
         focusFieldSearchInputDeferred();
       }
+      // 从展开变为收起：焦点回到表格，避免 Webview 焦点落到工作台导致 Ctrl+F 无效
+      if (!wasCollapsed && collapsed) {
+        focusGridAreaDeferred();
+      }
     },
   };
 
@@ -150,23 +191,24 @@
 
     try {
       const collapsed = localStorage.getItem(STORAGE_KEY_COLLAPSED);
-      if (collapsed === "1") {
-        body.classList.add("grid-side-panel-collapsed");
-        const tab = document.querySelector(".grid-side-panel__tab");
-        const toggleBtn = document.querySelector(".grid-side-panel__toggle");
-        if (tab) {
-          tab.setAttribute("aria-expanded", "false");
-          tab.title = "展开侧边面板";
-        }
-        if (toggleBtn) toggleBtn.title = "展开面板";
-      } else {
-        const tab = document.querySelector(".grid-side-panel__tab");
-        const toggleBtn = document.querySelector(".grid-side-panel__toggle");
+      // 默认收起；仅当用户曾明确选择展开（存为 "0"）时才展开
+      const showPanel = collapsed === "0";
+      const tab = document.querySelector(".grid-side-panel__tab");
+      const toggleBtn = document.querySelector(".grid-side-panel__toggle");
+      if (showPanel) {
+        body.classList.remove("grid-side-panel-collapsed");
         if (tab) {
           tab.setAttribute("aria-expanded", "true");
           tab.title = "收起侧边面板";
         }
         if (toggleBtn) toggleBtn.title = "收起面板";
+      } else {
+        body.classList.add("grid-side-panel-collapsed");
+        if (tab) {
+          tab.setAttribute("aria-expanded", "false");
+          tab.title = "展开侧边面板";
+        }
+        if (toggleBtn) toggleBtn.title = "展开面板";
       }
       const w = localStorage.getItem(STORAGE_KEY_WIDTH);
       if (panel && w) {
@@ -237,6 +279,52 @@
       }
     };
     requestAnimationFrame(() => requestAnimationFrame(run));
+  }
+
+  /** 侧栏收起后将焦点移回表格（优先 AG Grid 单元格，否则 #grid），保持 Webview 可接收键盘快捷键 */
+  function focusGridAreaDeferred() {
+    const run = () => {
+      const api = dbTable && dbTable.gridApi;
+      let focused = false;
+      if (api && typeof api.setFocusedCell === "function") {
+        try {
+          const cols = dbTable.columns || [];
+          const first = cols.find((c) => {
+            const f = c.field;
+            return f != null && String(f).trim() !== "" && f !== "__cadb_rownum__";
+          });
+          const rowCount =
+            typeof api.getDisplayedRowCount === "function" ? api.getDisplayedRowCount() : 0;
+          if (first && rowCount > 0) {
+            api.setFocusedCell(0, first.field);
+            focused = true;
+          }
+        } catch (_) {
+          /* 忽略 */
+        }
+      }
+      if (!focused) {
+        const gridEl = document.getElementById("grid");
+        if (gridEl) {
+          try {
+            gridEl.focus({ preventScroll: true });
+          } catch (_) {
+            gridEl.focus();
+          }
+        }
+      }
+      if (vscode) {
+        vscode.postMessage({ command: "gridPanelDomFocus" });
+      }
+    };
+    requestAnimationFrame(() => requestAnimationFrame(run));
+  }
+
+  /** 当前选中的侧栏 Tab：fields | preview */
+  function getActiveGridSideTab() {
+    const btn = document.querySelector(".grid-side-panel__tab-btn.is-active");
+    const t = btn && btn.getAttribute("data-tab");
+    return t === "preview" ? "preview" : "fields";
   }
 
   /** 侧栏 Tab：字段 / 预览 */
@@ -334,16 +422,7 @@
       actions.toggleFieldSearch();
       return;
     }
-    if (e.key === "Escape") {
-      e.preventDefault();
-      e.stopPropagation();
-      const input = e.currentTarget;
-      if (input && String(input.value ?? "")) {
-        input.value = "";
-        applyFieldSearch();
-        updateClearButtonUI();
-      }
-    }
+    // Escape：由 document 捕获阶段统一处理（字段 Tab 清空过滤或收起侧栏；预览 Tab 直接收起）
   });
 
   function updateFieldSearchToggleUI() {
@@ -441,13 +520,51 @@
   });
 
   /**
-   * 右侧工具栏显示/隐藏：在 Webview 内处理 ⌘F / Ctrl+F，不依赖扩展 package.json 快捷键与 setContext。
-   * 捕获阶段优先于 AG Grid，避免与 Workbench 键绑定抢键失败。
-   * 在输入框、单元格编辑（contenteditable）内不拦截。
+   * 右侧工具栏：⌘F / Ctrl+F 切换显示；Escape 在侧栏展开时收起或清空字段过滤（预览 Tab 不判断过滤框）。
+   * 捕获阶段优先于 AG Grid；单元格编辑（contenteditable）内不抢 Escape，以便先结束编辑。
    */
   document.addEventListener(
     "keydown",
     function (e) {
+      if (e.key === "Escape") {
+        if (document.body.classList.contains("grid-side-panel-collapsed")) {
+          return;
+        }
+        const el = e.target;
+        if (el instanceof HTMLElement) {
+          if (el.isContentEditable) {
+            return;
+          }
+          const tag = el.tagName;
+          if (
+            (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") &&
+            el.id !== "grid-field-search"
+          ) {
+            return;
+          }
+        }
+        if (getActiveGridSideTab() === "preview") {
+          e.preventDefault();
+          e.stopPropagation();
+          actions.toggleSidePanel();
+          return;
+        }
+        const q = getSearchQuery();
+        if (q) {
+          e.preventDefault();
+          e.stopPropagation();
+          const input = document.getElementById("grid-field-search");
+          if (input) input.value = "";
+          applyFieldSearch();
+          updateClearButtonUI();
+          return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        actions.toggleSidePanel();
+        return;
+      }
+
       if (e.key !== "f" && e.key !== "F") {
         return;
       }
@@ -484,6 +601,7 @@
         databaseName: payload?.databaseName ?? "",
         tableName: payload?.tableName ?? "",
       };
+      applyGridDocumentTitle(tableMeta);
       const hasMeta = tableMeta.connectionName && tableMeta.databaseName && tableMeta.tableName;
       document.querySelectorAll("[data-action=switchToTableEdit], [data-action=quickQuery]").forEach((el) => {
         el.style.display = hasMeta ? "" : "none";

@@ -3,7 +3,7 @@
     "displayName": "vscode-cadb",
     "publisher": "codingsoul",
     "description": "Powerful database management VSCode plugin!",
-    "version": "0.1.3",
+    "version": "0.2.0",
     "engines": {
         "vscode": "^1.104.0"
     },
@@ -125,6 +125,11 @@
                 "command": "cadb.collection.useDatabase",
                 "title": "使用",
                 "icon": "$(cursor)"
+            },
+            {
+                "command": "cadb.datasource.copyTreeItemName",
+                "title": "复制",
+                "icon": "$(copy)"
             },
             {
                 "command": "cadb.datasource.copyConnection",
@@ -283,7 +288,7 @@
                     "application/x.sql-error"
                 ],
                 "entrypoint": "./resources/notebook/renderer.js",
-                "requiresMessaging": "optional"
+                "requiresMessaging": "always"
             }
         ],
         "menus": {
@@ -315,6 +320,11 @@
                 }
             ],
             "view/item/context": [
+                {
+                    "command": "cadb.datasource.copyTreeItemName",
+                    "when": "view =~ /datasource/ && viewItem",
+                    "group": "9_copy@1"
+                },
                 {
                     "command": "cadb.datasource.refresh",
                     "when": "view =~ /datasource/ && !(viewItem =~ /Type$/)",
