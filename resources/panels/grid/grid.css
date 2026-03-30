@@ -574,6 +574,16 @@
   margin-right: 12px;
 }
 
+/* 导航区（表编辑 / 快捷查询）与后续操作按钮之间的竖分割线 */
+.grid-toolbar__divider {
+  width: 1px;
+  height: 22px;
+  margin-left: 4px;
+  flex-shrink: 0;
+  align-self: center;
+  background-color: var(--vscode-toolbar-border, var(--grid-border));
+}
+
 .grid-toolbar__actions,
 .grid-toolbar__export {
   display: flex;

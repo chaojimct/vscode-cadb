@@ -97,8 +97,22 @@
     upload: () => {},
     download: () => {},
     "export-csv": () => dbTable.exportCSV(),
-    "export-xlsx": () => dbTable.exportXLSX(),
-    "export-json": () => dbTable.exportJSON(),
+    "copy-table-ddl": () => {
+      if (tableMeta.connectionName && tableMeta.databaseName && tableMeta.tableName) {
+        vscode?.postMessage({
+          command: "copyTableDdl",
+          connectionName: tableMeta.connectionName,
+          databaseName: tableMeta.databaseName,
+          tableName: tableMeta.tableName,
+        });
+      } else {
+        vscode?.postMessage({
+          command: "showMessage",
+          type: "warning",
+          message: "未加载表信息，无法获取 DDL",
+        });
+      }
+    },
     switchToTableEdit: () => {
       if (tableMeta.connectionName && tableMeta.databaseName && tableMeta.tableName) {
         vscode?.postMessage({

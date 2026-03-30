@@ -24,6 +24,7 @@
           <i class="codicon codicon-search-sparkle" aria-hidden="true"></i>
           <span class="sr-only">快捷查询</span>
         </button>
+        <span class="grid-toolbar__divider" aria-hidden="true"></span>
       </div>
       <div class="grid-toolbar__actions">
         <button data-action="save" title="保存修改到数据库">
@@ -41,14 +42,6 @@
         <button data-action="delete" title="删除选中行">
           <i class="codicon codicon-trash" aria-hidden="true"></i>
           <span class="sr-only">删除</span>
-        </button>
-        <button data-action="undo" title="撤销">
-          <i class="codicon codicon-history" aria-hidden="true"></i>
-          <span class="sr-only">撤销</span>
-        </button>
-        <button data-action="redo" title="重做">
-          <i class="codicon codicon-redo" aria-hidden="true"></i>
-          <span class="sr-only">重做</span>
         </button>
       </div>
       <div class="grid-toolbar__pagination" data-pagination>
@@ -86,13 +79,9 @@
           <i class="codicon codicon-file" aria-hidden="true"></i>
           <span class="sr-only">CSV</span>
         </button>
-        <button data-action="export-xlsx" title="导出 XLSX">
-          <i class="codicon codicon-table" aria-hidden="true"></i>
-          <span class="sr-only">XLSX</span>
-        </button>
-        <button data-action="export-json" title="导出 JSON">
-          <i class="codicon codicon-braces" aria-hidden="true"></i>
-          <span class="sr-only">JSON</span>
+        <button type="button" data-action="copy-table-ddl" title="复制表 DDL 到剪贴板" aria-label="复制表 DDL 到剪贴板">
+          <i class="codicon codicon-code" aria-hidden="true"></i>
+          <span class="sr-only">复制 DDL</span>
         </button>
       </div>
     </header>

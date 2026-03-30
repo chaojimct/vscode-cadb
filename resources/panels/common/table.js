@@ -982,33 +982,4 @@ class DatabaseTableData {
     if (!this.gridApi) return;
     this.gridApi.exportDataAsCsv({ bom: true, fileName: "data.csv" });
   }
-
-  exportJSON() {
-    if (!this.gridApi) return;
-    const rows = this.gridApi.getModel().rowsToDisplay.map((r) => {
-      const d = { ...r.data };
-      delete d.__rowIndex;
-      delete d.__edited;
-      return d;
-    });
-    const blob = new Blob([JSON.stringify(rows, null, 2)], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "data.json";
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }
-
-  exportXLSX() {
-    // AG Grid Community 不支持 Excel 导出，提示用户
-    if (this.vscode) {
-      this.vscode.postMessage({
-        command: "showMessage",
-        type: "warning",
-        message: "AG Grid Community 暂不支持 XLSX 导出，请使用 CSV 或 JSON",
-      });
-    } else {
-      console.warn("AG Grid Community 暂不支持 XLSX 导出，请使用 CSV 或 JSON");
-    }
-  }
 }

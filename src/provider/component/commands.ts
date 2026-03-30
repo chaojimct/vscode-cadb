@@ -2237,6 +2237,62 @@ async function sqlResultView(
       }
       return;
     }
+    if (message.command === "copyTableDdl") {
+      const conn = message.connectionName ?? connectionName;
+      const db = message.databaseName ?? databaseName;
+      const tbl = message.tableName ?? tableName;
+      try {
+        const connectionData = provider.getConnections().find((ds) => ds.name === conn);
+        if (!connectionData) {
+          postWebviewStatus(panel.webview, {
+            success: false,
+            message: "数据源不存在",
+          });
+          return;
+        }
+        const dbEsc = "`" + String(db).replace(/`/g, "``") + "`";
+        const tblEsc = "`" + String(tbl).replace(/`/g, "``") + "`";
+        const showSql = `SHOW CREATE TABLE ${dbEsc}.${tblEsc}`;
+        const ddl = await withMysqlSession(
+          connectionData as DatasourceInputData,
+          String(db),
+          async (connection) => {
+            return await new Promise<string>((resolve, reject) => {
+              connection.query(showSql, (err: unknown, results: unknown) => {
+                if (err) {
+                  reject(err);
+                  return;
+                }
+                const rows = results as Record<string, string>[] | undefined;
+                const row = rows?.[0];
+                if (!row) {
+                  reject(new Error("未返回 DDL"));
+                  return;
+                }
+                const createSql =
+                  row["Create Table"] ?? row["create table"] ?? "";
+                if (!createSql) {
+                  reject(new Error("结果中无 Create Table 字段"));
+                  return;
+                }
+                resolve(createSql);
+              });
+            });
+          }
+        );
+        await vscode.env.clipboard.writeText(ddl);
+        postWebviewStatus(panel.webview, {
+          success: true,
+          message: "已复制表 DDL 到剪贴板",
+        });
+      } catch (e) {
+        postWebviewStatus(panel.webview, {
+          success: false,
+          message: `复制 DDL 失败: ${toErrorMessage(e)}`,
+        });
+      }
+      return;
+    }
     switch (message.command) {
       case "save":
         try {
