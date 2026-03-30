@@ -1150,8 +1150,8 @@ export function activate(context: vscode.ExtensionContext) {
     )
   );
 
-  // SQL CodeLens 提供者（在 SQL 语句上方显示 Run 和 Explain）
-  const sqlCodeLensProvider = new SqlCodeLensProvider(databaseManager);
+  // SQL CodeLens：顶部「运行全部」+ 符合条件的 Explain（不展示逐行「运行」，避免多行格式化后杂乱）
+  const sqlCodeLensProvider = new SqlCodeLensProvider();
   context.subscriptions.push(
     vscode.languages.registerCodeLensProvider(
       { language: "sql" },
@@ -1285,7 +1285,7 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  // 运行「当前行所在语句」：与 CodeLens 仅标在 SELECT 等首行一致，格式化多行后仍执行完整语句
+  // 运行「当前行所在语句」：按分号切分后执行光标所在语句（多行格式化后仍为整条语句）
   context.subscriptions.push(
     vscode.commands.registerCommand("cadb.sql.runLine", async (uri?: string, line?: number) => {
       const editor = vscode.window.activeTextEditor;

@@ -182,7 +182,7 @@ export class Datasource extends vscode.TreeItem {
         }
         const kind = await vscode.window.showQuickPick(
           [
-            { label: "创建 SQL 文件 (.sql)", description: "纯文本，支持 CodeLens Run/Explain", value: "sql" as const },
+            { label: "创建 SQL 文件 (.sql)", description: "纯文本，支持 CodeLens 运行全部与 Explain", value: "sql" as const },
             { label: "创建 JSQL Notebook (.jsql)", description: "笔记本，按单元格执行", value: "jsql" as const },
           ],
           { placeHolder: "选择：创建 SQL 文件 或 JSQL Notebook" }
