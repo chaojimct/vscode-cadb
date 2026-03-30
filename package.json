@@ -18,7 +18,8 @@
     "activationEvents": [
         "onLanguage:sql",
         "onNotebook:cadb.sqlNotebook",
-        "onStartupFinished"
+        "onStartupFinished",
+        "onChatParticipant:codingsoul.vscode-cadb.tables"
     ],
     "main": "./dist/extension.js",
     "icon": "logo.png",
@@ -289,6 +290,24 @@
                 ],
                 "entrypoint": "./resources/notebook/renderer.js",
                 "requiresMessaging": "always"
+            }
+        ],
+        "chatParticipants": [
+            {
+                "id": "codingsoul.vscode-cadb.tables",
+                "name": "cadb-tables",
+                "fullName": "CADB 数据表",
+                "description": "结合当前选中库的表结构讨论 SQL（需在聊天中选择语言模型）",
+                "isSticky": true,
+                "chatDropMimeTypes": [
+                    "application/vnd.code.tree.cadb-datasource-tree"
+                ],
+                "commands": [
+                    {
+                        "name": "schema",
+                        "description": "仅列出当前库表与字段摘要，不调用模型"
+                    }
+                ]
             }
         ],
         "menus": {

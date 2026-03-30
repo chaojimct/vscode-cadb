@@ -15,10 +15,14 @@ import { SqlNotebookSerializer } from "./provider/component/sql_notebook_seriali
 import { SqlNotebookController } from "./provider/component/sql_notebook_controller";
 import { SqlNotebookRenderer } from "./provider/component/sql_notebook_renderer";
 import { DatabaseManager } from "./provider/component/database_manager";
+import { registerCadbTableChatParticipant } from "./provider/component/cadb_table_chat_participant";
 import { ResultWebviewProvider } from "./provider/result_provider";
 import { CaCompletionItemProvider } from "./provider/completion_item_provider";
 import { SqlCodeLensProvider } from "./provider/component/sql_codelens_provider";
-import { SqlHoverProvider, lastHoveredTableInfo } from "./provider/component/sql_hover_provider";
+import {
+  SqlHoverProvider,
+  lastHoveredTableInfo,
+} from "./provider/component/sql_hover_provider";
 import { SqlExecutor } from "./provider/component/sql_executor";
 import { DatabaseStatusBar } from "./provider/component/database_status_bar";
 import {
@@ -33,6 +37,7 @@ import {
   CADB_WORKSPACE_OPEN_TABLE_PANELS_KEY,
 } from "./provider/cadb_storage_keys";
 import { format as formatSql } from "sql-formatter";
+import { CadbDragAndDropController } from "./provider/component/cadb_drag_drop_controller";
 
 interface SqlStatementSpan {
   start: number;
@@ -50,7 +55,7 @@ const SQL_FILE_DATABASE_STATE_KEY = "cadb.sqlFileDatabaseBindings";
 /** 与编辑器缩进选项一致的 SQL 格式化（供普通 .sql / Notebook 单元格等任意 scheme 的 sql 文档使用） */
 function formatSqlWithEditorOptions(
   text: string,
-  options: vscode.FormattingOptions
+  options: vscode.FormattingOptions,
 ): string {
   return formatSql(text, {
     language: "mysql",
@@ -91,7 +96,7 @@ function parseSqlStatementSpans(text: string): SqlStatementSpan[] {
       continue;
     }
 
-    if (!inString && (ch === "-" && next === "-" || ch === "#")) {
+    if (!inString && ((ch === "-" && next === "-") || ch === "#")) {
       inLineComment = true;
       i += ch === "-" ? 2 : 1;
       continue;
@@ -134,7 +139,7 @@ function parseSqlStatementSpans(text: string): SqlStatementSpan[] {
 
 function splitSqlStatements(text: string): string[] {
   return parseSqlStatementSpans(text)
-    .map(span => text.slice(span.start, span.end).trim())
+    .map((span) => text.slice(span.start, span.end).trim())
     .filter(Boolean);
 }
 
@@ -147,8 +152,9 @@ export function activate(context: vscode.ExtensionContext) {
   const outputChannel = vscode.window.createOutputChannel("CADB SQL");
   context.subscriptions.push(outputChannel);
   const shouldAutoShowDatasourceSidebar =
-    context.globalState.get<boolean>(CADB_GLOBAL_DATASOURCE_SIDEBAR_LAST_VISIBLE_KEY) ===
-    true;
+    context.globalState.get<boolean>(
+      CADB_GLOBAL_DATASOURCE_SIDEBAR_LAST_VISIBLE_KEY,
+    ) === true;
   const revealLog = (message: string, data?: unknown): void => {
     const ts = new Date().toISOString();
     if (data === undefined) {
@@ -156,21 +162,29 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
     try {
-      outputChannel.appendLine(`[CADB REVEAL][${ts}] ${message} ${JSON.stringify(data)}`);
+      outputChannel.appendLine(
+        `[CADB REVEAL][${ts}] ${message} ${JSON.stringify(data)}`,
+      );
     } catch {
       outputChannel.appendLine(`[CADB REVEAL][${ts}] ${message}`);
     }
   };
 
   if (!shouldAutoShowDatasourceSidebar) {
-    void context.workspaceState.update(CADB_WORKSPACE_OPEN_TABLE_PANELS_KEY, []);
-    revealLog("启动：上次未停留在数据源侧栏，已清空 openTablePanels（不自动恢复表面板）");
+    void context.workspaceState.update(
+      CADB_WORKSPACE_OPEN_TABLE_PANELS_KEY,
+      [],
+    );
+    revealLog(
+      "启动：上次未停留在数据源侧栏，已清空 openTablePanels（不自动恢复表面板）",
+    );
   }
 
   const provider = new DataSourceProvider(context);
   const treeView = vscode.window.createTreeView("cadb-datasource-tree", {
     treeDataProvider: provider,
     showCollapseAll: true,
+    dragAndDropController: new CadbDragAndDropController(),
   });
   context.subscriptions.push(treeView);
   treeView.onDidExpandElement((e) => provider.addExpandedNode(e.element));
@@ -179,7 +193,7 @@ export function activate(context: vscode.ExtensionContext) {
   const datasourceCommands = registerDatasourceCommands(
     provider,
     treeView,
-    outputChannel
+    outputChannel,
   );
   datasourceCommands.forEach((cmd) => context.subscriptions.push(cmd));
 
@@ -194,7 +208,7 @@ export function activate(context: vscode.ExtensionContext) {
         if (treeState?.expandedNodes?.length) {
           const restoreExpandedState = async (
             element: Datasource,
-            expandedNodes: string[]
+            expandedNodes: string[],
           ): Promise<void> => {
             const nodePath = provider.getNodePath(element);
             if (expandedNodes.includes(nodePath)) {
@@ -232,7 +246,10 @@ export function activate(context: vscode.ExtensionContext) {
     ) {
       return;
     }
-    void context.globalState.update(CADB_GLOBAL_DATASOURCE_SIDEBAR_LAST_VISIBLE_KEY, visible);
+    void context.globalState.update(
+      CADB_GLOBAL_DATASOURCE_SIDEBAR_LAST_VISIBLE_KEY,
+      visible,
+    );
   };
   treeView.onDidChangeVisibility((e) => {
     persistDatasourceSidebarVisible(e.visible);
@@ -246,14 +263,14 @@ export function activate(context: vscode.ExtensionContext) {
     dispose: () => {
       void context.globalState.update(
         CADB_GLOBAL_DATASOURCE_SIDEBAR_LAST_VISIBLE_KEY,
-        treeView.visible
+        treeView.visible,
       );
     },
   });
   setTimeout(() => {
     void context.globalState.update(
       CADB_GLOBAL_DATASOURCE_SIDEBAR_LAST_VISIBLE_KEY,
-      treeView.visible
+      treeView.visible,
     );
   }, 3000);
   let ensureDatasourceVisibleTask: Promise<void> | undefined;
@@ -265,10 +282,17 @@ export function activate(context: vscode.ExtensionContext) {
       const sleepLocal = (ms: number): Promise<void> =>
         new Promise((resolve) => setTimeout(resolve, ms));
       const runCmd = async (cmd: string): Promise<void> => {
-        try { await vscode.commands.executeCommand(cmd); } catch { /* ignore */ }
+        try {
+          await vscode.commands.executeCommand(cmd);
+        } catch {
+          /* ignore */
+        }
       };
       for (let attempt = 1; attempt <= 3; attempt++) {
-        revealLog("ensureDatasourceVisible: 开始尝试", { attempt, visible: treeView.visible });
+        revealLog("ensureDatasourceVisible: 开始尝试", {
+          attempt,
+          visible: treeView.visible,
+        });
         if (treeView.visible) {
           revealLog("ensureDatasourceVisible: 视图已可见，直接返回");
           return;
@@ -282,7 +306,9 @@ export function activate(context: vscode.ExtensionContext) {
         }
         await sleepLocal(180);
         if (treeView.visible) {
-          revealLog("ensureDatasourceVisible: 命令后视图可见，直接返回", { attempt });
+          revealLog("ensureDatasourceVisible: 命令后视图可见，直接返回", {
+            attempt,
+          });
           return;
         }
         await sleepLocal(500);
@@ -299,12 +325,16 @@ export function activate(context: vscode.ExtensionContext) {
       const roots = provider.getRootNodes();
       if (roots.length > 0) {
         try {
-          await treeView.reveal(roots[0], { expand: true, select: false, focus: true });
+          await treeView.reveal(roots[0], {
+            expand: true,
+            select: false,
+            focus: true,
+          });
         } catch (e) {
           console.warn("聚焦首个根节点失败:", e);
         }
       }
-    })
+    }),
   );
   // 仅当用户上次关闭前停留在 CADB 数据源视图时，启动后再尝试拉起侧栏（避免每次打开 VS Code 都强制切 Activity Bar）
   if (shouldAutoShowDatasourceSidebar) {
@@ -342,7 +372,9 @@ export function activate(context: vscode.ExtensionContext) {
     return targetPath.startsWith(base);
   };
 
-  const getChildrenSafe = async (element?: Datasource): Promise<Datasource[]> => {
+  const getChildrenSafe = async (
+    element?: Datasource,
+  ): Promise<Datasource[]> => {
     const result = provider.getChildren(element);
     if (Array.isArray(result)) {
       return result;
@@ -352,7 +384,7 @@ export function activate(context: vscode.ExtensionContext) {
   };
 
   const findConnectionForUri = (
-    uri: vscode.Uri
+    uri: vscode.Uri,
   ): { connectionName: string; fileName: string } | undefined => {
     revealLog("findConnectionForUri: 开始", {
       uri: uri.toString(),
@@ -404,22 +436,26 @@ export function activate(context: vscode.ExtensionContext) {
     };
   };
 
-  const findConnectionNode = (connectionName: string): { group: Datasource; connection: Datasource } | undefined => {
-    const target = process.platform === "win32" ? connectionName.toLowerCase() : connectionName;
+  const findConnectionNode = (
+    connectionName: string,
+  ): { group: Datasource; connection: Datasource } | undefined => {
+    const target =
+      process.platform === "win32"
+        ? connectionName.toLowerCase()
+        : connectionName;
     for (const root of provider.getRootNodes()) {
       if (root.type !== "group") {
         continue;
       }
-      const conn = (root.children || []).find(
-        (child) => {
-          if (child.type !== "datasource") {
-            return false;
-          }
-          const label = child.label?.toString() || "";
-          const comparable = process.platform === "win32" ? label.toLowerCase() : label;
-          return comparable === target;
+      const conn = (root.children || []).find((child) => {
+        if (child.type !== "datasource") {
+          return false;
         }
-      );
+        const label = child.label?.toString() || "";
+        const comparable =
+          process.platform === "win32" ? label.toLowerCase() : label;
+        return comparable === target;
+      });
       if (conn) {
         revealLog("findConnectionNode: 命中连接节点", {
           connectionName,
@@ -431,7 +467,9 @@ export function activate(context: vscode.ExtensionContext) {
     }
     const allConnectionNames = provider
       .getRootNodes()
-      .flatMap((root) => (root.children || []).filter((c) => c.type === "datasource"))
+      .flatMap((root) =>
+        (root.children || []).filter((c) => c.type === "datasource"),
+      )
       .map((c) => c.label?.toString() || "");
     revealLog("findConnectionNode: 未命中连接节点", {
       connectionName,
@@ -441,7 +479,10 @@ export function activate(context: vscode.ExtensionContext) {
     return undefined;
   };
 
-  const equalsLabel = (left: string | undefined, right: string | undefined): boolean => {
+  const equalsLabel = (
+    left: string | undefined,
+    right: string | undefined,
+  ): boolean => {
     const l = (left || "").trim();
     const r = (right || "").trim();
     if (process.platform === "win32") {
@@ -450,7 +491,9 @@ export function activate(context: vscode.ExtensionContext) {
     return l === r;
   };
 
-  const getFreshChildren = async (element: Datasource): Promise<Datasource[]> => {
+  const getFreshChildren = async (
+    element: Datasource,
+  ): Promise<Datasource[]> => {
     const children = await getChildrenSafe(element);
     if (children.length > 0) {
       return children;
@@ -473,17 +516,23 @@ export function activate(context: vscode.ExtensionContext) {
     }
     try {
       const connectionChildren = await getFreshChildren(found.connection);
-      const datasourceTypeNode = connectionChildren.find((c) => c.type === "datasourceType");
+      const datasourceTypeNode = connectionChildren.find(
+        (c) => c.type === "datasourceType",
+      );
       if (!datasourceTypeNode) {
         revealLog("revealTableInDatasource: datasourceType 节点未找到", {
           connectionChildrenTypes: connectionChildren.map((c) => c.type),
-          connectionChildrenLabels: connectionChildren.map((c) => c.label?.toString() || ""),
+          connectionChildrenLabels: connectionChildren.map(
+            (c) => c.label?.toString() || "",
+          ),
         });
         return false;
       }
       const dbNodes = await getFreshChildren(datasourceTypeNode);
       const dbNode = dbNodes.find(
-        (db) => db.type === "collection" && equalsLabel(db.label?.toString(), target.databaseName)
+        (db) =>
+          db.type === "collection" &&
+          equalsLabel(db.label?.toString(), target.databaseName),
       );
       if (!dbNode) {
         revealLog("revealTableInDatasource: database 节点未找到", {
@@ -493,7 +542,9 @@ export function activate(context: vscode.ExtensionContext) {
         return false;
       }
       const dbChildren = await getFreshChildren(dbNode);
-      const collectionTypeNode = dbChildren.find((c) => c.type === "collectionType");
+      const collectionTypeNode = dbChildren.find(
+        (c) => c.type === "collectionType",
+      );
       if (!collectionTypeNode) {
         revealLog("revealTableInDatasource: collectionType 节点未找到", {
           database: dbNode.label?.toString() || "",
@@ -504,7 +555,9 @@ export function activate(context: vscode.ExtensionContext) {
       }
       const tableNodes = await getFreshChildren(collectionTypeNode);
       const tableNode = tableNodes.find(
-        (t) => t.type === "document" && equalsLabel(t.label?.toString(), target.tableName)
+        (t) =>
+          t.type === "document" &&
+          equalsLabel(t.label?.toString(), target.tableName),
       );
       if (!tableNode) {
         revealLog("revealTableInDatasource: table 节点未找到", {
@@ -514,7 +567,11 @@ export function activate(context: vscode.ExtensionContext) {
         return false;
       }
       // 仅对最终目标节点执行 reveal，避免中间节点多次滚动造成闪烁
-      await treeView.reveal(tableNode, { expand: false, select: true, focus: false });
+      await treeView.reveal(tableNode, {
+        expand: false,
+        select: true,
+        focus: false,
+      });
       revealLog("revealTableInDatasource: 定位成功", {
         table: tableNode.label?.toString() || "",
       });
@@ -540,9 +597,10 @@ export function activate(context: vscode.ExtensionContext) {
     return undefined;
   };
 
-  const revealTargetInDatasource = async (
-    target: { connectionName: string; fileName: string }
-  ): Promise<boolean> => {
+  const revealTargetInDatasource = async (target: {
+    connectionName: string;
+    fileName: string;
+  }): Promise<boolean> => {
     revealLog("revealTargetInDatasource: 开始", target);
     const found = findConnectionNode(target.connectionName);
     if (!found) {
@@ -551,17 +609,23 @@ export function activate(context: vscode.ExtensionContext) {
     }
     try {
       const connectionChildren = await getFreshChildren(found.connection);
-      const fileTypeNode = connectionChildren.find((c) => c.type === "fileType");
+      const fileTypeNode = connectionChildren.find(
+        (c) => c.type === "fileType",
+      );
       if (!fileTypeNode) {
         revealLog("revealTargetInDatasource: fileType 节点未找到", {
           connectionChildrenTypes: connectionChildren.map((c) => c.type),
-          connectionChildrenLabels: connectionChildren.map((c) => c.label?.toString() || ""),
+          connectionChildrenLabels: connectionChildren.map(
+            (c) => c.label?.toString() || "",
+          ),
         });
         return false;
       }
       let fileNodes = await getFreshChildren(fileTypeNode);
       let targetFile = fileNodes.find(
-        (file) => file.type === "file" && equalsLabel(file.label?.toString(), target.fileName)
+        (file) =>
+          file.type === "file" &&
+          equalsLabel(file.label?.toString(), target.fileName),
       );
       if (!targetFile) {
         revealLog("revealTargetInDatasource: file 首次未命中，准备强制重载", {
@@ -572,7 +636,9 @@ export function activate(context: vscode.ExtensionContext) {
         fileTypeNode.children = [];
         fileNodes = await getChildrenSafe(fileTypeNode);
         targetFile = fileNodes.find(
-          (file) => file.type === "file" && equalsLabel(file.label?.toString(), target.fileName)
+          (file) =>
+            file.type === "file" &&
+            equalsLabel(file.label?.toString(), target.fileName),
         );
       }
       if (!targetFile) {
@@ -583,7 +649,11 @@ export function activate(context: vscode.ExtensionContext) {
         return false;
       }
       // 仅对最终目标节点执行 reveal，避免中间节点多次滚动造成闪烁
-      await treeView.reveal(targetFile, { expand: false, select: true, focus: false });
+      await treeView.reveal(targetFile, {
+        expand: false,
+        select: true,
+        focus: false,
+      });
       revealLog("revealTargetInDatasource: 定位成功", {
         file: targetFile.label?.toString() || "",
       });
@@ -684,10 +754,14 @@ export function activate(context: vscode.ExtensionContext) {
       if (ok) {
         lastActiveEditorRevealKey = activeKey;
         lastActiveEditorRevealAt = Date.now();
-        revealLog("revealActiveEditorInDatasource: 定位成功", { attempt: i + 1 });
+        revealLog("revealActiveEditorInDatasource: 定位成功", {
+          attempt: i + 1,
+        });
         return;
       }
-      revealLog("revealActiveEditorInDatasource: 本轮定位失败，继续重试", { attempt: i + 1 });
+      revealLog("revealActiveEditorInDatasource: 本轮定位失败，继续重试", {
+        attempt: i + 1,
+      });
       await sleep(200);
     }
     revealLog("revealActiveEditorInDatasource: 重试后仍失败", target);
@@ -706,24 +780,30 @@ export function activate(context: vscode.ExtensionContext) {
         enqueueReveal("revealByPath", async () => {
           const connectionName = String(payload?.connectionName || "").trim();
           if (!connectionName) {
-            revealLog("cadb.datasource.revealByPath: connectionName 为空，忽略");
+            revealLog(
+              "cadb.datasource.revealByPath: connectionName 为空，忽略",
+            );
             return;
           }
-          const dedupKey = payload?.databaseName && payload?.tableName
-            ? `table|${connectionName}|${String(payload.databaseName)}|${String(payload.tableName)}`
-            : payload?.fileName
-              ? `file|${connectionName}|${String(payload.fileName)}`
-              : "";
+          const dedupKey =
+            payload?.databaseName && payload?.tableName
+              ? `table|${connectionName}|${String(payload.databaseName)}|${String(payload.tableName)}`
+              : payload?.fileName
+                ? `file|${connectionName}|${String(payload.fileName)}`
+                : "";
           if (dedupKey) {
             const now = Date.now();
             if (
               dedupKey === lastRevealByPathKey &&
               now - lastRevealByPathAt < REVEAL_BY_PATH_DEDUP_MS
             ) {
-              revealLog("cadb.datasource.revealByPath: 命中去重窗口，跳过重复请求", {
-                dedupKey,
-                elapsedMs: now - lastRevealByPathAt,
-              });
+              revealLog(
+                "cadb.datasource.revealByPath: 命中去重窗口，跳过重复请求",
+                {
+                  dedupKey,
+                  elapsedMs: now - lastRevealByPathAt,
+                },
+              );
               return;
             }
             lastRevealByPathKey = dedupKey;
@@ -739,11 +819,17 @@ export function activate(context: vscode.ExtensionContext) {
             for (let i = 0; i < 6; i++) {
               const ok = await revealTableInDatasource(target);
               if (ok) {
-                revealLog("cadb.datasource.revealByPath: 表定位成功", { attempt: i + 1, target });
+                revealLog("cadb.datasource.revealByPath: 表定位成功", {
+                  attempt: i + 1,
+                  target,
+                });
                 return;
               }
               if (i === 2) {
-                revealLog("cadb.datasource.revealByPath: 表定位触发中途 refresh", { attempt: i + 1 });
+                revealLog(
+                  "cadb.datasource.revealByPath: 表定位触发中途 refresh",
+                  { attempt: i + 1 },
+                );
                 provider.refresh();
               }
               await sleep(180);
@@ -752,15 +838,24 @@ export function activate(context: vscode.ExtensionContext) {
             return;
           }
           if (payload?.fileName) {
-            const target = { connectionName, fileName: String(payload.fileName) };
+            const target = {
+              connectionName,
+              fileName: String(payload.fileName),
+            };
             for (let i = 0; i < 6; i++) {
               const ok = await revealTargetInDatasource(target);
               if (ok) {
-                revealLog("cadb.datasource.revealByPath: 文件定位成功", { attempt: i + 1, target });
+                revealLog("cadb.datasource.revealByPath: 文件定位成功", {
+                  attempt: i + 1,
+                  target,
+                });
                 return;
               }
               if (i === 2) {
-                revealLog("cadb.datasource.revealByPath: 文件定位触发中途 refresh", { attempt: i + 1 });
+                revealLog(
+                  "cadb.datasource.revealByPath: 文件定位触发中途 refresh",
+                  { attempt: i + 1 },
+                );
                 provider.refresh();
               }
               await sleep(180);
@@ -768,33 +863,36 @@ export function activate(context: vscode.ExtensionContext) {
             revealLog("cadb.datasource.revealByPath: 文件定位最终失败", target);
           }
         });
-      }
-    )
+      },
+    ),
   );
   context.subscriptions.push(
-    vscode.commands.registerCommand("cadb.datasource.revealActiveEditor", async () => {
-      scheduleActiveEditorReveal("manualCommand");
-    })
+    vscode.commands.registerCommand(
+      "cadb.datasource.revealActiveEditor",
+      async () => {
+        scheduleActiveEditorReveal("manualCommand");
+      },
+    ),
   );
 
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor(() => {
       revealLog("事件: onDidChangeActiveTextEditor");
       scheduleActiveEditorReveal("onDidChangeActiveTextEditor");
-    })
+    }),
   );
   context.subscriptions.push(
     vscode.window.onDidChangeActiveNotebookEditor(() => {
       revealLog("事件: onDidChangeActiveNotebookEditor");
       scheduleActiveEditorReveal("onDidChangeActiveNotebookEditor");
-    })
+    }),
   );
   context.subscriptions.push(
     vscode.workspace.onDidChangeWorkspaceFolders(() => {
       revealLog("事件: onDidChangeWorkspaceFolders");
       provider.refresh();
       scheduleActiveEditorReveal("onDidChangeWorkspaceFolders");
-    })
+    }),
   );
   if (provider.onDidChangeTreeData) {
     context.subscriptions.push(
@@ -808,12 +906,13 @@ export function activate(context: vscode.ExtensionContext) {
         treeDataSettleTimer = setTimeout(() => {
           scheduleActiveEditorReveal("treeDataSettled");
         }, 220);
-      })
+      }),
     );
   }
   // 数据库管理器（替代 CaEditor，只保留数据库选择功能）
   const databaseManager = new DatabaseManager(provider);
   provider.setDatabaseManager(databaseManager);
+  registerCadbTableChatParticipant(context, databaseManager, outputChannel);
 
   const getSqlFileKey = (document: vscode.TextDocument): string | undefined => {
     if (document.languageId !== "sql") return undefined;
@@ -823,11 +922,13 @@ export function activate(context: vscode.ExtensionContext) {
   const getSqlFileBindings = (): Record<string, SqlFileDatabaseBinding> => {
     return context.workspaceState.get<Record<string, SqlFileDatabaseBinding>>(
       SQL_FILE_DATABASE_STATE_KEY,
-      {}
+      {},
     );
   };
 
-  const persistSelectionForDocument = async (document: vscode.TextDocument): Promise<void> => {
+  const persistSelectionForDocument = async (
+    document: vscode.TextDocument,
+  ): Promise<void> => {
     const key = getSqlFileKey(document);
     if (!key) return;
     const connection = databaseManager.getCurrentConnection();
@@ -852,7 +953,9 @@ export function activate(context: vscode.ExtensionContext) {
     await persistSelectionForDocument(editor.document);
   };
 
-  const applyStoredSelectionForDocument = async (document: vscode.TextDocument): Promise<boolean> => {
+  const applyStoredSelectionForDocument = async (
+    document: vscode.TextDocument,
+  ): Promise<boolean> => {
     const key = getSqlFileKey(document);
     if (!key) return false;
     const bindings = getSqlFileBindings();
@@ -866,15 +969,21 @@ export function activate(context: vscode.ExtensionContext) {
       currentDatabase?.label?.toString() === saved.database;
     if (sameAsCurrent) return true;
 
-    const ok = await databaseManager.setActiveDatabase(saved.datasource, saved.database);
+    const ok = await databaseManager.setActiveDatabase(
+      saved.datasource,
+      saved.database,
+    );
     if (!ok) {
       delete bindings[key];
-      await context.workspaceState.update(SQL_FILE_DATABASE_STATE_KEY, bindings);
+      await context.workspaceState.update(
+        SQL_FILE_DATABASE_STATE_KEY,
+        bindings,
+      );
       return false;
     }
     return true;
   };
-  
+
   // 创建数据库状态栏管理器
   const databaseStatusBar = new DatabaseStatusBar(databaseManager);
   context.subscriptions.push(databaseStatusBar);
@@ -884,17 +993,17 @@ export function activate(context: vscode.ExtensionContext) {
 
   // 注册选择数据库命令
   context.subscriptions.push(
-    vscode.commands.registerCommand('cadb.selectDatabase', async () => {
+    vscode.commands.registerCommand("cadb.selectDatabase", async () => {
       await databaseManager.selectDatabase();
       await persistSelectionForActiveSqlEditor();
-    })
+    }),
   );
 
   // 数据库切换后，如果当前是 SQL 文件则自动记忆到该文件
   context.subscriptions.push(
     databaseManager.onDidChangeDatabase(() => {
       void persistSelectionForActiveSqlEditor();
-    })
+    }),
   );
 
   // 切换到 SQL 文件时自动恢复该文件上次使用的数据源
@@ -903,7 +1012,7 @@ export function activate(context: vscode.ExtensionContext) {
       if (editor?.document.languageId === "sql") {
         void applyStoredSelectionForDocument(editor.document);
       }
-    })
+    }),
   );
   // 重载窗口时当前 SQL 编辑器可能不会触发 onDidChangeActiveTextEditor，需主动恢复一次绑定
   const initialEditor = vscode.window.activeTextEditor;
@@ -923,7 +1032,7 @@ export function activate(context: vscode.ExtensionContext) {
       webviewOptions: {
         retainContextWhenHidden: true,
       },
-    })
+    }),
   );
   registerResultCommands(resultProvider);
   context.subscriptions.push(registerGridSidePanelCommand());
@@ -931,17 +1040,20 @@ export function activate(context: vscode.ExtensionContext) {
   // SQL Notebook API（用于打开 .jsql 文件）
   const notebookSerializer = new SqlNotebookSerializer();
   context.subscriptions.push(
-    vscode.workspace.registerNotebookSerializer('cadb.sqlNotebook', notebookSerializer)
+    vscode.workspace.registerNotebookSerializer(
+      "cadb.sqlNotebook",
+      notebookSerializer,
+    ),
   );
 
   // SQL Notebook 控制器（执行 SQL 代码单元格）
   const notebookController = new SqlNotebookController(
-    'cadb.sql-notebook-controller',
-    'cadb.sqlNotebook',
-    'SQL Notebook',
+    "cadb.sql-notebook-controller",
+    "cadb.sqlNotebook",
+    "SQL Notebook",
     provider,
     context,
-    databaseManager  // 传入 databaseManager 以获取当前选择的数据库
+    databaseManager, // 传入 databaseManager 以获取当前选择的数据库
   );
   context.subscriptions.push(notebookController);
 
@@ -953,7 +1065,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.workspace.onDidOpenNotebookDocument(async (notebook) => {
       // 只处理 SQL Notebook
-      if (notebook.notebookType !== 'cadb.sqlNotebook') {
+      if (notebook.notebookType !== "cadb.sqlNotebook") {
         return;
       }
 
@@ -963,28 +1075,35 @@ export function activate(context: vscode.ExtensionContext) {
       const databaseName = metadata?.database;
 
       if (datasourceName && databaseName) {
-        console.log(`[Notebook] 检测到连接信息: ${datasourceName} / ${databaseName}`);
+        console.log(
+          `[Notebook] 检测到连接信息: ${datasourceName} / ${databaseName}`,
+        );
         // 立即设置数据库状态，确保顶部工具栏/状态栏能回显（不依赖后续展开）
-        const ok = await databaseManager.setActiveDatabase(datasourceName, databaseName);
+        const ok = await databaseManager.setActiveDatabase(
+          datasourceName,
+          databaseName,
+        );
         if (ok) {
-          console.log(`[Notebook] 已回显数据库: ${datasourceName} / ${databaseName}`);
+          console.log(
+            `[Notebook] 已回显数据库: ${datasourceName} / ${databaseName}`,
+          );
         }
         // 可选：后台尝试用完整节点更新（用于依赖树结构的逻辑）
         try {
           const connections = provider.getConnections();
           const connectionData = connections.find(
-            (conn) => conn.name === datasourceName
+            (conn) => conn.name === datasourceName,
           );
           if (connectionData) {
             const connection = new Datasource(connectionData);
             const objects = await connection.expand(context);
             const datasourceTypeNode = objects.find(
-              (obj) => obj.type === 'datasourceType'
+              (obj) => obj.type === "datasourceType",
             );
             if (datasourceTypeNode) {
               const databases = await datasourceTypeNode.expand(context);
               const database = databases.find(
-                (db) => db.label === databaseName
+                (db) => db.label === databaseName,
               );
               if (database) {
                 databaseManager.setCurrentDatabase(database, true);
@@ -992,128 +1111,163 @@ export function activate(context: vscode.ExtensionContext) {
             }
           }
         } catch (error) {
-          console.error('[Notebook] 后台加载数据库节点失败:', error);
+          console.error("[Notebook] 后台加载数据库节点失败:", error);
         }
       }
-    })
+    }),
   );
 
   // 已选择数据库时显示的按钮，点击可更换（同 selectDatabase）
   context.subscriptions.push(
-    vscode.commands.registerCommand('cadb.notebook.currentDatabase', async () => {
-      await databaseManager.selectDatabase();
-    })
+    vscode.commands.registerCommand(
+      "cadb.notebook.currentDatabase",
+      async () => {
+        await databaseManager.selectDatabase();
+      },
+    ),
   );
 
   // Cell 底部执行栏（kernel 选择器左侧）：展示该 cell 的数据源/库，点击可设置或切换
   try {
-    const registerFn = (vscode.notebooks as any).registerNotebookCellStatusBarItemProvider;
-    if (typeof registerFn === 'function') {
+    const registerFn = (vscode.notebooks as any)
+      .registerNotebookCellStatusBarItemProvider;
+    if (typeof registerFn === "function") {
       const Right = (vscode as any).NotebookCellStatusBarAlignment?.Right ?? 1;
       context.subscriptions.push(
-        registerFn.call(vscode.notebooks, { viewType: 'cadb.sqlNotebook' }, {
-          provideCellStatusBarItems: (cell: vscode.NotebookCell, _token: vscode.CancellationToken) => {
-            const cadb = cell.metadata?.cadb as { datasource?: string; database?: string } | undefined;
-            const ds = cadb?.datasource ?? '';
-            const db = cadb?.database ?? '';
-            const text = ds && db ? `${ds} / ${db}` : '$(database) 设置数据源';
-            return [{
-              text,
-              alignment: Right,
-              command: { command: 'cadb.notebook.setCellDatabase', arguments: [cell] },
-              tooltip: ds && db ? `点击更换数据源：${ds} / ${db}` : '点击设置该 Cell 的数据源',
-            }];
+        registerFn.call(
+          vscode.notebooks,
+          { viewType: "cadb.sqlNotebook" },
+          {
+            provideCellStatusBarItems: (
+              cell: vscode.NotebookCell,
+              _token: vscode.CancellationToken,
+            ) => {
+              const cadb = cell.metadata?.cadb as
+                | { datasource?: string; database?: string }
+                | undefined;
+              const ds = cadb?.datasource ?? "";
+              const db = cadb?.database ?? "";
+              const text =
+                ds && db ? `${ds} / ${db}` : "$(database) 设置数据源";
+              return [
+                {
+                  text,
+                  alignment: Right,
+                  command: {
+                    command: "cadb.notebook.setCellDatabase",
+                    arguments: [cell],
+                  },
+                  tooltip:
+                    ds && db
+                      ? `点击更换数据源：${ds} / ${db}`
+                      : "点击设置该 Cell 的数据源",
+                },
+              ];
+            },
           },
-        })
+        ),
       );
     }
   } catch (e) {
-    console.warn('[CADB] registerNotebookCellStatusBarItemProvider 不可用:', e);
+    console.warn("[CADB] registerNotebookCellStatusBarItemProvider 不可用:", e);
   }
 
   // 为当前 Cell 单独设置数据库连接（保存到 cell.metadata）
   context.subscriptions.push(
-    vscode.commands.registerCommand('cadb.notebook.setCellDatabase', async (cell?: vscode.NotebookCell) => {
-      const editor = vscode.window.activeNotebookEditor;
-      if (!editor || editor.notebook.notebookType !== 'cadb.sqlNotebook') return;
-      let targetCell: vscode.NotebookCell | undefined = cell;
-      if (!targetCell) {
-        const sel = (editor as any).selection;
-        if (sel && typeof sel.start === 'number') {
-          targetCell = editor.notebook.cellAt(sel.start);
+    vscode.commands.registerCommand(
+      "cadb.notebook.setCellDatabase",
+      async (cell?: vscode.NotebookCell) => {
+        const editor = vscode.window.activeNotebookEditor;
+        if (!editor || editor.notebook.notebookType !== "cadb.sqlNotebook")
+          return;
+        let targetCell: vscode.NotebookCell | undefined = cell;
+        if (!targetCell) {
+          const sel = (editor as any).selection;
+          if (sel && typeof sel.start === "number") {
+            targetCell = editor.notebook.cellAt(sel.start);
+          }
+          targetCell ??= editor.notebook.getCells()[0];
         }
-        targetCell ??= editor.notebook.getCells()[0];
-      }
-      if (!targetCell || !targetCell.notebook) return;
-      await databaseManager.selectDatabase();
-      const conn = databaseManager.getCurrentConnection();
-      const db = databaseManager.getCurrentDatabase();
-      if (!conn || !db) return;
-      const datasource = conn.label?.toString() ?? '';
-      const database = db.label?.toString() ?? '';
-      const edit = new vscode.WorkspaceEdit();
-      const newMetadata = { ...targetCell.metadata, cadb: { datasource, database } };
-      edit.set(targetCell.notebook.uri, [vscode.NotebookEdit.updateCellMetadata(targetCell.index, newMetadata)]);
-      await vscode.workspace.applyEdit(edit);
-      vscode.window.showInformationMessage(`已为 Cell 设置: ${datasource} / ${database}`);
-    })
+        if (!targetCell || !targetCell.notebook) return;
+        await databaseManager.selectDatabase();
+        const conn = databaseManager.getCurrentConnection();
+        const db = databaseManager.getCurrentDatabase();
+        if (!conn || !db) return;
+        const datasource = conn.label?.toString() ?? "";
+        const database = db.label?.toString() ?? "";
+        const edit = new vscode.WorkspaceEdit();
+        const newMetadata = {
+          ...targetCell.metadata,
+          cadb: { datasource, database },
+        };
+        edit.set(targetCell.notebook.uri, [
+          vscode.NotebookEdit.updateCellMetadata(targetCell.index, newMetadata),
+        ]);
+        await vscode.workspace.applyEdit(edit);
+        vscode.window.showInformationMessage(
+          `已为 Cell 设置: ${datasource} / ${database}`,
+        );
+      },
+    ),
   );
 
   // 收起/展开全部结果：通过 createRendererMessaging 发到 renderer
-  const rendererMessaging = vscode.notebooks.createRendererMessaging('cadb.sql-notebook-renderer');
-  context.subscriptions.push(
-    vscode.commands.registerCommand('cadb.notebook.collapseAllResults', () => {
-      const editor = vscode.window.activeNotebookEditor;
-      if (editor?.notebook?.notebookType !== 'cadb.sqlNotebook') return;
-      void rendererMessaging.postMessage({ type: 'collapseAll' }, editor);
-    })
+  const rendererMessaging = vscode.notebooks.createRendererMessaging(
+    "cadb.sql-notebook-renderer",
   );
   context.subscriptions.push(
-    vscode.commands.registerCommand('cadb.notebook.expandAllResults', () => {
+    vscode.commands.registerCommand("cadb.notebook.collapseAllResults", () => {
       const editor = vscode.window.activeNotebookEditor;
-      if (editor?.notebook?.notebookType !== 'cadb.sqlNotebook') return;
-      void rendererMessaging.postMessage({ type: 'expandAll' }, editor);
-    })
+      if (editor?.notebook?.notebookType !== "cadb.sqlNotebook") return;
+      void rendererMessaging.postMessage({ type: "collapseAll" }, editor);
+    }),
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand("cadb.notebook.expandAllResults", () => {
+      const editor = vscode.window.activeNotebookEditor;
+      if (editor?.notebook?.notebookType !== "cadb.sqlNotebook") return;
+      void rendererMessaging.postMessage({ type: "expandAll" }, editor);
+    }),
   );
 
   context.subscriptions.push(
     rendererMessaging.onDidReceiveMessage(({ editor, message }) => {
-      if (editor.notebook.notebookType !== 'cadb.sqlNotebook') {
+      if (editor.notebook.notebookType !== "cadb.sqlNotebook") {
         return;
       }
       void notebookController.handleRendererMessage(editor, message);
-    })
+    }),
   );
 
   // 注册 Notebook 数据库状态显示命令（用于工具栏显示）
   context.subscriptions.push(
-    vscode.commands.registerCommand('cadb.notebook.showDatabaseStatus', () => {
+    vscode.commands.registerCommand("cadb.notebook.showDatabaseStatus", () => {
       const connection = databaseManager.getCurrentConnection();
       const database = databaseManager.getCurrentDatabase();
-      
+
       if (connection && database) {
         vscode.window.showInformationMessage(
-          `当前数据库: ${connection.label} / ${database.label}`
+          `当前数据库: ${connection.label} / ${database.label}`,
         );
       } else if (connection) {
         vscode.window.showWarningMessage(
-          `已选择连接: ${connection.label}，但未选择数据库`
+          `已选择连接: ${connection.label}，但未选择数据库`,
         );
       } else {
-        vscode.window.showWarningMessage('未选择数据库连接');
+        vscode.window.showWarningMessage("未选择数据库连接");
       }
-    })
+    }),
   );
 
   // 注册 Notebook 相关命令
   context.subscriptions.push(
-    vscode.commands.registerCommand('cadb.notebook.new', async () => {
+    vscode.commands.registerCommand("cadb.notebook.new", async () => {
       // 创建新的 .jsql 文件
       const uri = await vscode.window.showSaveDialog({
         filters: {
-          'SQL Notebook': ['jsql']
+          "SQL Notebook": ["jsql"],
         },
-        defaultUri: vscode.Uri.file('untitled.jsql')
+        defaultUri: vscode.Uri.file("untitled.jsql"),
       });
 
       if (uri) {
@@ -1121,20 +1275,20 @@ export function activate(context: vscode.ExtensionContext) {
         const emptyNotebook = {
           datasource: null,
           database: null,
-          cells: []
+          cells: [],
         };
         const content = JSON.stringify(emptyNotebook, null, 2);
-        
+
         // 写入文件
-        await vscode.workspace.fs.writeFile(uri, Buffer.from(content, 'utf-8'));
-        
+        await vscode.workspace.fs.writeFile(uri, Buffer.from(content, "utf-8"));
+
         // 打开文件
         const document = await vscode.workspace.openTextDocument(uri);
         await vscode.window.showNotebookDocument(
-          await vscode.workspace.openNotebookDocument(uri)
+          await vscode.workspace.openNotebookDocument(uri),
         );
       }
-    })
+    }),
   );
 
   // SQL 自动补全（仅支持 Notebook）
@@ -1146,8 +1300,8 @@ export function activate(context: vscode.ExtensionContext) {
       { notebookType: "cadb.sqlNotebook" },
       completionProvider,
       ".", // 触发字符：点号用于 table.column
-      " " // 触发字符：空格用于关键字后
-    )
+      " ", // 触发字符：空格用于关键字后
+    ),
   );
 
   // SQL CodeLens：顶部「运行全部」+ 符合条件的 Explain（不展示逐行「运行」，避免多行格式化后杂乱）
@@ -1155,8 +1309,8 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.languages.registerCodeLensProvider(
       { language: "sql" },
-      sqlCodeLensProvider
-    )
+      sqlCodeLensProvider,
+    ),
   );
 
   // SQL 悬浮提示（表名展示 DDL，字段名展示类型、备注等）
@@ -1164,15 +1318,20 @@ export function activate(context: vscode.ExtensionContext) {
   sqlHoverProvider.setProvider(provider);
   sqlHoverProvider.setDatabaseManager(databaseManager);
   context.subscriptions.push(
-    vscode.languages.registerHoverProvider({ language: "sql" }, sqlHoverProvider)
+    vscode.languages.registerHoverProvider(
+      { language: "sql" },
+      sqlHoverProvider,
+    ),
   );
   context.subscriptions.push(
-    new vscode.Disposable(() => sqlHoverProvider.dispose())
+    new vscode.Disposable(() => sqlHoverProvider.dispose()),
   );
 
   // 表名悬浮弹窗的快捷命令：进入表数据、表编辑
   // 使用无参 command 链接，点击时从 lastHoveredTableInfo 读取（hover 内传参在某些环境下不生效）
-  const resolveTableFromArgs = (args: unknown): [string, string, string] | null => {
+  const resolveTableFromArgs = (
+    args: unknown,
+  ): [string, string, string] | null => {
     if (Array.isArray(args) && args.length >= 3) {
       return [String(args[0]), String(args[1]), String(args[2])];
     }
@@ -1190,47 +1349,71 @@ export function activate(context: vscode.ExtensionContext) {
     return last ? [last.conn, last.db, last.table] : null;
   };
   context.subscriptions.push(
-    vscode.commands.registerCommand("cadb.hover.openTableData", async (args: unknown) => {
-      const parsed = resolveTableFromArgs(args);
-      if (!parsed) return;
-      const [conn, db, table] = parsed;
-      const ds = await resolveTableDatasource(provider, context, conn, db, table);
-      if (ds) await vscode.commands.executeCommand("cadb.item.showData", ds);
-    })
+    vscode.commands.registerCommand(
+      "cadb.hover.openTableData",
+      async (args: unknown) => {
+        const parsed = resolveTableFromArgs(args);
+        if (!parsed) return;
+        const [conn, db, table] = parsed;
+        const ds = await resolveTableDatasource(
+          provider,
+          context,
+          conn,
+          db,
+          table,
+        );
+        if (ds) await vscode.commands.executeCommand("cadb.item.showData", ds);
+      },
+    ),
   );
   context.subscriptions.push(
-    vscode.commands.registerCommand("cadb.hover.editTable", async (args: unknown) => {
-      const parsed = resolveTableFromArgs(args);
-      if (!parsed) return;
-      const [conn, db, table] = parsed;
-      const ds = await resolveTableDatasource(provider, context, conn, db, table);
-      if (ds) await vscode.commands.executeCommand("cadb.datasource.edit", ds);
-    })
+    vscode.commands.registerCommand(
+      "cadb.hover.editTable",
+      async (args: unknown) => {
+        const parsed = resolveTableFromArgs(args);
+        if (!parsed) return;
+        const [conn, db, table] = parsed;
+        const ds = await resolveTableDatasource(
+          provider,
+          context,
+          conn,
+          db,
+          table,
+        );
+        if (ds)
+          await vscode.commands.executeCommand("cadb.datasource.edit", ds);
+      },
+    ),
   );
 
   // 工作区符号：将 MySQL 数据表加入「转到工作区中的符号」(Ctrl/Cmd+T)，选择表可快速打开表数据
   const mysqlTableSymbolProvider = new MySQLTableWorkspaceSymbolProvider(
     provider,
-    context
+    context,
   );
   context.subscriptions.push(
-    vscode.languages.registerWorkspaceSymbolProvider(mysqlTableSymbolProvider)
+    vscode.languages.registerWorkspaceSymbolProvider(mysqlTableSymbolProvider),
   );
 
   // cadb:// 虚拟文档：从工作区符号打开表时，提供占位内容并触发「查看数据」打开表面板
   const cadbTableContentProvider = new CadbTableDocumentContentProvider(
     provider,
-    context
+    context,
   );
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider(
       "cadb",
-      cadbTableContentProvider
-    )
+      cadbTableContentProvider,
+    ),
   );
 
   // SQL 执行器
-  const sqlExecutor = new SqlExecutor(provider, databaseManager, resultProvider, outputChannel);
+  const sqlExecutor = new SqlExecutor(
+    provider,
+    databaseManager,
+    resultProvider,
+    outputChannel,
+  );
   context.subscriptions.push(sqlExecutor);
 
   const getActiveSqlEditor = (): vscode.TextEditor | undefined => {
@@ -1240,7 +1423,10 @@ export function activate(context: vscode.ExtensionContext) {
     return editor;
   };
 
-  const executeSqlStatements = async (document: vscode.TextDocument, sqlText: string): Promise<void> => {
+  const executeSqlStatements = async (
+    document: vscode.TextDocument,
+    sqlText: string,
+  ): Promise<void> => {
     await applyStoredSelectionForDocument(document);
     const statements = splitSqlStatements(sqlText);
     if (statements.length === 0) {
@@ -1268,8 +1454,8 @@ export function activate(context: vscode.ExtensionContext) {
       }
       const cursorOffset = editor.document.offsetAt(editor.selection.active);
       const currentSpan =
-        spans.find(s => cursorOffset >= s.start && cursorOffset <= s.end) ??
-        spans.find(s => text.slice(s.start, s.end).trim().length > 0);
+        spans.find((s) => cursorOffset >= s.start && cursorOffset <= s.end) ??
+        spans.find((s) => text.slice(s.start, s.end).trim().length > 0);
       if (!currentSpan) {
         vscode.window.showWarningMessage("没有可执行的 SQL 语句");
         return;
@@ -1282,53 +1468,65 @@ export function activate(context: vscode.ExtensionContext) {
       await sqlExecutor.executeSql(sql, editor.document);
       await persistSelectionForDocument(editor.document);
       sqlCodeLensProvider.refresh();
-    })
+    }),
   );
 
   // 运行「当前行所在语句」：按分号切分后执行光标所在语句（多行格式化后仍为整条语句）
   context.subscriptions.push(
-    vscode.commands.registerCommand("cadb.sql.runLine", async (uri?: string, line?: number) => {
-      const editor = vscode.window.activeTextEditor;
-      const targetUri =
-        typeof uri === "string" && uri.length > 0
-          ? vscode.Uri.parse(uri)
-          : editor?.document.uri;
-      if (!targetUri) return;
+    vscode.commands.registerCommand(
+      "cadb.sql.runLine",
+      async (uri?: string, line?: number) => {
+        const editor = vscode.window.activeTextEditor;
+        const targetUri =
+          typeof uri === "string" && uri.length > 0
+            ? vscode.Uri.parse(uri)
+            : editor?.document.uri;
+        if (!targetUri) return;
 
-      const document = await vscode.workspace.openTextDocument(targetUri);
-      await applyStoredSelectionForDocument(document);
-      const targetLine =
-        typeof line === "number" ? line : editor?.document.uri.toString() === targetUri.toString()
-          ? editor.selection.active.line
-          : 0;
-      if (targetLine < 0 || targetLine >= document.lineCount) {
-        vscode.window.showWarningMessage("当前行无效");
-        return;
-      }
-      const lineObj = document.lineAt(targetLine);
-      const lineText = lineObj.text;
-      const rel = lineText.search(/\S/);
-      const anchorOffset =
-        rel >= 0
-          ? document.offsetAt(new vscode.Position(targetLine, rel))
-          : document.offsetAt(new vscode.Position(targetLine, 0));
+        const document = await vscode.workspace.openTextDocument(targetUri);
+        await applyStoredSelectionForDocument(document);
+        const targetLine =
+          typeof line === "number"
+            ? line
+            : editor?.document.uri.toString() === targetUri.toString()
+              ? editor.selection.active.line
+              : 0;
+        if (targetLine < 0 || targetLine >= document.lineCount) {
+          vscode.window.showWarningMessage("当前行无效");
+          return;
+        }
+        const lineObj = document.lineAt(targetLine);
+        const lineText = lineObj.text;
+        const rel = lineText.search(/\S/);
+        const anchorOffset =
+          rel >= 0
+            ? document.offsetAt(new vscode.Position(targetLine, rel))
+            : document.offsetAt(new vscode.Position(targetLine, 0));
 
-      const text = document.getText();
-      const spans = parseSqlStatementSpans(text);
-      const span = spans.find((s) => anchorOffset >= s.start && anchorOffset < s.end);
-      if (!span) {
-        vscode.window.showWarningMessage("当前行没有可执行 SQL");
-        return;
-      }
-      const sql = text.slice(span.start, span.end).trim();
-      if (!sql || sql.startsWith("--") || sql.startsWith("#") || sql.startsWith("/*")) {
-        vscode.window.showWarningMessage("当前行没有可执行 SQL");
-        return;
-      }
-      await sqlExecutor.executeSql(sql, document);
-      await persistSelectionForDocument(document);
-      sqlCodeLensProvider.refresh();
-    })
+        const text = document.getText();
+        const spans = parseSqlStatementSpans(text);
+        const span = spans.find(
+          (s) => anchorOffset >= s.start && anchorOffset < s.end,
+        );
+        if (!span) {
+          vscode.window.showWarningMessage("当前行没有可执行 SQL");
+          return;
+        }
+        const sql = text.slice(span.start, span.end).trim();
+        if (
+          !sql ||
+          sql.startsWith("--") ||
+          sql.startsWith("#") ||
+          sql.startsWith("/*")
+        ) {
+          vscode.window.showWarningMessage("当前行没有可执行 SQL");
+          return;
+        }
+        await sqlExecutor.executeSql(sql, document);
+        await persistSelectionForDocument(document);
+        sqlCodeLensProvider.refresh();
+      },
+    ),
   );
 
   // 运行选中 SQL（支持多条）
@@ -1342,7 +1540,7 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
       await executeSqlStatements(editor.document, selected);
-    })
+    }),
   );
 
   // 运行全文 SQL（支持多条）
@@ -1351,50 +1549,54 @@ export function activate(context: vscode.ExtensionContext) {
       const editor = getActiveSqlEditor();
       if (!editor) return;
       await executeSqlStatements(editor.document, editor.document.getText());
-    })
+    }),
   );
 
   // SQL 文档格式化：*.sql、未保存 SQL、SQL Notebook（vscode-notebook-cell）单元格均适用
   const sqlFormatterProvider: vscode.DocumentFormattingEditProvider = {
     provideDocumentFormattingEdits(document, options) {
       try {
-        const formatted = formatSqlWithEditorOptions(document.getText(), options);
+        const formatted = formatSqlWithEditorOptions(
+          document.getText(),
+          options,
+        );
         const fullRange = new vscode.Range(
           document.positionAt(0),
-          document.positionAt(document.getText().length)
+          document.positionAt(document.getText().length),
         );
         return [vscode.TextEdit.replace(fullRange, formatted)];
       } catch (error) {
         vscode.window.showErrorMessage(
-          `SQL 格式化失败: ${error instanceof Error ? error.message : String(error)}`
+          `SQL 格式化失败: ${error instanceof Error ? error.message : String(error)}`,
         );
         return [];
       }
     },
   };
-  const sqlRangeFormatterProvider: vscode.DocumentRangeFormattingEditProvider = {
-    provideDocumentRangeFormattingEdits(document, range, options) {
-      try {
-        const fragment = document.getText(range);
-        const formatted = formatSqlWithEditorOptions(fragment, options);
-        return [vscode.TextEdit.replace(range, formatted)];
-      } catch (error) {
-        vscode.window.showErrorMessage(
-          `SQL 格式化失败: ${error instanceof Error ? error.message : String(error)}`
-        );
-        return [];
-      }
-    },
-  };
+  const sqlRangeFormatterProvider: vscode.DocumentRangeFormattingEditProvider =
+    {
+      provideDocumentRangeFormattingEdits(document, range, options) {
+        try {
+          const fragment = document.getText(range);
+          const formatted = formatSqlWithEditorOptions(fragment, options);
+          return [vscode.TextEdit.replace(range, formatted)];
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `SQL 格式化失败: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          return [];
+        }
+      },
+    };
   context.subscriptions.push(
     vscode.languages.registerDocumentFormattingEditProvider(
       SQL_DOCUMENT_SELECTOR,
-      sqlFormatterProvider
+      sqlFormatterProvider,
     ),
     vscode.languages.registerDocumentRangeFormattingEditProvider(
       SQL_DOCUMENT_SELECTOR,
-      sqlRangeFormatterProvider
-    )
+      sqlRangeFormatterProvider,
+    ),
   );
 
   // 注册 SQL 执行命令
@@ -1402,7 +1604,9 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       "cadb.sql.run",
       async (uri: string, range: vscode.Range) => {
-        const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(uri));
+        const document = await vscode.workspace.openTextDocument(
+          vscode.Uri.parse(uri),
+        );
         await applyStoredSelectionForDocument(document);
         const sql = document.getText(range).trim();
         if (sql) {
@@ -1413,20 +1617,21 @@ export function activate(context: vscode.ExtensionContext) {
           if (!currentConnection || !currentDatabase) {
             // 如果没有选择数据库，提示用户选择
             const choice = await vscode.window.showWarningMessage(
-              '没有选择数据库连接，请先选择数据库连接',
+              "没有选择数据库连接，请先选择数据库连接",
               { modal: true },
-              '选择数据库', '取消'
+              "选择数据库",
+              "取消",
             );
 
-            if (choice === '选择数据库') {
+            if (choice === "选择数据库") {
               await databaseManager.selectDatabase();
-              
+
               // 再次检查是否选择了数据库
               const newConnection = databaseManager.getCurrentConnection();
               const newDatabase = databaseManager.getCurrentDatabase();
-              
+
               if (!newConnection || !newDatabase) {
-                vscode.window.showErrorMessage('未选择数据库连接，无法执行SQL');
+                vscode.window.showErrorMessage("未选择数据库连接，无法执行SQL");
                 return;
               }
             } else {
@@ -1439,8 +1644,8 @@ export function activate(context: vscode.ExtensionContext) {
           // 刷新 CodeLens
           sqlCodeLensProvider.refresh();
         }
-      }
-    )
+      },
+    ),
   );
 
   // 注册 SQL Explain 命令
@@ -1448,13 +1653,19 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       "cadb.sql.explain",
       async (uri: string, range: vscode.Range) => {
-        const document = await vscode.workspace.openTextDocument(vscode.Uri.parse(uri));
+        const document = await vscode.workspace.openTextDocument(
+          vscode.Uri.parse(uri),
+        );
         await applyStoredSelectionForDocument(document);
         const fullText = document.getText();
         const anchorOffset = document.offsetAt(range.start);
         const spans = parseSqlStatementSpans(fullText);
-        const span = spans.find((s) => anchorOffset >= s.start && anchorOffset < s.end);
-        const sql = (span ? fullText.slice(span.start, span.end) : document.getText(range)).trim();
+        const span = spans.find(
+          (s) => anchorOffset >= s.start && anchorOffset < s.end,
+        );
+        const sql = (
+          span ? fullText.slice(span.start, span.end) : document.getText(range)
+        ).trim();
         if (sql) {
           // 检查是否选择了数据库
           const currentConnection = databaseManager.getCurrentConnection();
@@ -1463,20 +1674,21 @@ export function activate(context: vscode.ExtensionContext) {
           if (!currentConnection || !currentDatabase) {
             // 如果没有选择数据库，提示用户选择
             const choice = await vscode.window.showWarningMessage(
-              '没有选择数据库连接，请先选择数据库连接',
+              "没有选择数据库连接，请先选择数据库连接",
               { modal: true },
-              '选择数据库', '取消'
+              "选择数据库",
+              "取消",
             );
 
-            if (choice === '选择数据库') {
+            if (choice === "选择数据库") {
               await databaseManager.selectDatabase();
-              
+
               // 再次检查是否选择了数据库
               const newConnection = databaseManager.getCurrentConnection();
               const newDatabase = databaseManager.getCurrentDatabase();
-              
+
               if (!newConnection || !newDatabase) {
-                vscode.window.showErrorMessage('未选择数据库连接，无法执行SQL');
+                vscode.window.showErrorMessage("未选择数据库连接，无法执行SQL");
                 return;
               }
             } else {
@@ -1489,8 +1701,8 @@ export function activate(context: vscode.ExtensionContext) {
           // 刷新 CodeLens
           sqlCodeLensProvider.refresh();
         }
-      }
-    )
+      },
+    ),
   );
 }
 
