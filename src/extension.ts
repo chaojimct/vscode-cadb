@@ -21,7 +21,6 @@ import { SqlCodeLensProvider } from "./provider/component/sql_codelens_provider"
 import { SqlHoverProvider, lastHoveredTableInfo } from "./provider/component/sql_hover_provider";
 import { SqlExecutor } from "./provider/component/sql_executor";
 import { DatabaseStatusBar } from "./provider/component/database_status_bar";
-import { registerCadbTableChatParticipant } from "./provider/component/cadb_table_chat_participant";
 import {
   MySQLTableWorkspaceSymbolProvider,
   CadbTableDocumentContentProvider,
@@ -815,7 +814,6 @@ export function activate(context: vscode.ExtensionContext) {
   // 数据库管理器（替代 CaEditor，只保留数据库选择功能）
   const databaseManager = new DatabaseManager(provider);
   provider.setDatabaseManager(databaseManager);
-  registerCadbTableChatParticipant(context, databaseManager, outputChannel);
 
   const getSqlFileKey = (document: vscode.TextDocument): string | undefined => {
     if (document.languageId !== "sql") return undefined;
