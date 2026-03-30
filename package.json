@@ -18,6 +18,7 @@
     "activationEvents": [
         "onLanguage:sql",
         "onNotebook:cadb.sqlNotebook",
+        "onChatParticipant:codingsoul.vscode-cadb.tables",
         "onStartupFinished"
     ],
     "main": "./dist/extension.js",
@@ -291,6 +292,32 @@
                 "requiresMessaging": "always"
             }
         ],
+        "chatParticipants": [
+            {
+                "id": "codingsoul.vscode-cadb.tables",
+                "name": "cadb-tables",
+                "fullName": "CADB 数据表",
+                "description": "结合当前选中库的表结构讨论 SQL（需在聊天中选择语言模型）",
+                "isSticky": true,
+                "commands": [
+                    {
+                        "name": "schema",
+                        "description": "仅列出当前库表与字段摘要，不调用模型"
+                    }
+                ],
+                "disambiguation": [
+                    {
+                        "category": "cadb_tables",
+                        "description": "The user asks about SQL, MySQL tables, columns, database schema, or queries for connections managed by CADB in VS Code.",
+                        "examples": [
+                            "users 表有哪些字段",
+                            "写一条关联订单和用户表的查询",
+                            "给这个库加索引有什么建议"
+                        ]
+                    }
+                ]
+            }
+        ],
         "menus": {
             "view/title": [
                 {
@@ -478,6 +505,11 @@
                 "label": "复制"
             }
         ],
+        "configurationDefaults": {
+            "[sql]": {
+                "editor.defaultFormatter": "codingsoul.vscode-cadb"
+            }
+        },
         "configuration": {
             "title": "CADB",
             "properties": {
