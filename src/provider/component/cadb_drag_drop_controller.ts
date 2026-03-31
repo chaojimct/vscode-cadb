@@ -56,11 +56,11 @@ export class CadbDragAndDropController implements vscode.TreeDragAndDropControll
       new vscode.DataTransferItem(JSON.stringify(items)),
     );
 
-    // text/plain fallback: paste table name(s) as @cadb-tables prompt
+    // text/plain fallback：拖入聊天等场景时粘贴表名列表
     const tableNames = items.map((i) => `\`${i.tableName}\``).join("、");
     dataTransfer.set(
       "text/plain",
-      new vscode.DataTransferItem(`@cadb-tables 请分析 ${tableNames} 表的结构`),
+      new vscode.DataTransferItem(`数据表：${tableNames}`),
     );
   }
 

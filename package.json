@@ -3,7 +3,7 @@
     "displayName": "vscode-cadb",
     "publisher": "codingsoul",
     "description": "Powerful database management VSCode plugin!",
-    "version": "0.1.5",
+    "version": "0.1.6",
     "engines": {
         "vscode": "^1.104.0"
     },
@@ -18,8 +18,7 @@
     "activationEvents": [
         "onLanguage:sql",
         "onNotebook:cadb.sqlNotebook",
-        "onStartupFinished",
-        "onChatParticipant:codingsoul.vscode-cadb.tables"
+        "onStartupFinished"
     ],
     "main": "./dist/extension.js",
     "icon": "logo.png",
@@ -248,6 +247,16 @@
                 "icon": "$(search-sparkle)"
             },
             {
+                "command": "cadb.quickExecuteSql",
+                "title": "快速执行 SQL…",
+                "icon": "$(run)"
+            },
+            {
+                "command": "cadb.quickExecuteSqlFromHistory",
+                "title": "从快速执行历史中选择并执行…",
+                "icon": "$(history)"
+            },
+            {
                 "command": "cadb.hover.openTableData",
                 "title": "进入表数据"
             },
@@ -290,24 +299,6 @@
                 ],
                 "entrypoint": "./resources/notebook/renderer.js",
                 "requiresMessaging": "always"
-            }
-        ],
-        "chatParticipants": [
-            {
-                "id": "codingsoul.vscode-cadb.tables",
-                "name": "cadb-tables",
-                "fullName": "CADB 数据表",
-                "description": "结合当前选中库的表结构讨论 SQL（需在聊天中选择语言模型）",
-                "isSticky": true,
-                "chatDropMimeTypes": [
-                    "application/vnd.code.tree.cadb-datasource-tree"
-                ],
-                "commands": [
-                    {
-                        "name": "schema",
-                        "description": "仅列出当前库表与字段摘要，不调用模型"
-                    }
-                ]
             }
         ],
         "menus": {
@@ -529,6 +520,13 @@
                     "default": false,
                     "description": "保存 SQL Notebook（.jsql）时自动格式化所有 SQL 单元格"
                 },
+                "cadb.quickExecuteSql.historyMaxEntries": {
+                    "type": "number",
+                    "default": 10,
+                    "minimum": 1,
+                    "maximum": 200,
+                    "description": "通过「快速执行 SQL」（Ctrl+Alt+Q）记录的语句历史条数；列表中最上方为最新，超出后丢弃最旧记录"
+                },
                 "cadb.grid.pageSize": {
                     "type": "number",
                     "default": 2000,
@@ -600,6 +598,24 @@
                 "command": "cadb.datasource.search",
                 "key": "cmd+f",
                 "when": "view =~ /datasource/ && isMac"
+            },
+            {
+                "command": "cadb.quickExecuteSql",
+                "key": "ctrl+alt+q"
+            },
+            {
+                "command": "cadb.quickExecuteSql",
+                "key": "cmd+alt+q",
+                "when": "isMac"
+            },
+            {
+                "command": "cadb.quickExecuteSqlFromHistory",
+                "key": "ctrl+alt+a"
+            },
+            {
+                "command": "cadb.quickExecuteSqlFromHistory",
+                "key": "cmd+alt+a",
+                "when": "isMac"
             }
         ]
     },

@@ -163,6 +163,91 @@ export class DatabaseManager {
   }
 
   /**
+   * 快速执行 SQL 等场景：选库列表首项可「使用上次选择」（仅当连接与上次记录的 connectionName 一致且该库仍在列表中）
+   */
+  public async selectDatabaseFromConnectionWithLastRecall(
+    connection: Datasource,
+    lastTarget: { connectionName: string; databaseName: string } | undefined,
+  ): Promise<Datasource | undefined> {
+    return await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: "正在获取数据库列表...",
+        cancellable: false,
+      },
+      async () => {
+        const objects = await connection.expand(this.provider.context);
+
+        const datasourceTypeNode = objects.find(
+          (obj) => obj.type === "datasourceType",
+        );
+        if (!datasourceTypeNode) {
+          vscode.window.showWarningMessage("无法找到数据库列表节点");
+          return undefined;
+        }
+
+        const databases = await datasourceTypeNode.expand(this.provider.context);
+
+        if (databases.length === 0) {
+          vscode.window.showWarningMessage("该连接没有可用的数据库");
+          return undefined;
+        }
+
+        const connKey = String(
+          connection.data?.name ?? connection.label ?? "",
+        ).trim();
+
+        const showLast =
+          !!lastTarget &&
+          lastTarget.connectionName === connKey &&
+          databases.some(
+            (d) => String(d.label ?? "") === lastTarget.databaseName,
+          );
+
+        interface DatabaseQuickPickItem extends vscode.QuickPickItem {
+          datasource?: Datasource;
+          isLastChoice?: boolean;
+        }
+
+        const databaseItems: DatabaseQuickPickItem[] = [];
+        if (showLast) {
+          databaseItems.push({
+            label: "$(history) 使用上次选择",
+            description: lastTarget!.databaseName,
+            detail: "直接使用上次在该连接下选择的数据库",
+            isLastChoice: true,
+          });
+        }
+        for (const db of databases) {
+          databaseItems.push({
+            label: `$(database) ${db.label}`,
+            description:
+              typeof db.description === "string" ? db.description : "",
+            datasource: db,
+          });
+        }
+
+        const selected = await vscode.window.showQuickPick(databaseItems, {
+          placeHolder: showLast
+            ? `选择 ${connection.label} 中的数据库，或「使用上次选择」`
+            : `选择 ${connection.label} 中的数据库`,
+          matchOnDescription: true,
+        });
+
+        if (!selected) {
+          return undefined;
+        }
+        if (selected.isLastChoice && lastTarget) {
+          return databases.find(
+            (d) => String(d.label ?? "") === lastTarget.databaseName,
+          );
+        }
+        return selected.datasource;
+      },
+    );
+  }
+
+  /**
    * 获取当前选中的连接
    */
   public getCurrentConnection(): Datasource | null {
