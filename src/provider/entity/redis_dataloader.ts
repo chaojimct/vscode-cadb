@@ -91,6 +91,16 @@ export class RedisDataloader implements Dataloader {
   connect(): Promise<void> {
     throw new Error("Method not implemented.");
   }
+
+  async disconnect(): Promise<void> {
+    try {
+      if (this.client?.isOpen) {
+        await this.client.quit();
+      }
+    } catch {
+      /* 忽略 */
+    }
+  }
   getConnection() {
     throw new Error("Method not implemented.");
   }

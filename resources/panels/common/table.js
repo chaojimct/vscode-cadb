@@ -3,10 +3,21 @@
  * 使用 AG Grid Community 进行数据渲染
  */
 
-/** AG Grid 行号列 id，与内置 Row Numbers 一致（用于排除 Ctrl+预览等） */
-const CADB_AG_ROW_NUMBERS_COL_ID = "ag-Grid-RowNumbersColumn";
-
 class DatabaseTableData {
+  /**
+   * 与桌面惯例一致：Windows / Linux 使用 Ctrl；macOS 使用 Command(⌘)。
+   */
+  static primaryModifierActive(e) {
+    if (!e) {
+      return false;
+    }
+    const mac =
+      typeof navigator !== "undefined" &&
+      (/Mac|iPhone|iPad|iPod/i.test(navigator.platform || "") ||
+        /Mac OS X/i.test(navigator.userAgent || ""));
+    return mac ? !!e.metaKey : !!e.ctrlKey;
+  }
+
   constructor(options) {
     this.tableSelector = options.tableSelector;
     this.vscode = options.vscode || null;
@@ -34,6 +45,8 @@ class DatabaseTableData {
     this._pendingColumnState = null;
     /** 避免首屏/恢复列状态时 onSortChanged、onFilterChanged 触发多余 loadPage */
     this._allowServerQueryReload = false;
+    /** 最近一次单击的单元格所在行（用于 Webview 中无选中/无焦点时的 Ctrl+C 回退） */
+    this._lastInteractedRowData = null;
   }
 
   /**
@@ -88,6 +101,7 @@ class DatabaseTableData {
    * @param {object} [options] - 可选，{ pageSize, offset } 存在时启用服务端分页
    */
   init(columns, data, queryTime, options) {
+    this._lastInteractedRowData = null;
     this.columns = columns;
     this.tableData = data || [];
     this.queryTime = queryTime || 0;
@@ -266,12 +280,25 @@ class DatabaseTableData {
       pagination: !this.serverPagination,
       paginationPageSize: this.paginationSize,
       paginationPageSizeSelector: false,
-      rowSelection: { mode: "multiRow", enableClickSelection: false },
+      /** 仅通过左侧复选框多选；单击单元格不勾选行（复制仍可用 getSelectedRows / 焦点行 / _lastInteractedRowData） */
+      rowSelection: {
+        mode: "multiRow",
+        checkboxes: true,
+        headerCheckbox: true,
+        enableClickSelection: false,
+      },
+      selectionColumnDef: {
+        sortable: false,
+        resizable: false,
+        suppressHeaderMenuButton: true,
+        pinned: "left",
+        lockPosition: true,
+        lockPinned: true,
+        width: 48,
+        maxWidth: 56,
+      },
       stopEditingWhenCellsLoseFocus: true,
       animateRows: false,
-      rowNumbers: {
-        enableRowResizer: true,
-      },
       getRowId: (params) => params.data.__rowIndex != null ? String(params.data.__rowIndex) : params.id,
       rowClassRules: {
         "grid-row-deleted": (params) => params.data?.__deleted === true,
@@ -312,15 +339,18 @@ class DatabaseTableData {
       },
       onPaginationChanged: boundUpdatePaginationUI,
       onCellClicked: (e) => {
+        if (e.data) {
+          self._lastInteractedRowData = e.data;
+        }
         if (!self.cellCtrlClickPreview || !self.vscode) {
           return;
         }
         const ev = e.event;
-        if (!ev || !(ev.ctrlKey || ev.metaKey)) {
+        if (!ev || !DatabaseTableData.primaryModifierActive(ev)) {
           return;
         }
         const colId = e.column?.getColId?.();
-        if (!colId || colId === CADB_AG_ROW_NUMBERS_COL_ID) {
+        if (!colId) {
           return;
         }
         const det = typeof window !== "undefined" && window.CadbCellPreviewDetector;
@@ -981,5 +1011,398 @@ class DatabaseTableData {
   exportCSV() {
     if (!this.gridApi) return;
     this.gridApi.exportDataAsCsv({ bom: true, fileName: "data.csv" });
+  }
+
+  /**
+   * 当前网格中、按显示顺序排列的数据列 field（排除内部 __ 字段）
+   */
+  getDisplayedDataColumnFieldsOrdered() {
+    if (!this.gridApi) return [];
+    const cols = this.gridApi.getAllDisplayedColumns();
+    if (!cols || !cols.length) return [];
+    const out = [];
+    for (let i = 0; i < cols.length; i++) {
+      const col = cols[i];
+      const id = col.getColId();
+      const def = col.getColDef();
+      if (def.checkboxSelection) {
+        continue;
+      }
+      const field = def.field != null ? def.field : id;
+      if (typeof field !== "string" || field.startsWith("__")) {
+        continue;
+      }
+      out.push(field);
+    }
+    return out;
+  }
+
+  /**
+   * TSV 单元格转义（制表符/换行替换为空格，避免列错乱）
+   */
+  _escapeTsvCell(s) {
+    if (s == null) {
+      return "";
+    }
+    return String(s).replace(/\r\n|\r|\n/g, " ").replace(/\t/g, " ");
+  }
+
+  /**
+   * 将剪贴板文本解析为二维字符串数组（按行、制表符分列；忽略末尾空行）
+   */
+  _parseClipboardTsvMatrix(text) {
+    if (text == null || String(text).trim() === "") {
+      return [];
+    }
+    const lines = String(text).split(/\r\n|\r|\n/);
+    while (lines.length && lines[lines.length - 1] === "") {
+      lines.pop();
+    }
+    return lines.map((line) => line.split("\t"));
+  }
+
+  /**
+   * 将粘贴字符串按列类型粗解析为单元格值（与编辑/保存语义尽量一致）
+   */
+  _coercePastedValueForField(field, rawString) {
+    if (rawString === "") {
+      return null;
+    }
+    const col = (this.columns || []).find((c) => c.field === field);
+    if (!col) {
+      return rawString;
+    }
+    const type = (col.type != null ? String(col.type) : "").toLowerCase().trim();
+    const typeTrim = type.trim();
+    const isBit1 = /^bit\s*\(\s*1\s*\)$/.test(type) || (type.startsWith("bit") && type.includes("1"));
+    const isJsonType = /^json(\s|\(|$)/i.test(typeTrim);
+    const isNumeric = /^(tinyint|smallint|mediumint|int|bigint|decimal|float|double|numeric|bit)(\s|\(|$)/i.test(
+      type
+    );
+
+    if (isBit1) {
+      const t = String(rawString).trim().toLowerCase();
+      if (t === "1" || t === "true" || t === "yes") {
+        return 1;
+      }
+      if (t === "0" || t === "false" || t === "no" || t === "") {
+        return 0;
+      }
+      const n = Number(rawString);
+      return n ? 1 : 0;
+    }
+    if (isJsonType) {
+      try {
+        return JSON.parse(rawString);
+      } catch (_e) {
+        return rawString;
+      }
+    }
+    if (isNumeric) {
+      const n = Number(rawString);
+      if (!Number.isNaN(n) && String(rawString).trim() !== "") {
+        return n;
+      }
+      return rawString;
+    }
+    return rawString;
+  }
+
+  _appendEmptyDataRowForPaste() {
+    if (!this.gridApi) return null;
+    const defaults = this.getNewRowFormDefaults();
+    const rowIndex = this.tableData.length;
+    const newData = { ...defaults, __rowIndex: rowIndex, __isNew: true };
+    this.tableData.push(newData);
+    this.originalData.set(rowIndex, JSON.parse(JSON.stringify(newData)));
+    this.gridApi.applyTransaction({ add: [newData] });
+    return this.gridApi.getRowNode(String(rowIndex));
+  }
+
+  /**
+   * 解析当前要复制的行与列（选中行 → 焦点行 → 最近点击行）
+   * @returns {{ ok: true, fields: string[], rows: object[] } | { ok: false, reason: string }}
+   */
+  getRowsForCopyPayload() {
+    const api = this.gridApi;
+    if (!api) {
+      return { ok: false, reason: "no-grid" };
+    }
+    const fields = this.getDisplayedDataColumnFieldsOrdered();
+    if (!fields.length) {
+      return { ok: false, reason: "no-columns" };
+    }
+    let rows = api.getSelectedRows() || [];
+    if (!rows.length && typeof api.getSelectedNodes === "function") {
+      try {
+        const nodes = api.getSelectedNodes();
+        if (nodes && nodes.length) {
+          rows = nodes.map((n) => n.data).filter(Boolean);
+        }
+      } catch (_e) {
+        /* 忽略 */
+      }
+    }
+    if (!rows.length && typeof api.forEachNode === "function") {
+      const acc = [];
+      try {
+        api.forEachNode((node) => {
+          if (node && typeof node.isSelected === "function" && node.isSelected() && node.data) {
+            acc.push(node.data);
+          }
+        });
+      } catch (_e2) {
+        /* 忽略 */
+      }
+      if (acc.length) {
+        rows = acc;
+      }
+    }
+    if (!rows.length) {
+      const focused = typeof api.getFocusedCell === "function" ? api.getFocusedCell() : null;
+      if (focused && focused.rowIndex != null && typeof api.getDisplayedRowAtIndex === "function") {
+        const node = api.getDisplayedRowAtIndex(focused.rowIndex);
+        if (node && node.data) {
+          rows = [node.data];
+        }
+      }
+    }
+    if (!rows.length && this._lastInteractedRowData) {
+      rows = [this._lastInteractedRowData];
+    }
+    if (!rows.length) {
+      return { ok: false, reason: "no-selection" };
+    }
+    return { ok: true, fields, rows };
+  }
+
+  _buildTsvFromRows(fields, rows) {
+    const lines = rows.map((row) =>
+      fields.map((f) => this._escapeTsvCell(this.cellValueToPreviewString(row[f], f))).join("\t")
+    );
+    return lines.join("\n");
+  }
+
+  _cellValueForJsonExport(value, field) {
+    if (value == null) {
+      return null;
+    }
+    if (typeof value === "object" && value.type === "Buffer" && Array.isArray(value.data)) {
+      const hex = value.data
+        .map((b) => String(Number(b).toString(16).padStart(2, "0")))
+        .join("");
+      return "0x" + hex.toUpperCase();
+    }
+    if (typeof value === "object") {
+      try {
+        return JSON.parse(JSON.stringify(value));
+      } catch (_e) {
+        return this.cellValueToPreviewString(value, field);
+      }
+    }
+    return value;
+  }
+
+  _buildJsonFromRows(fields, rows) {
+    const arr = rows.map((row) => {
+      const o = {};
+      for (const f of fields) {
+        o[f] = this._cellValueForJsonExport(row[f], f);
+      }
+      return o;
+    });
+    return JSON.stringify(arr, null, 2);
+  }
+
+  _sqlEscapeIdent(id) {
+    return "`" + String(id).replace(/`/g, "``") + "`";
+  }
+
+  _sqlStringLiteral(s) {
+    return "'" + String(s).replace(/\\/g, "\\\\").replace(/'/g, "''") + "'";
+  }
+
+  _sqlValueForInsert(field, value) {
+    if (value == null || value === "") {
+      return "NULL";
+    }
+    if (typeof value === "boolean") {
+      return value ? "1" : "0";
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return String(value);
+    }
+    if (typeof value === "object" && value.type === "Buffer" && Array.isArray(value.data)) {
+      const hex = value.data
+        .map((b) => String(Number(b).toString(16).padStart(2, "0")))
+        .join("");
+      return "X'" + hex.toUpperCase() + "'";
+    }
+    if (typeof value === "object") {
+      try {
+        return this._sqlStringLiteral(JSON.stringify(value));
+      } catch (_e2) {
+        return this._sqlStringLiteral(String(value));
+      }
+    }
+    return this._sqlStringLiteral(String(value));
+  }
+
+  /**
+   * @param {{ tableName?: string, databaseName?: string }} [sqlContext]
+   */
+  _buildInsertSql(fields, rows, sqlContext) {
+    const db = sqlContext && String(sqlContext.databaseName || "").trim();
+    const tbl = (sqlContext && String(sqlContext.tableName || "").trim()) || "unknown_table";
+    const tableSql = db
+      ? `${this._sqlEscapeIdent(db)}.${this._sqlEscapeIdent(tbl)}`
+      : this._sqlEscapeIdent(tbl);
+    const cols = fields.map((f) => this._sqlEscapeIdent(f)).join(", ");
+    const tuples = rows
+      .map((row) => {
+        const vals = fields.map((f) => this._sqlValueForInsert(f, row[f]));
+        return "(" + vals.join(", ") + ")";
+      })
+      .join(",\n");
+    return `INSERT INTO ${tableSql} (${cols}) VALUES\n${tuples};`;
+  }
+
+  /**
+   * @param {"tsv"|"json"|"insert"} format
+   * @param {{ tableName?: string, databaseName?: string }} [sqlContext] insert 时使用
+   */
+  async copyRowsToClipboard(format, sqlContext) {
+    const payload = this.getRowsForCopyPayload();
+    if (!payload.ok) {
+      return payload;
+    }
+    const { fields, rows } = payload;
+    let text = "";
+    if (format === "tsv") {
+      text = this._buildTsvFromRows(fields, rows);
+    } else if (format === "json") {
+      text = this._buildJsonFromRows(fields, rows);
+    } else if (format === "insert") {
+      text = this._buildInsertSql(fields, rows, sqlContext);
+    } else {
+      return { ok: false, reason: "unknown-format" };
+    }
+    const written = await this._writeClipboardText(text);
+    if (!written.ok) {
+      return { ok: false, reason: written.reason || "clipboard-write-failed" };
+    }
+    return { ok: true };
+  }
+
+  /**
+   * 复制选中行为 TSV（仅数据行，不含表头；无选中时复制当前焦点所在行）
+   * @returns {Promise<{ ok: boolean, reason?: string }>}
+   */
+  async copySelectedRowsAsTsv() {
+    return this.copyRowsToClipboard("tsv");
+  }
+
+  /**
+   * Webview 中 navigator.clipboard 常被策略拦截，失败时由扩展 host 写入（与 copyTableDdl 一致）
+   */
+  async _writeClipboardText(text) {
+    const t = text != null ? String(text) : "";
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+        await navigator.clipboard.writeText(t);
+        return { ok: true };
+      }
+    } catch (_e) {
+      /* 再走 host */
+    }
+    if (this.vscode) {
+      try {
+        this.vscode.postMessage({ command: "writeClipboard", text: t });
+        return { ok: true };
+      } catch (_e2) {
+        return { ok: false, reason: "clipboard-write-failed" };
+      }
+    }
+    return { ok: false, reason: "no-clipboard" };
+  }
+
+  /**
+   * 从剪贴板读取 TSV，从当前焦点单元格起向右向下写入；行不足时在表尾追加新行。
+   * @returns {Promise<{ ok: boolean, reason?: string, rowsPasted?: number }>}
+   */
+  async pasteClipboardTsvAtFocusedCell() {
+    const api = this.gridApi;
+    if (!api) {
+      return { ok: false, reason: "no-grid" };
+    }
+    const fields = this.getDisplayedDataColumnFieldsOrdered();
+    if (!fields.length) {
+      return { ok: false, reason: "no-columns" };
+    }
+    let text;
+    try {
+      if (!navigator.clipboard || typeof navigator.clipboard.readText !== "function") {
+        return { ok: false, reason: "no-clipboard" };
+      }
+      text = await navigator.clipboard.readText();
+    } catch (_e) {
+      return { ok: false, reason: "clipboard-read-failed" };
+    }
+    const matrix = this._parseClipboardTsvMatrix(text);
+    if (!matrix.length) {
+      return { ok: false, reason: "empty-clipboard" };
+    }
+
+    let focused = typeof api.getFocusedCell === "function" ? api.getFocusedCell() : null;
+    let startRowIdx = focused && focused.rowIndex != null ? focused.rowIndex : 0;
+    let startColIdx = 0;
+    if (focused && focused.column) {
+      const colId = focused.column.getColId();
+      const idx = fields.indexOf(colId);
+      if (idx >= 0) {
+        startColIdx = idx;
+      }
+    } else if (typeof api.getDisplayedRowAtIndex === "function") {
+      const node0 = api.getDisplayedRowAtIndex(0);
+      if (node0 && node0.data) {
+        startRowIdx = 0;
+      }
+    }
+
+    let pasted = 0;
+    for (let r = 0; r < matrix.length; r++) {
+      const displayIdx = startRowIdx + r;
+      while (
+        typeof api.getDisplayedRowCount === "function" &&
+        displayIdx >= api.getDisplayedRowCount()
+      ) {
+        const appended = this._appendEmptyDataRowForPaste();
+        if (!appended) {
+          break;
+        }
+      }
+      if (typeof api.getDisplayedRowAtIndex !== "function") {
+        return { ok: false, reason: "no-api" };
+      }
+      const rowNode = api.getDisplayedRowAtIndex(displayIdx);
+      if (!rowNode || !rowNode.data) {
+        break;
+      }
+      const rowCells = matrix[r];
+      for (let c = 0; c < rowCells.length; c++) {
+        const fi = startColIdx + c;
+        if (fi >= fields.length) {
+          break;
+        }
+        const field = fields[fi];
+        const rawCell = rowCells[c] != null ? String(rowCells[c]) : "";
+        const value = this._coercePastedValueForField(field, rawCell);
+        rowNode.setDataValue(field, value);
+        pasted++;
+      }
+    }
+
+    this.updatePaginationUI?.();
+    return { ok: true, rowsPasted: matrix.length };
   }
 }

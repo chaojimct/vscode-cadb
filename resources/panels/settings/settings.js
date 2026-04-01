@@ -188,7 +188,7 @@ function initDriversForm(drivers, previewPlugins, extensionVersion) {
       ? `当前扩展 v${String(extensionVersion).trim()}。`
       : "";
   $("#pageSubtitle").text(
-    `使用上方标签切换「驱动」与「预览插件」。驱动：「安装」后出现在新建连接中；表格中 Ctrl/Cmd+单击单元格时按内容类型选用已启用的预览插件。${ver}`
+    `使用上方标签切换「驱动」与「预览插件」。驱动：「安装」后出现在新建连接中；表格中 Windows/Linux 为 Ctrl+单击、macOS 为 ⌘+单击单元格时按内容类型选用已启用的预览插件。${ver}`
   );
   dynamicForm = null;
   const list = Array.isArray(drivers) ? drivers : [];

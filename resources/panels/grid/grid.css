@@ -886,6 +886,51 @@
   accent-color: var(--vscode-focusBorder);
 }
 
+/* ---------- 复制格式浮动菜单（Ctrl+C / ⌘C） ---------- */
+.grid-copy-format-popup {
+  position: fixed;
+  z-index: 100000;
+  min-width: 200px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--vscode-editorWidget-background, var(--vscode-menu-background, #252526));
+  color: var(--vscode-editorWidget-foreground, var(--vscode-menu-foreground, #ccc));
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-menu-border, #454545));
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+  pointer-events: auto;
+}
+.grid-copy-format-popup__title {
+  margin: 0 0 8px;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground, var(--grid-desc-fg));
+}
+.grid-copy-format-popup__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.grid-copy-format-popup__btn {
+  flex: 1 1 auto;
+  min-width: 56px;
+  padding: 6px 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
+  color: var(--vscode-button-secondaryForeground, #e0e0e0);
+  border: 1px solid var(--vscode-button-border, transparent);
+}
+.grid-copy-format-popup__btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #45494e);
+}
+.grid-copy-format-popup__btn:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
 /* ---------- 无障碍 ---------- */
 .sr-only {
   position: absolute !important;

@@ -86,6 +86,8 @@ export interface Dataloader {
 	dbType(): string;
   test(): Promise<PromiseResult>;
   connect(): Promise<void>;
+  /** 关闭底层连接/池（数据源树「关闭连接」时调用；重新打开时会重建 Dataloader） */
+  disconnect(): Promise<void>;
   getConnection(): any; // 返回数据库连接对象
 
   // 列举所有支持的排序规则

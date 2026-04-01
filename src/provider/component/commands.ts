@@ -1074,12 +1074,34 @@ export function registerDatasourceCommands(
     )
   );
 
+  disposables.push(
+    vscode.commands.registerCommand(
+      "cadb.datasource.toggleConnection",
+      async (item?: Datasource) => {
+        const node = item ?? treeView.selection[0];
+        if (!node || node.type !== "datasource") {
+          vscode.window.showWarningMessage("请选择数据源连接节点");
+          return;
+        }
+        if (node.connectionOpen) {
+          await provider.closeDatasourceConnection(node);
+        } else {
+          await provider.openDatasourceConnection(node);
+        }
+      }
+    )
+  );
+
   // 注册刷新命令，支持完整加载
   disposables.push(
     vscode.commands.registerCommand(
       "cadb.datasource.refresh",
       async (item?: Datasource) => {
         if (item && item.type === "datasource") {
+          if (!item.connectionOpen) {
+            vscode.window.showWarningMessage("连接已关闭，请先使用右键「切换连接」打开后再刷新");
+            return;
+          }
           // 如果指定了数据源，则完整加载该数据源
           await vscode.window.withProgress(
             {
@@ -2184,6 +2206,11 @@ async function sqlResultView(
       markDatasourceTableGridDomFocused(panel);
       return;
     }
+    if (message.command === "writeClipboard") {
+      const t = message.text != null ? String(message.text) : "";
+      await vscode.env.clipboard.writeText(t);
+      return;
+    }
     if (message.command === "ready") {
       const limit = getGridPageSize();
       const freshData = await datasource.listData(
@@ -2486,6 +2513,11 @@ async function keyValueResultView(
   panel.webview.onDidReceiveMessage(async (message) => {
     if (message.command === "gridPanelDomFocus") {
       markDatasourceTableGridDomFocused(panel);
+      return;
+    }
+    if (message.command === "writeClipboard") {
+      const t = message.text != null ? String(message.text) : "";
+      await vscode.env.clipboard.writeText(t);
       return;
     }
     if (message.command === "ready") {

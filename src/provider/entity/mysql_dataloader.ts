@@ -294,6 +294,10 @@ ORDER BY INDEX_NAME, SEQ_IN_INDEX
   connect(): Promise<void> {
     return this.ensureConnection();
   }
+
+  disconnect(): Promise<void> {
+    return getMysqlPoolRegistry().releasePool(this.ds.data);
+  }
   async listAllUsers(ds: Datasource): Promise<Datasource[]> {
     try {
       await this.ensureConnection();

@@ -3,7 +3,7 @@
     "displayName": "vscode-cadb",
     "publisher": "codingsoul",
     "description": "Powerful database management VSCode plugin!",
-    "version": "0.1.6",
+    "version": "0.1.7",
     "engines": {
         "vscode": "^1.104.0"
     },
@@ -95,7 +95,7 @@
             },
             {
                 "command": "cadb.grid.toggleSidePanel",
-                "title": "切换表格右侧工具栏（表格内 ⌘F / Ctrl+F）"
+                "title": "切换表格右侧工具栏（表格内 Windows/Linux：Ctrl+F；macOS：⌘F）"
             },
             {
                 "command": "cadb.datasource.edit",
@@ -127,8 +127,13 @@
                 "icon": "$(cursor)"
             },
             {
+                "command": "cadb.datasource.toggleConnection",
+                "title": "打开/关闭 连接",
+                "icon": "$(plug)"
+            },
+            {
                 "command": "cadb.datasource.copyTreeItemName",
-                "title": "复制",
+                "title": "复制名称",
                 "icon": "$(copy)"
             },
             {
@@ -341,6 +346,11 @@
                     "group": "inline"
                 },
                 {
+                    "command": "cadb.datasource.toggleConnection",
+                    "when": "view =~ /datasource/ && (viewItem == datasource || viewItem == datasourceClosed)",
+                    "group": "connection@1"
+                },
+                {
                     "command": "cadb.datasource.edit",
                     "when": "view =~ /datasource/ && !(viewItem =~ /Type$/) && viewItem != folder && viewItem != group",
                     "group": "inline"
@@ -372,12 +382,12 @@
                 },
                 {
                     "command": "cadb.datasource.rename",
-                    "when": "view =~ /datasource/ && viewItem == datasource",
+                    "when": "view =~ /datasource/ && (viewItem == datasource || viewItem == datasourceClosed)",
                     "group": "context"
                 },
                 {
                     "submenu": "cadb.datasource.copyConnectionSubmenu",
-                    "when": "view =~ /datasource/ && viewItem == datasource",
+                    "when": "view =~ /datasource/ && (viewItem == datasource || viewItem == datasourceClosed)",
                     "group": "context"
                 },
                 {

@@ -69,6 +69,117 @@
   let hideMatchedFields = false;
   let userColumnVisibility = new Map();
 
+  const lastPointer = { x: 120, y: 120 };
+  document.addEventListener(
+    "pointermove",
+    (ev) => {
+      lastPointer.x = ev.clientX;
+      lastPointer.y = ev.clientY;
+    },
+    true
+  );
+
+  let copyFormatPopupCleanup = null;
+
+  function closeCopyFormatPopup() {
+    if (typeof copyFormatPopupCleanup === "function") {
+      copyFormatPopupCleanup();
+      copyFormatPopupCleanup = null;
+    }
+  }
+
+  /**
+   * 复制快捷键触发的浮动菜单：TSV / JSON / INSERT（贴近指针）
+   */
+  function showGridCopyFormatPopup(clientX, clientY) {
+    closeCopyFormatPopup();
+    const x = typeof clientX === "number" && clientX > 0 ? clientX : lastPointer.x;
+    const y = typeof clientY === "number" && clientY > 0 ? clientY : lastPointer.y;
+
+    const root = document.createElement("div");
+    root.id = "grid-copy-format-popup";
+    root.className = "grid-copy-format-popup";
+    root.setAttribute("role", "dialog");
+    root.setAttribute("aria-label", "选择复制格式");
+    root.innerHTML =
+      '<div class="grid-copy-format-popup__title">复制为</div>' +
+      '<div class="grid-copy-format-popup__buttons">' +
+      '<button type="button" class="grid-copy-format-popup__btn" data-copy-format="tsv">TSV</button>' +
+      '<button type="button" class="grid-copy-format-popup__btn" data-copy-format="json">JSON</button>' +
+      '<button type="button" class="grid-copy-format-popup__btn" data-copy-format="insert">Insert</button>' +
+      "</div>";
+    document.body.appendChild(root);
+
+    const onDocPointerDown = (ev) => {
+      if (!root.contains(ev.target)) {
+        closeCopyFormatPopup();
+      }
+    };
+    const onKey = (ev) => {
+      if (ev.key === "Escape") {
+        closeCopyFormatPopup();
+      }
+    };
+
+    copyFormatPopupCleanup = () => {
+      document.removeEventListener("pointerdown", onDocPointerDown, true);
+      document.removeEventListener("keydown", onKey, true);
+      root.remove();
+    };
+
+    setTimeout(() => {
+      document.addEventListener("pointerdown", onDocPointerDown, true);
+      document.addEventListener("keydown", onKey, true);
+    }, 0);
+
+    const pad = 10;
+    const placePopup = () => {
+      const rect = root.getBoundingClientRect();
+      let left = x + pad;
+      let top = y + pad;
+      if (left + rect.width > window.innerWidth - 8) {
+        left = Math.max(8, window.innerWidth - rect.width - 8);
+      }
+      if (top + rect.height > window.innerHeight - 8) {
+        top = Math.max(8, y - rect.height - pad);
+      }
+      root.style.left = left + "px";
+      root.style.top = top + "px";
+    };
+    placePopup();
+    requestAnimationFrame(placePopup);
+
+    root.querySelectorAll("[data-copy-format]").forEach((btn) => {
+      btn.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const fmt = btn.getAttribute("data-copy-format");
+        const sqlCtx = {
+          tableName: tableMeta.tableName,
+          databaseName: tableMeta.databaseName,
+        };
+        dbTable.copyRowsToClipboard(fmt, sqlCtx).then((res) => {
+          closeCopyFormatPopup();
+          if (res.ok || !vscode) {
+            return;
+          }
+          const msg =
+            res.reason === "no-selection"
+              ? "请先选中行，或单击某个单元格后再复制"
+              : res.reason === "no-columns"
+                ? "当前没有可复制的数据列"
+                : "复制到剪贴板失败";
+          vscode.postMessage({ command: "showMessage", type: "warning", message: msg });
+        });
+      });
+    });
+
+    const firstBtn = root.querySelector("[data-copy-format]");
+    if (firstBtn instanceof HTMLElement) {
+      firstBtn.focus();
+    }
+  }
+
   const actions = {
     save: () => {
       const changed = dbTable.getChangedRows();
@@ -534,7 +645,7 @@
   });
 
   /**
-   * 右侧工具栏：⌘F / Ctrl+F 切换显示；Escape 在侧栏展开时收起或清空字段过滤（预览 Tab 不判断过滤框）。
+   * 右侧工具栏：Windows/Linux 为 Ctrl+F，macOS 为 ⌘F 切换显示；Escape 在侧栏展开时收起或清空字段过滤（预览 Tab 不判断过滤框）。
    * 捕获阶段优先于 AG Grid；单元格编辑（contenteditable）内不抢 Escape，以便先结束编辑。
    */
   document.addEventListener(
@@ -579,10 +690,66 @@
         return;
       }
 
+      /** Windows/Linux：Ctrl+C / Ctrl+V；macOS：Cmd+C / Cmd+V；复制时弹出格式菜单 */
+      const keyLower = e.key;
+      const isCopyKey = keyLower === "c" || keyLower === "C";
+      const isPasteKey = keyLower === "v" || keyLower === "V";
+      if (
+        (isCopyKey || isPasteKey) &&
+        typeof DatabaseTableData !== "undefined" &&
+        DatabaseTableData.primaryModifierActive(e)
+      ) {
+        const el = e.target;
+        if (el instanceof HTMLElement) {
+          if (el.isContentEditable) {
+            return;
+          }
+          const tag = el.tagName;
+          if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+            // 行选择列为原生 checkbox，焦点在其上时仍需响应复制（不要求先点数据单元格）
+            const isRowSelectionCheckbox =
+              isCopyKey &&
+              tag === "INPUT" &&
+              String(el.getAttribute("type") || "").toLowerCase() === "checkbox" &&
+              !!(el.closest &&
+                (el.closest("#grid") || el.closest(".ag-root-wrapper") || el.closest(".ag-root")));
+            if (!isRowSelectionCheckbox) {
+              return;
+            }
+          }
+        }
+        if (isCopyKey) {
+          e.preventDefault();
+          e.stopPropagation();
+          showGridCopyFormatPopup(e.clientX, e.clientY);
+          return;
+        }
+        if (isPasteKey) {
+          e.preventDefault();
+          e.stopPropagation();
+          dbTable.pasteClipboardTsvAtFocusedCell().then((res) => {
+            if (res.ok || !vscode) {
+              return;
+            }
+            if (res.reason === "empty-clipboard") {
+              return;
+            }
+            const msg =
+              res.reason === "clipboard-read-failed"
+                ? "无法读取剪贴板，请检查权限"
+                : res.reason === "no-columns"
+                  ? "当前没有可粘贴的数据列"
+                  : "粘贴失败";
+            vscode.postMessage({ command: "showMessage", type: "warning", message: msg });
+          });
+          return;
+        }
+      }
+
       if (e.key !== "f" && e.key !== "F") {
         return;
       }
-      if (!(e.metaKey || e.ctrlKey)) {
+      if (typeof DatabaseTableData === "undefined" || !DatabaseTableData.primaryModifierActive(e)) {
         return;
       }
       const el = e.target;

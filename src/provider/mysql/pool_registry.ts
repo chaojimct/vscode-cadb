@@ -58,6 +58,27 @@ export class MysqlPoolRegistry {
     return pool;
   }
 
+  /**
+   * 关闭并移除指定连接配置对应的池（用户主动「关闭连接」时调用）
+   */
+  releasePool(input: DatasourceInputData): Promise<void> {
+    const key = buildPoolKey(input);
+    const pool = this.pools.get(key);
+    if (!pool) {
+      return Promise.resolve();
+    }
+    this.pools.delete(key);
+    return new Promise((resolve, reject) => {
+      pool.end((err) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      });
+    });
+  }
+
   dispose(): void {
     for (const p of this.pools.values()) {
       try {

@@ -61,6 +61,10 @@ export class Datasource extends vscode.TreeItem {
   public parent?: Datasource;
   public type: string;
   public dataloader?: Dataloader;
+  /**
+   * 仅 type===datasource 的根连接节点：是否已打开（false 时不挂载子树、不持有 dataloader）
+   */
+  public connectionOpen = true;
 
   public connect(): Promise<void> {
     if (!this.dataloader) {

@@ -8,6 +8,7 @@ import {
   getOrderedConnectionGroups,
   normalizeConnectionGroupLabel,
 } from "./connection_groups";
+import { attachDriverToDatasourceNode } from "./drivers/registry";
 
 /**
  * 树状态接口（仅持久化展开状态与用户过滤选项，不缓存树数据）
@@ -26,6 +27,8 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
   private rootNodes: Datasource[] = [];
   private workspaceConnections: DatasourceInputData[] = [];
   private refreshQueue: Promise<void> = Promise.resolve();
+  /** 用户手动关闭的连接名（内存态，重载窗口后清空） */
+  private readonly closedConnectionNames = new Set<string>();
 
   public getRootNodes(): Datasource[] {
     return this.rootNodes;
@@ -313,6 +316,7 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
   }
 
   public async deleteConnectionRecord(name: string): Promise<void> {
+    this.closedConnectionNames.delete(name);
     const idxWorkspace = this.workspaceConnections.findIndex((c) => c.name === name);
     if (idxWorkspace !== -1) {
       this.workspaceConnections = this.workspaceConnections.filter((c) => c.name !== name);
@@ -375,7 +379,26 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
       const conns = all.filter(
         (c) => this.normalizeGroupName((c as { group?: string }).group) === groupName
       );
-      g.children = conns.map((c) => new Datasource(c, undefined, g));
+      g.children = conns.map((c) => {
+        const node = new Datasource(c, undefined, g);
+        if (this.closedConnectionNames.has(c.name)) {
+          const dl = node.dataloader;
+          node.dataloader = undefined;
+          if (dl) {
+            void dl.disconnect().catch(() => {
+              /* 忽略 */
+            });
+          }
+          node.connectionOpen = false;
+          node.contextValue = "datasourceClosed";
+          node.collapsibleState = vscode.TreeItemCollapsibleState.None;
+          node.children = [];
+          node.description = "已关闭";
+        } else {
+          node.connectionOpen = true;
+        }
+        return node;
+      });
       const n = conns.length;
       g.description = n > 0 ? String(n) : "";
       g.data.extra = g.description;
@@ -470,6 +493,9 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
     if (currentDepth >= maxDepth) {
       return;
     }
+    if (node.type === "datasource" && node.connectionOpen === false) {
+      return;
+    }
 
     try {
       const children = await node.expand(this.context);
@@ -542,6 +568,9 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
    * @param node 要展开的节点
    */
   private async expandRecursive(node: Datasource): Promise<void> {
+    if (node.type === "datasource" && node.connectionOpen === false) {
+      return;
+    }
     try {
       const children = await node.expand(this.context);
       node.children = children || [];
@@ -668,6 +697,10 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
     element: Datasource
   ): vscode.TreeItem | Thenable<vscode.TreeItem> {
     // Keep getTreeItem synchronous — child loading is handled in getChildren
+    if (element.type === "datasource" && element.connectionOpen === false) {
+      element.description = "已关闭";
+      return element;
+    }
     // 确保 description 从 data.extra 同步（优先使用 data.extra）
     if (element.data && element.data.extra) {
       element.description = element.data.extra;
@@ -1143,6 +1176,10 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
    */
   public renameConnection(oldName: string, newName: string): void {
     if (oldName === newName) return;
+    if (this.closedConnectionNames.has(oldName)) {
+      this.closedConnectionNames.delete(oldName);
+      this.closedConnectionNames.add(newName);
+    }
     if (this.treeState.selectedDatabases?.[oldName] !== undefined) {
       if (!this.treeState.selectedDatabases) this.treeState.selectedDatabases = {};
       this.treeState.selectedDatabases[newName] = this.treeState.selectedDatabases[oldName];
@@ -1172,6 +1209,42 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
         return parts.join("/");
       });
     }
+    this.saveTreeState();
+  }
+
+  /** 关闭连接：断开驱动、清空子节点、description 为「已关闭」 */
+  public async closeDatasourceConnection(node: Datasource): Promise<void> {
+    if (node.type !== "datasource") {
+      return;
+    }
+    try {
+      await node.dataloader?.disconnect();
+    } catch (e) {
+      console.error("断开连接失败:", e);
+    }
+    node.dataloader = undefined;
+    node.children = [];
+    node.connectionOpen = false;
+    node.contextValue = "datasourceClosed";
+    node.collapsibleState = vscode.TreeItemCollapsibleState.None;
+    node.description = "已关闭";
+    this.closedConnectionNames.add(node.data.name);
+    this._onDidChangeTreeData.fire(node);
+    this.saveTreeState();
+  }
+
+  /** 重新打开连接：挂载驱动，子节点在用户展开时再加载 */
+  public async openDatasourceConnection(node: Datasource): Promise<void> {
+    if (node.type !== "datasource") {
+      return;
+    }
+    this.closedConnectionNames.delete(node.data.name);
+    node.connectionOpen = true;
+    attachDriverToDatasourceNode(node, node.data);
+    node.contextValue = "datasource";
+    node.collapsibleState = vscode.TreeItemCollapsibleState.Collapsed;
+    node.children = [];
+    this._onDidChangeTreeData.fire(node);
     this.saveTreeState();
   }
 }

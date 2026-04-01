@@ -136,6 +136,14 @@ export class OssDataLoader implements Dataloader {
   connect(): Promise<void> {
     throw new Error("connect Method not implemented.");
   }
+
+  async disconnect(): Promise<void> {
+    try {
+      this.client.destroy();
+    } catch {
+      /* 忽略 */
+    }
+  }
   getConnection() {
     throw new Error("getConnection Method not implemented.");
   }
