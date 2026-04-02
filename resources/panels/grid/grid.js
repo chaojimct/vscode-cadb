@@ -9,6 +9,13 @@
     tableSelector: "#grid",
     vscode: vscode,
     cellCtrlClickPreview: true,
+    /** 侧栏收起或非预览 Tab：需 Ctrl/⌘+单击；侧栏展开且为预览 Tab：普通单击与 Ctrl/⌘+单击均可 */
+    cellPreviewRequiresModifier: () => {
+      if (document.body.classList.contains("grid-side-panel-collapsed")) {
+        return true;
+      }
+      return getActiveGridSideTab() !== "preview";
+    },
     onCellPreviewRequest: () => {
       ensureSidePanelOpenForPreview();
       activateGridSideTab("preview");
@@ -719,6 +726,9 @@
           }
         }
         if (isCopyKey) {
+          if (typeof dbTable.hasGridRowSelectionForCopy !== "function" || !dbTable.hasGridRowSelectionForCopy()) {
+            return;
+          }
           e.preventDefault();
           e.stopPropagation();
           showGridCopyFormatPopup(e.clientX, e.clientY);

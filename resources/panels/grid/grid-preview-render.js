@@ -4,6 +4,9 @@
  */
 (function (global) {
   let cadbJsonEditorInstance = null;
+  /** @type {HTMLButtonElement | null} */
+  let cadbJsonExpandToggleBtn = null;
+  let cadbJsonTreeFullyExpanded = true;
 
   function destroyCadbJsonEditor() {
     if (!cadbJsonEditorInstance) {
@@ -15,6 +18,13 @@
       /* 忽略 */
     }
     cadbJsonEditorInstance = null;
+    cadbJsonExpandToggleBtn = null;
+  }
+
+  function updateJsonExpandToggleLabel() {
+    if (!cadbJsonExpandToggleBtn) return;
+    cadbJsonExpandToggleBtn.textContent = cadbJsonTreeFullyExpanded ? "全部收起" : "全部展开";
+    cadbJsonExpandToggleBtn.setAttribute("aria-expanded", cadbJsonTreeFullyExpanded ? "true" : "false");
   }
 
   function clearEl(el) {
@@ -61,6 +71,16 @@
         return;
       }
       container.classList.add("grid-preview-panel__body--jsoneditor");
+      const toolbar = document.createElement("div");
+      toolbar.className = "grid-preview-json-toolbar";
+      const toggleBtn = document.createElement("button");
+      toggleBtn.type = "button";
+      toggleBtn.className = "grid-preview-json-expand-toggle";
+      cadbJsonExpandToggleBtn = toggleBtn;
+      cadbJsonTreeFullyExpanded = true;
+      updateJsonExpandToggleLabel();
+      toolbar.appendChild(toggleBtn);
+      container.appendChild(toolbar);
       const host = document.createElement("div");
       host.className = "grid-preview-jsoneditor-host";
       container.appendChild(host);
@@ -72,7 +92,41 @@
           mainMenuBar: false,
         });
         cadbJsonEditorInstance.set(data);
+        try {
+          if (typeof cadbJsonEditorInstance.expandAll === "function") {
+            cadbJsonEditorInstance.expandAll();
+          }
+        } catch (_expandErr) {
+          /* 忽略：极端情况下展开失败不影响只读展示 */
+        }
+        cadbJsonTreeFullyExpanded = true;
+        updateJsonExpandToggleLabel();
+        toggleBtn.onclick = function () {
+          if (!cadbJsonEditorInstance) return;
+          if (cadbJsonTreeFullyExpanded) {
+            try {
+              if (typeof cadbJsonEditorInstance.collapseAll === "function") {
+                cadbJsonEditorInstance.collapseAll();
+              }
+            } catch (_e) {
+              /* 忽略 */
+            }
+            cadbJsonTreeFullyExpanded = false;
+          } else {
+            try {
+              if (typeof cadbJsonEditorInstance.expandAll === "function") {
+                cadbJsonEditorInstance.expandAll();
+              }
+            } catch (_e) {
+              /* 忽略 */
+            }
+            cadbJsonTreeFullyExpanded = true;
+          }
+          updateJsonExpandToggleLabel();
+        };
       } catch (err) {
+        cadbJsonExpandToggleBtn = null;
+        toolbar.remove();
         host.textContent = err && err.message ? String(err.message) : String(err);
       }
       return;

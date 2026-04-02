@@ -14,9 +14,12 @@ import { attachDriverToDatasourceNode } from "./drivers/registry";
  * 树状态接口（仅持久化展开状态与用户过滤选项，不缓存树数据）
  */
 interface TreeState {
-  expandedNodes: string[]; // 存储已展开节点的路径
+  /** 已展开节点路径（含根分组 group:名称、连接 datasource:名称 等），与 TreeView onDidExpand/Collapse 同步 */
+  expandedNodes: string[];
   selectedDatabases?: Record<string, string[]>; // 存储每个连接选择显示的数据库
   selectedTables?: Record<string, string[]>; // 存储每个数据库选择显示的表，key格式为 "connectionName:databaseName"
+  /** 用户手动关闭的数据源连接名，重载窗口后仍保持「已关闭」 */
+  closedConnectionNames?: string[];
 }
 
 export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
@@ -27,8 +30,8 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
   private rootNodes: Datasource[] = [];
   private workspaceConnections: DatasourceInputData[] = [];
   private refreshQueue: Promise<void> = Promise.resolve();
-  /** 用户手动关闭的连接名（内存态，重载窗口后清空） */
-  private readonly closedConnectionNames = new Set<string>();
+  /** 用户手动关闭的连接名（与 globalState cadb.treeState.closedConnectionNames 同步持久化） */
+  private closedConnectionNames = new Set<string>();
 
   public getRootNodes(): Datasource[] {
     return this.rootNodes;
@@ -84,9 +87,15 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
       ),
     };
 
-    // 加载树状态
+    // 加载树状态（含已关闭的连接名）
     this.treeState = this.loadTreeState();
-    
+    this.closedConnectionNames.clear();
+    for (const n of this.treeState.closedConnectionNames ?? []) {
+      if (typeof n === "string" && n) {
+        this.closedConnectionNames.add(n);
+      }
+    }
+
     // 初始化数据
     this.initialize();
   }
@@ -317,6 +326,7 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
 
   public async deleteConnectionRecord(name: string): Promise<void> {
     this.closedConnectionNames.delete(name);
+    this.saveTreeState();
     const idxWorkspace = this.workspaceConnections.findIndex((c) => c.name === name);
     if (idxWorkspace !== -1) {
       this.workspaceConnections = this.workspaceConnections.filter((c) => c.name !== name);
@@ -705,6 +715,15 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
     if (element.data && element.data.extra) {
       element.description = element.data.extra;
     }
+    // 根分组：根据持久化的 expandedNodes（cadb.treeState）恢复展开/折叠，避免仅内存事件、重建节点后仍显示为收起
+    if (element.type === "group") {
+      const childCount = element.children?.length ?? 0;
+      if (childCount > 0) {
+        element.collapsibleState = this.shouldExpandNode(element)
+          ? vscode.TreeItemCollapsibleState.Expanded
+          : vscode.TreeItemCollapsibleState.Collapsed;
+      }
+    }
     return element;
   }
   
@@ -869,12 +888,22 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
   private loadTreeState(): TreeState {
     const stored = this.context.globalState.get<TreeState>('cadb.treeState');
     if (!stored) {
-      return { expandedNodes: [], selectedDatabases: {}, selectedTables: {} };
+      return {
+        expandedNodes: [],
+        selectedDatabases: {},
+        selectedTables: {},
+        closedConnectionNames: [],
+      };
     }
+    const closedRaw = stored.closedConnectionNames;
+    const closedConnectionNames = Array.isArray(closedRaw)
+      ? closedRaw.filter((x): x is string => typeof x === "string" && x.length > 0)
+      : [];
     return {
       expandedNodes: stored.expandedNodes ?? [],
       selectedDatabases: stored.selectedDatabases ?? {},
-      selectedTables: stored.selectedTables ?? {}
+      selectedTables: stored.selectedTables ?? {},
+      closedConnectionNames,
     };
   }
 
@@ -882,10 +911,12 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
    * 保存树状态（仅持久化展开状态与过滤选项）
    */
   private saveTreeState(): void {
-    this.context.globalState.update('cadb.treeState', {
+    this.treeState.closedConnectionNames = Array.from(this.closedConnectionNames);
+    void this.context.globalState.update("cadb.treeState", {
       expandedNodes: this.treeState.expandedNodes,
       selectedDatabases: this.treeState.selectedDatabases,
-      selectedTables: this.treeState.selectedTables
+      selectedTables: this.treeState.selectedTables,
+      closedConnectionNames: this.treeState.closedConnectionNames,
     });
   }
 

@@ -23,6 +23,12 @@ class DatabaseTableData {
     this.vscode = options.vscode || null;
     /** 为 true 时：Ctrl/Cmd+点击单元格可向扩展请求侧栏预览（由 grid 页启用） */
     this.cellCtrlClickPreview = !!options.cellCtrlClickPreview;
+    /**
+     * 返回 true 时必须在点击同时按住主修饰键（Ctrl / ⌘）才触发预览；
+     * false 时普通单击即可触发（由 grid 页在「侧栏展开且预览 Tab」时设为 false）
+     */
+    this.cellPreviewRequiresModifier =
+      typeof options.cellPreviewRequiresModifier === "function" ? options.cellPreviewRequiresModifier : null;
     /** 发起 cellPreview 消息前回调（用于展开侧栏、切换预览 Tab） */
     this.onCellPreviewRequest =
       typeof options.onCellPreviewRequest === "function" ? options.onCellPreviewRequest : null;
@@ -346,11 +352,22 @@ class DatabaseTableData {
           return;
         }
         const ev = e.event;
-        if (!ev || !DatabaseTableData.primaryModifierActive(ev)) {
+        const needsModifier =
+          typeof self.cellPreviewRequiresModifier === "function"
+            ? self.cellPreviewRequiresModifier()
+            : true;
+        if (needsModifier && (!ev || !DatabaseTableData.primaryModifierActive(ev))) {
+          return;
+        }
+        if (!needsModifier && ev && ev.button !== 0) {
           return;
         }
         const colId = e.column?.getColId?.();
         if (!colId) {
+          return;
+        }
+        const clickColDef = e.column?.getColDef?.();
+        if (clickColDef && clickColDef.checkboxSelection) {
           return;
         }
         const det = typeof window !== "undefined" && window.CadbCellPreviewDetector;
@@ -1120,17 +1137,12 @@ class DatabaseTableData {
   }
 
   /**
-   * 解析当前要复制的行与列（选中行 → 焦点行 → 最近点击行）
-   * @returns {{ ok: true, fields: string[], rows: object[] } | { ok: false, reason: string }}
+   * 仅 AG Grid 行选中（复选框/表头全选），不含焦点单元格与最近点击行回退
    */
-  getRowsForCopyPayload() {
+  _getSelectedRowsDataOnly() {
     const api = this.gridApi;
     if (!api) {
-      return { ok: false, reason: "no-grid" };
-    }
-    const fields = this.getDisplayedDataColumnFieldsOrdered();
-    if (!fields.length) {
-      return { ok: false, reason: "no-columns" };
+      return [];
     }
     let rows = api.getSelectedRows() || [];
     if (!rows.length && typeof api.getSelectedNodes === "function") {
@@ -1158,6 +1170,30 @@ class DatabaseTableData {
         rows = acc;
       }
     }
+    return rows;
+  }
+
+  /**
+   * 是否存在至少一行被用户勾选（用于 Grid 页是否拦截 Ctrl/Cmd+C 弹出复制格式菜单）
+   */
+  hasGridRowSelectionForCopy() {
+    return this._getSelectedRowsDataOnly().length > 0;
+  }
+
+  /**
+   * 解析当前要复制的行与列（选中行 → 焦点行 → 最近点击行）
+   * @returns {{ ok: true, fields: string[], rows: object[] } | { ok: false, reason: string }}
+   */
+  getRowsForCopyPayload() {
+    const api = this.gridApi;
+    if (!api) {
+      return { ok: false, reason: "no-grid" };
+    }
+    const fields = this.getDisplayedDataColumnFieldsOrdered();
+    if (!fields.length) {
+      return { ok: false, reason: "no-columns" };
+    }
+    let rows = this._getSelectedRowsDataOnly();
     if (!rows.length) {
       const focused = typeof api.getFocusedCell === "function" ? api.getFocusedCell() : null;
       if (focused && focused.rowIndex != null && typeof api.getDisplayedRowAtIndex === "function") {
