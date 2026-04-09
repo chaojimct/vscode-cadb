@@ -436,6 +436,15 @@ WHERE db = '${this.ds.parent?.label}';
           ),
           new Datasource(
             {
+              type: "viewType",
+              name: "视图",
+              tooltip: "",
+            },
+            this,
+            ds
+          ),
+          new Datasource(
+            {
               type: "userType",
               name: "用户",
               tooltip: "",

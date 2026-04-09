@@ -11,7 +11,11 @@ import {
 import { Datasource, type DatasourceInputData } from "../entity/datasource";
 import path from "path";
 import { readFileSync } from "fs";
-import { FormResult, type ListDataSortCol, type TableResult } from "../entity/dataloader";
+import {
+  FormResult,
+  type ListDataSortCol,
+  type TableResult,
+} from "../entity/dataloader";
 import { MySQLDataloader } from "../entity/mysql_dataloader";
 import { OssDataLoader } from "../entity/oss_dataloader";
 import { RedisDataloader } from "../entity/redis_dataloader";
@@ -55,7 +59,7 @@ function toErrorMessage(error: unknown): string {
  */
 function postWebviewStatus(
   webview: vscode.Webview,
-  payload: { success: boolean; message: string }
+  payload: { success: boolean; message: string },
 ) {
   webview.postMessage({
     command: "status",
@@ -75,7 +79,7 @@ function postDatasourceTableCellPreviewReply(
     pluginId?: string;
     rawValue?: string;
     columnField?: string;
-  }
+  },
 ) {
   const rawValue = message.rawValue != null ? String(message.rawValue) : "";
   const columnField = message.columnField;
@@ -98,7 +102,8 @@ function postDatasourceTableCellPreviewReply(
   if (!isPreviewPluginEnabled(context, pluginId)) {
     const textReg = getRegisteredPreviewPlugin(DEFAULT_CELL_PREVIEW_PLUGIN_ID);
     const textOk =
-      !!textReg && isPreviewPluginEnabled(context, DEFAULT_CELL_PREVIEW_PLUGIN_ID);
+      !!textReg &&
+      isPreviewPluginEnabled(context, DEFAULT_CELL_PREVIEW_PLUGIN_ID);
     if (textOk && pluginId !== DEFAULT_CELL_PREVIEW_PLUGIN_ID) {
       pluginId = DEFAULT_CELL_PREVIEW_PLUGIN_ID;
       reg = textReg;
@@ -137,7 +142,7 @@ async function handleSettingsSaveMessage(
   provider: DataSourceProvider,
   item: Datasource,
   panel: vscode.WebviewPanel,
-  payload: any
+  payload: any,
 ) {
   try {
     if (item.type === "datasource") {
@@ -182,7 +187,7 @@ async function handleSettingsTestMessage(
   provider: DataSourceProvider,
   item: Datasource,
   panel: vscode.WebviewPanel,
-  payload: any
+  payload: any,
 ) {
   if (item.type !== "datasource") {
     return;
@@ -192,7 +197,7 @@ async function handleSettingsTestMessage(
     const db = await Datasource.createInstance(
       provider.getConnections(),
       provider.context,
-      payload
+      payload,
     );
     const res = await db.test();
     if (res.success) {
@@ -219,7 +224,7 @@ async function handleSettingsTestMessage(
  */
 async function saveDatasourceConfigForCreate(
   provider: DataSourceProvider,
-  payload: any
+  payload: any,
 ): Promise<void> {
   const name = String(payload?.name || "").trim();
   if (!name) {
@@ -230,7 +235,9 @@ async function saveDatasourceConfigForCreate(
     throw new Error("请选择数据库类型");
   }
   if (!isDriverEnabled(provider.context, dbType)) {
-    throw new Error("该数据库驱动未启用，请先在命令面板执行「CADB: 管理数据库驱动」并勾选对应类型");
+    throw new Error(
+      "该数据库驱动未启用，请先在命令面板执行「CADB: 管理数据库驱动」并勾选对应类型",
+    );
   }
   const connections = provider.getConnections();
   if (connections.some((c) => c.name === name)) {
@@ -245,7 +252,7 @@ async function saveDatasourceConfigForCreate(
 async function saveDatasourceConfigForEdit(
   provider: DataSourceProvider,
   item: Datasource,
-  payload: any
+  payload: any,
 ): Promise<void> {
   const nextDb = String(payload?.dbType || "").trim();
   const origDb = item.data?.dbType;
@@ -268,7 +275,7 @@ async function saveDatasourceConfigForEdit(
 
 function findAncestorByType(
   node: Datasource,
-  type: string
+  type: string,
 ): Datasource | undefined {
   let current: Datasource | undefined = node;
   while (current) {
@@ -310,7 +317,9 @@ function getTableName(node: Datasource): string | null {
 }
 
 /** 从 OSS 树节点解析出 bucket 与完整 key（path） */
-function getOssBucketAndKey(node: Datasource): { bucket: string; key: string } | null {
+function getOssBucketAndKey(
+  node: Datasource,
+): { bucket: string; key: string } | null {
   const bucketNode = findAncestorByType(node, "collectionType");
   if (!bucketNode) return null;
   const bucket = bucketNode.label?.toString() ?? "";
@@ -329,7 +338,7 @@ function getOssBucketAndKey(node: Datasource): { bucket: string; key: string } |
 /** OSS 文件：下载到临时目录后按后缀用默认编辑器打开 */
 async function ossPreview(
   node: Datasource,
-  provider: DataSourceProvider
+  provider: DataSourceProvider,
 ): Promise<void> {
   if (node.type === "folder") {
     return;
@@ -346,7 +355,7 @@ async function ossPreview(
     const baseDir = vscode.Uri.joinPath(
       provider.context.globalStorageUri,
       "cadb-oss-preview",
-      bucket
+      bucket,
     );
     const keyParts = key.split("/").filter(Boolean);
     const fileName = keyParts[keyParts.length - 1] || "file";
@@ -367,7 +376,7 @@ async function ossPreview(
     });
   } catch (e) {
     vscode.window.showErrorMessage(
-      `打开失败: ${e instanceof Error ? e.message : String(e)}`
+      `打开失败: ${e instanceof Error ? e.message : String(e)}`,
     );
   }
 }
@@ -382,7 +391,7 @@ function escapeHtml(s: string): string {
 
 function validateAndGetFilePath(
   item: any,
-  operation: string
+  operation: string,
 ): string | undefined {
   const fileItem = item as Datasource;
   if (!fileItem || fileItem.type !== "file") {
@@ -408,7 +417,7 @@ function validateAndGetFilePath(
  */
 async function workspaceFsDeleteWithTrashFallback(
   uri: vscode.Uri,
-  options: { recursive?: boolean } = {}
+  options: { recursive?: boolean } = {},
 ): Promise<void> {
   const recursive = options.recursive ?? false;
   try {
@@ -417,7 +426,7 @@ async function workspaceFsDeleteWithTrashFallback(
     const msg = e instanceof Error ? e.message : String(e);
     const looksLikeTrashUnsupported =
       /回收站|无法通过回收站|提供程序不支持|trash|Trash|not support|不支持/i.test(
-        msg
+        msg,
       );
     if (looksLikeTrashUnsupported) {
       await vscode.workspace.fs.delete(uri, { recursive, useTrash: false });
@@ -430,7 +439,7 @@ async function workspaceFsDeleteWithTrashFallback(
 async function editEntry(
   provider: DataSourceProvider,
   item: Datasource,
-  outputChannel: vscode.OutputChannel
+  outputChannel: vscode.OutputChannel,
 ) {
   let panel: vscode.WebviewPanel | null = null;
   let configType = "";
@@ -462,7 +471,7 @@ async function editEntry(
     const connectionName =
       tableNode?.dataloader?.rootNode().label?.toString() || "";
     outputChannel.appendLine(
-      `[CADB REVEAL] editEntry 触发定位 connection=${connectionName} database=${databaseName} table=${tableName}`
+      `[CADB REVEAL] editEntry 触发定位 connection=${connectionName} database=${databaseName} table=${tableName}`,
     );
     void vscode.commands.executeCommand("cadb.datasource.revealByPath", {
       connectionName,
@@ -477,7 +486,7 @@ async function editEntry(
       triggerRevealForTablePanel(
         { connectionName, databaseName, tableName },
         outputChannel,
-        "existingTableEditReveal"
+        "existingTableEditReveal",
       );
       try {
         const data = tableNode?.dataloader
@@ -499,7 +508,7 @@ async function editEntry(
     const tableEditPanel = createWebview(
       provider,
       "tableEdit",
-      `${item.label} - 编辑`
+      `${item.label} - 编辑`,
     );
     const persistedState: PersistedTablePanelState = {
       connectionName,
@@ -508,11 +517,15 @@ async function editEntry(
       kind: "edit",
     };
     openTableEditPanels.set(editPanelKey, tableEditPanel);
-    attachTablePanelRevealTracking(tableEditPanel, {
-      connectionName,
-      databaseName,
-      tableName,
-    }, outputChannel);
+    attachTablePanelRevealTracking(
+      tableEditPanel,
+      {
+        connectionName,
+        databaseName,
+        tableName,
+      },
+      outputChannel,
+    );
     void upsertPersistedTablePanel(provider.context, persistedState);
     tableEditPanel.onDidDispose(() => {
       openTableEditPanels.delete(editPanelKey);
@@ -553,8 +566,9 @@ async function editEntry(
           tableEditPanel.webview.postMessage({
             command: "status",
             success: false,
-            message: `加载失败: ${error instanceof Error ? error.message : String(error)
-              }`,
+            message: `加载失败: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
           });
         }
         return;
@@ -612,7 +626,9 @@ async function editEntry(
           const outputChannel = vscode.window.createOutputChannel("CADB SQL");
           const ts = new Date();
           const timestamp = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, "0")}-${String(ts.getDate()).padStart(2, "0")} ${String(ts.getHours()).padStart(2, "0")}:${String(ts.getMinutes()).padStart(2, "0")}`;
-          outputChannel.appendLine(`[${timestamp} ${databaseName}, ${executionTime.toFixed(3)}s] ${sql.replace(/\s+/g, " ").trim()}`);
+          outputChannel.appendLine(
+            `[${timestamp} ${databaseName}, ${executionTime.toFixed(3)}s] ${sql.replace(/\s+/g, " ").trim()}`,
+          );
           outputChannel.show(true);
           tableEditPanel.webview.postMessage({
             command: "status",
@@ -677,7 +693,9 @@ async function editEntry(
           const outputChannel = vscode.window.createOutputChannel("CADB SQL");
           const ts = new Date();
           const timestamp = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, "0")}-${String(ts.getDate()).padStart(2, "0")} ${String(ts.getHours()).padStart(2, "0")}:${String(ts.getMinutes()).padStart(2, "0")}`;
-          outputChannel.appendLine(`[${timestamp} ${databaseName}, ${executionTime.toFixed(3)}s] ${sql.replace(/\s+/g, " ").trim()}`);
+          outputChannel.appendLine(
+            `[${timestamp} ${databaseName}, ${executionTime.toFixed(3)}s] ${sql.replace(/\s+/g, " ").trim()}`,
+          );
           outputChannel.show(true);
           tableEditPanel.webview.postMessage({
             command: "status",
@@ -732,7 +750,10 @@ async function editEntry(
         }
         let fields = indexData.fields;
         if (typeof fields === "string") {
-          fields = (fields as string).split(",").map((f: string) => f.trim()).filter(Boolean);
+          fields = (fields as string)
+            .split(",")
+            .map((f: string) => f.trim())
+            .filter(Boolean);
         } else if (!Array.isArray(fields)) {
           fields = [];
         }
@@ -765,7 +786,9 @@ async function editEntry(
           const ts = new Date();
           const timestamp = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, "0")}-${String(ts.getDate()).padStart(2, "0")} ${String(ts.getHours()).padStart(2, "0")}:${String(ts.getMinutes()).padStart(2, "0")}`;
           for (const line of sql.split("\n").filter(Boolean)) {
-            outputChannel.appendLine(`[${timestamp} ${databaseName}, ${executionTime.toFixed(3)}s] ${line.replace(/\s+/g, " ").trim()}`);
+            outputChannel.appendLine(
+              `[${timestamp} ${databaseName}, ${executionTime.toFixed(3)}s] ${line.replace(/\s+/g, " ").trim()}`,
+            );
           }
           outputChannel.show(true);
           tableEditPanel.webview.postMessage({
@@ -830,7 +853,9 @@ async function editEntry(
           const executionTime = (Date.now() - startTime) / 1000;
           const ts = new Date();
           const timestamp = `${ts.getFullYear()}-${String(ts.getMonth() + 1).padStart(2, "0")}-${String(ts.getDate()).padStart(2, "0")} ${String(ts.getHours()).padStart(2, "0")}:${String(ts.getMinutes()).padStart(2, "0")}`;
-          outputChannel.appendLine(`[${timestamp} ${databaseName}, ${executionTime.toFixed(3)}s] ${sql.replace(/\s+/g, " ").trim()}`);
+          outputChannel.appendLine(
+            `[${timestamp} ${databaseName}, ${executionTime.toFixed(3)}s] ${sql.replace(/\s+/g, " ").trim()}`,
+          );
           outputChannel.show(true);
           tableEditPanel.webview.postMessage({
             command: "status",
@@ -865,8 +890,9 @@ async function editEntry(
   } catch (error) {
     console.error("加载编辑数据失败:", error);
     vscode.window.showErrorMessage(
-      `加载编辑数据失败: ${error instanceof Error ? error.message : String(error)
-      }`
+      `加载编辑数据失败: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
     );
     return;
   }
@@ -903,14 +929,17 @@ async function editEntry(
       data: data,
       driverOptions:
         item.type === "datasource"
-          ? getDriverOptionsForEditConnection(provider.context, item.data?.dbType)
+          ? getDriverOptionsForEditConnection(
+              provider.context,
+              item.data?.dbType,
+            )
           : undefined,
       groupOptions:
         item.type === "datasource"
           ? getConnectionGroupFormOptions(
               provider.context,
               provider.getConnections(),
-              data?.rowData?.[0]?.group ?? item.data?.group
+              data?.rowData?.[0]?.group ?? item.data?.group,
             )
           : undefined,
     });
@@ -919,10 +948,20 @@ async function editEntry(
   settingsPanel.webview.onDidReceiveMessage(async (message) => {
     switch (message.command) {
       case "save":
-        await handleSettingsSaveMessage(provider, item, settingsPanel, message.payload);
+        await handleSettingsSaveMessage(
+          provider,
+          item,
+          settingsPanel,
+          message.payload,
+        );
         break;
       case "test":
-        await handleSettingsTestMessage(provider, item, settingsPanel, message.payload);
+        await handleSettingsTestMessage(
+          provider,
+          item,
+          settingsPanel,
+          message.payload,
+        );
         break;
     }
   });
@@ -934,7 +973,7 @@ async function editEntry(
 async function updateNonOssDatasourceConfig(
   provider: DataSourceProvider,
   item: Datasource,
-  payload: any
+  payload: any,
 ): Promise<void> {
   const originalName = item.label?.toString() || "";
   if (!originalName) {
@@ -953,7 +992,7 @@ async function updateNonOssDatasourceConfig(
 async function saveOssDatasourceConfig(
   provider: DataSourceProvider,
   payload: any,
-  options: { originalName?: string }
+  options: { originalName?: string },
 ): Promise<void> {
   // TODO: 实现 OSS 数据源保存逻辑（新建/编辑共用此入口）
   void provider;
@@ -968,7 +1007,7 @@ async function saveOssDatasourceConfig(
 async function updateUserInfo(
   provider: DataSourceProvider,
   item: Datasource,
-  payload: any
+  payload: any,
 ): Promise<void> {
   // 用户信息更新需要通过数据库操作
   // 这里调用 item 的 update 方法（如果有的话）
@@ -976,7 +1015,7 @@ async function updateUserInfo(
     // TODO: 实现用户信息的数据库更新逻辑
     // 这需要在 dataloader 中添加 updateUser 方法
     vscode.window.showInformationMessage(
-      "用户信息已更新（需要实现数据库更新逻辑）"
+      "用户信息已更新（需要实现数据库更新逻辑）",
     );
   } else {
     throw new Error("无法获取数据库连接");
@@ -985,7 +1024,7 @@ async function updateUserInfo(
 
 async function updateDatabaseConfig(
   item: Datasource,
-  payload: any
+  payload: any,
 ): Promise<void> {
   const databaseName = item.label?.toString() || "";
   const originalName = payload?._originalName || databaseName;
@@ -1024,7 +1063,7 @@ async function updateDatabaseConfig(
         } else {
           resolve();
         }
-      }
+      },
     );
   });
 }
@@ -1032,7 +1071,7 @@ async function updateDatabaseConfig(
 export function registerDatasourceCommands(
   provider: DataSourceProvider,
   treeView: vscode.TreeView<Datasource>,
-  outputChannel: vscode.OutputChannel
+  outputChannel: vscode.OutputChannel,
 ): vscode.Disposable[] {
   const disposables: vscode.Disposable[] = [];
 
@@ -1070,8 +1109,8 @@ export function registerDatasourceCommands(
           return;
         }
         await vscode.env.clipboard.writeText(text);
-      }
-    )
+      },
+    ),
   );
 
   disposables.push(
@@ -1088,8 +1127,8 @@ export function registerDatasourceCommands(
         } else {
           await provider.openDatasourceConnection(node);
         }
-      }
-    )
+      },
+    ),
   );
 
   // 注册刷新命令，支持完整加载
@@ -1099,7 +1138,9 @@ export function registerDatasourceCommands(
       async (item?: Datasource) => {
         if (item && item.type === "datasource") {
           if (!item.connectionOpen) {
-            vscode.window.showWarningMessage("连接已关闭，请先使用右键「切换连接」打开后再刷新");
+            vscode.window.showWarningMessage(
+              "连接已关闭，请先使用右键「切换连接」打开后再刷新",
+            );
             return;
           }
           // 如果指定了数据源，则完整加载该数据源
@@ -1118,21 +1159,24 @@ export function registerDatasourceCommands(
               await provider.loadAllChildren(item, progress);
               // 刷新视图
               provider.refresh();
-            }
+            },
           );
         } else {
           // 否则执行普通刷新
           provider.refresh();
         }
-      }
-    )
+      },
+    ),
   );
 
   disposables.push(
     vscode.commands.registerCommand("cadb.datasource.add", async (item) => {
-      await (item as Datasource).create(provider.context, provider.databaseManager);
+      await (item as Datasource).create(
+        provider.context,
+        provider.databaseManager,
+      );
       provider.refresh();
-    })
+    }),
   );
 
   disposables.push(
@@ -1140,7 +1184,7 @@ export function registerDatasourceCommands(
       const driverOptions = getDriverOptionsForNewConnection(provider.context);
       if (driverOptions.length === 0) {
         vscode.window.showWarningMessage(
-          "没有已启用的数据库驱动。请在命令面板执行「CADB: 管理数据库驱动」至少启用一种类型。"
+          "没有已启用的数据库驱动。请在命令面板执行「CADB: 管理数据库驱动」至少启用一种类型。",
         );
         return;
       }
@@ -1153,7 +1197,7 @@ export function registerDatasourceCommands(
         driverOptions,
         groupOptions: getConnectionGroupFormOptions(
           provider.context,
-          provider.getConnections()
+          provider.getConnections(),
         ),
       });
 
@@ -1182,7 +1226,7 @@ export function registerDatasourceCommands(
                 const db = await Datasource.createInstance(
                   provider.getConnections(),
                   provider.context,
-                  message.payload
+                  message.payload,
                 );
                 const res = await db.test();
                 if (res.success) {
@@ -1206,58 +1250,66 @@ export function registerDatasourceCommands(
             break;
         }
       });
-    })
+    }),
   );
 
   disposables.push(
     vscode.commands.registerCommand("cadb.datasource.edit", (item) =>
-      editEntry(provider, item, outputChannel)
-    )
+      editEntry(provider, item, outputChannel),
+    ),
   );
 
   disposables.push(
-    vscode.commands.registerCommand("cadb.datasource.rename", async (item: Datasource) => {
-      if (!item || item.type !== "datasource") {
-        return;
-      }
-      const oldName = item.label?.toString()?.trim() || "";
-      if (!oldName) {
-        vscode.window.showWarningMessage("无法获取当前连接名称");
-        return;
-      }
-      const connections = provider.getConnections();
-      const newName = await vscode.window.showInputBox({
-        title: "重命名数据源连接",
-        prompt: "输入新的连接名称",
-        value: oldName,
-        validateInput: (value) => {
-          const name = value?.trim() || "";
-          if (!name) return "名称不能为空";
-          if (name === oldName) return "名称未更改";
-          if (connections.some((c) => c.name === name)) return "该名称已被其他连接使用";
-          return "";
-        },
-      });
-      if (newName === undefined || newName.trim() === "" || newName.trim() === oldName) {
-        return;
-      }
-      const name = newName.trim();
-      if (connections.some((c) => c.name === name)) {
-        vscode.window.showWarningMessage("该名称已被其他连接使用");
-        return;
-      }
-      try {
-        await provider.renameConnectionRecord(oldName, name);
-      } catch (error) {
-        vscode.window.showErrorMessage(
-          `未找到要重命名的连接: ${toErrorMessage(error)}`
-        );
-        return;
-      }
-      provider.renameConnection(oldName, name);
-      provider.refresh();
-      vscode.window.showInformationMessage(`已重命名为 "${name}"`);
-    })
+    vscode.commands.registerCommand(
+      "cadb.datasource.rename",
+      async (item: Datasource) => {
+        if (!item || item.type !== "datasource") {
+          return;
+        }
+        const oldName = item.label?.toString()?.trim() || "";
+        if (!oldName) {
+          vscode.window.showWarningMessage("无法获取当前连接名称");
+          return;
+        }
+        const connections = provider.getConnections();
+        const newName = await vscode.window.showInputBox({
+          title: "重命名数据源连接",
+          prompt: "输入新的连接名称",
+          value: oldName,
+          validateInput: (value) => {
+            const name = value?.trim() || "";
+            if (!name) return "名称不能为空";
+            if (name === oldName) return "名称未更改";
+            if (connections.some((c) => c.name === name))
+              return "该名称已被其他连接使用";
+            return "";
+          },
+        });
+        if (
+          newName === undefined ||
+          newName.trim() === "" ||
+          newName.trim() === oldName
+        ) {
+          return;
+        }
+        const name = newName.trim();
+        if (connections.some((c) => c.name === name)) {
+          vscode.window.showWarningMessage("该名称已被其他连接使用");
+          return;
+        }
+        try {
+          await provider.renameConnectionRecord(oldName, name);
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            `未找到要重命名的连接: ${toErrorMessage(error)}`,
+          );
+          return;
+        }
+        provider.renameConnection(oldName, name);
+        provider.refresh();
+        vscode.window.showInformationMessage(`已重命名为 "${name}"`);
+      },
+    ),
   );
 
   // 注册通用删除命令
@@ -1271,14 +1323,18 @@ export function registerDatasourceCommands(
         `确定要删除 "${item.label}" 吗？此操作无法撤销。`,
         { modal: true },
         "删除",
-        "取消"
+        "取消",
       );
 
       if (confirm === "删除") {
-        const dsNode = getDatasourceNode(item) ?? (item.type === "datasource" ? item : undefined);
+        const dsNode =
+          getDatasourceNode(item) ??
+          (item.type === "datasource" ? item : undefined);
         const dbType = dsNode?.data?.dbType;
         if (!driverSupportsTreeDelete(dbType)) {
-          vscode.window.showWarningMessage("当前连接类型不支持在侧栏删除该对象");
+          vscode.window.showWarningMessage(
+            "当前连接类型不支持在侧栏删除该对象",
+          );
           return;
         }
         const loader = dsNode?.dataloader as any;
@@ -1300,8 +1356,13 @@ export function registerDatasourceCommands(
             }
             await provider.deleteConnectionRecord(name);
             try {
-              const dsPath = vscode.Uri.joinPath(provider.context.globalStorageUri, name);
-              await workspaceFsDeleteWithTrashFallback(dsPath, { recursive: true });
+              const dsPath = vscode.Uri.joinPath(
+                provider.context.globalStorageUri,
+                name,
+              );
+              await workspaceFsDeleteWithTrashFallback(dsPath, {
+                recursive: true,
+              });
             } catch (_) {}
             provider.refresh();
             vscode.window.showInformationMessage(`已删除连接 "${name}"`);
@@ -1329,7 +1390,9 @@ export function registerDatasourceCommands(
             const db = getDatabaseName(item);
             const table = item.label?.toString() ?? "";
             if (!db || !table) throw new Error("无法解析库名或表名");
-            await run(`DROP TABLE \`${escapeMySqlId(db)}\`.\`${escapeMySqlId(table)}\``);
+            await run(
+              `DROP TABLE \`${escapeMySqlId(db)}\`.\`${escapeMySqlId(table)}\``,
+            );
             provider.refresh();
             vscode.window.showInformationMessage(`已删除表 "${db}.${table}"`);
             return;
@@ -1339,7 +1402,8 @@ export function registerDatasourceCommands(
             const db = getDatabaseName(item);
             const table = getTableName(item);
             const col = item.label?.toString() ?? "";
-            if (!db || !table || !col) throw new Error("无法解析库名/表名/字段名");
+            if (!db || !table || !col)
+              throw new Error("无法解析库名/表名/字段名");
             if (typeof loader.alterColumn !== "function") {
               throw new Error("当前连接不支持删除字段");
             }
@@ -1350,7 +1414,9 @@ export function registerDatasourceCommands(
               originalName: col,
             });
             provider.refresh();
-            vscode.window.showInformationMessage(`已删除字段 "${db}.${table}.${col}"`);
+            vscode.window.showInformationMessage(
+              `已删除字段 "${db}.${table}.${col}"`,
+            );
             return;
           }
 
@@ -1358,7 +1424,8 @@ export function registerDatasourceCommands(
             const db = getDatabaseName(item);
             const table = getTableName(item);
             const idxName = item.label?.toString() ?? "";
-            if (!db || !table || !idxName) throw new Error("无法解析库名/表名/索引名");
+            if (!db || !table || !idxName)
+              throw new Error("无法解析库名/表名/索引名");
             if (typeof loader.alterIndex !== "function") {
               throw new Error("当前连接不支持删除索引");
             }
@@ -1369,7 +1436,9 @@ export function registerDatasourceCommands(
               originalName: idxName,
             });
             provider.refresh();
-            vscode.window.showInformationMessage(`已删除索引 "${db}.${table}.${idxName}"`);
+            vscode.window.showInformationMessage(
+              `已删除索引 "${db}.${table}.${idxName}"`,
+            );
             return;
           }
 
@@ -1379,18 +1448,22 @@ export function registerDatasourceCommands(
             if (!parsed) {
               throw new Error("无法解析用户名与主机");
             }
-            await run(`DROP USER ${conn.escape(parsed.user)}@${conn.escape(parsed.host)}`);
+            await run(
+              `DROP USER ${conn.escape(parsed.user)}@${conn.escape(parsed.host)}`,
+            );
             provider.refresh();
             vscode.window.showInformationMessage(`已删除用户 "${label}"`);
             return;
           }
 
-          vscode.window.showWarningMessage(`暂不支持删除该类型节点：${item.type}`);
+          vscode.window.showWarningMessage(
+            `暂不支持删除该类型节点：${item.type}`,
+          );
         } catch (error) {
           vscode.window.showErrorMessage(`删除失败: ${toErrorMessage(error)}`);
         }
       }
-    })
+    }),
   );
 
   disposables.push(
@@ -1398,7 +1471,7 @@ export function registerDatasourceCommands(
       const children = await (item as Datasource).expand(provider.context);
       provider.createChildren(item as Datasource, children);
       treeView.reveal(item as Datasource, { expand: true });
-    })
+    }),
   );
 
   // 搜索数据源：Windows/Linux 为 Ctrl+F、macOS 为 Cmd+F（见 package.json keybindings）
@@ -1406,7 +1479,9 @@ export function registerDatasourceCommands(
     vscode.commands.registerCommand("cadb.datasource.search", async () => {
       const allNodes = provider.getFlattenedNodes();
       if (allNodes.length === 0) {
-        vscode.window.showInformationMessage("暂无数据源节点可搜索，请先添加连接并刷新。");
+        vscode.window.showInformationMessage(
+          "暂无数据源节点可搜索，请先添加连接并刷新。",
+        );
         return;
       }
       interface SearchItem extends vscode.QuickPickItem {
@@ -1431,21 +1506,34 @@ export function registerDatasourceCommands(
         }
         const filtered = allItems.filter(
           (item) =>
-            fuzzyMatch(value, item.label) || fuzzyMatch(value, item.description ?? "")
+            fuzzyMatch(value, item.label) ||
+            fuzzyMatch(value, item.description ?? ""),
         );
-        qp.items = filtered.length > 0 ? filtered : [{ label: "(无匹配)", element: allNodes[0] } as SearchItem];
+        qp.items =
+          filtered.length > 0
+            ? filtered
+            : [{ label: "(无匹配)", element: allNodes[0] } as SearchItem];
       });
 
       qp.onDidAccept(() => {
         const picked = qp.selectedItems[0];
         qp.hide();
-        if (picked && "element" in picked && picked.element && picked.label !== "(无匹配)") {
-          treeView.reveal(picked.element, { expand: true, select: true, focus: true });
+        if (
+          picked &&
+          "element" in picked &&
+          picked.element &&
+          picked.label !== "(无匹配)"
+        ) {
+          treeView.reveal(picked.element, {
+            expand: true,
+            select: true,
+            focus: true,
+          });
         }
       });
 
       qp.show();
-    })
+    }),
   );
 
   // 注册选择数据库/表命令
@@ -1455,7 +1543,10 @@ export function registerDatasourceCommands(
       async (item: Datasource) => {
         try {
           // 确保 item 是 datasourceType 或 collectionType 节点
-          if (item.type !== "datasourceType" && item.type !== "collectionType") {
+          if (
+            item.type !== "datasourceType" &&
+            item.type !== "collectionType"
+          ) {
             return;
           }
 
@@ -1497,8 +1588,8 @@ export function registerDatasourceCommands(
                   database: string;
                 }
 
-                const quickPickItems: DatabaseQuickPickItem[] = allDatabases.map(
-                  (db) => ({
+                const quickPickItems: DatabaseQuickPickItem[] =
+                  allDatabases.map((db) => ({
                     label: db.label?.toString() || "",
                     description: db.description
                       ? typeof db.description === "string"
@@ -1506,9 +1597,10 @@ export function registerDatasourceCommands(
                         : db.description.toString()
                       : undefined,
                     database: db.label?.toString() || "",
-                    picked: currentSelected.includes(db.label?.toString() || ""),
-                  })
-                );
+                    picked: currentSelected.includes(
+                      db.label?.toString() || "",
+                    ),
+                  }));
 
                 // 显示多选 QuickPick
                 const selected = await vscode.window.showQuickPick(
@@ -1517,7 +1609,7 @@ export function registerDatasourceCommands(
                     placeHolder: `选择要显示的数据库（当前连接: ${connectionName}）`,
                     canPickMany: true,
                     matchOnDescription: true,
-                  }
+                  },
                 );
 
                 if (selected) {
@@ -1544,8 +1636,10 @@ export function registerDatasourceCommands(
                 }
 
                 // 获取当前已选择的表
-                const currentSelected =
-                  provider.getSelectedTables(connectionName, databaseName);
+                const currentSelected = provider.getSelectedTables(
+                  connectionName,
+                  databaseName,
+                );
 
                 // 创建 QuickPick 项
                 interface TableQuickPickItem extends vscode.QuickPickItem {
@@ -1561,8 +1655,10 @@ export function registerDatasourceCommands(
                         : table.description.toString()
                       : undefined,
                     table: table.label?.toString() || "",
-                    picked: currentSelected.includes(table.label?.toString() || ""),
-                  })
+                    picked: currentSelected.includes(
+                      table.label?.toString() || "",
+                    ),
+                  }),
                 );
 
                 // 显示多选 QuickPick
@@ -1572,30 +1668,35 @@ export function registerDatasourceCommands(
                     placeHolder: `选择要显示的表（数据库: ${databaseName}）`,
                     canPickMany: true,
                     matchOnDescription: true,
-                  }
+                  },
                 );
 
                 if (selected) {
                   const selectedTables = selected.map((item) => item.table);
                   // 保存选择
-                  provider.setSelectedTables(connectionName, databaseName, selectedTables);
+                  provider.setSelectedTables(
+                    connectionName,
+                    databaseName,
+                    selectedTables,
+                  );
                   // 清空 collectionType 节点的子节点缓存，强制重新加载
                   item.children = [];
                   // 刷新 TreeView
                   provider.refresh();
                 }
               }
-            }
+            },
           );
         } catch (error) {
           console.error("[FilterEntry] 错误:", error);
           vscode.window.showErrorMessage(
-            `选择列表项失败: ${error instanceof Error ? error.message : String(error)
-            }`
+            `选择列表项失败: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
           );
         }
-      }
-    )
+      },
+    ),
   );
 
   // 注册使用数据库命令（从 TreeView collection 节点）
@@ -1619,12 +1720,13 @@ export function registerDatasourceCommands(
         } catch (error) {
           console.error("[UseDatabase] 错误:", error);
           vscode.window.showErrorMessage(
-            `切换数据库失败: ${error instanceof Error ? error.message : String(error)
-            }`
+            `切换数据库失败: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
           );
         }
-      }
-    )
+      },
+    ),
   );
 
   // 注册复制连接地址命令（仅连接地址：host:port）
@@ -1646,12 +1748,13 @@ export function registerDatasourceCommands(
           vscode.window.showInformationMessage(`已复制连接地址: ${address}`);
         } catch (error) {
           vscode.window.showErrorMessage(
-            `复制失败: ${error instanceof Error ? error.message : String(error)
-            }`
+            `复制失败: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
           );
         }
-      }
-    )
+      },
+    ),
   );
 
   // 注册复制用户名密码命令（仅用户名密码：username@password）
@@ -1673,12 +1776,13 @@ export function registerDatasourceCommands(
           vscode.window.showInformationMessage("已复制用户名密码");
         } catch (error) {
           vscode.window.showErrorMessage(
-            `复制失败: ${error instanceof Error ? error.message : String(error)
-            }`
+            `复制失败: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
           );
         }
-      }
-    )
+      },
+    ),
   );
 
   // 注册复制完整连接命令（JDBC URL）
@@ -1711,8 +1815,9 @@ export function registerDatasourceCommands(
               params.append("password", password);
             }
             const queryString = params.toString();
-            jdbcUrl = `jdbc:mysql://${host}:${port}${database ? `/${database}` : ""
-              }${queryString ? `?${queryString}` : ""}`;
+            jdbcUrl = `jdbc:mysql://${host}:${port}${
+              database ? `/${database}` : ""
+            }${queryString ? `?${queryString}` : ""}`;
           } else if (dbType === "redis") {
             // Redis URL: redis://username:password@host:port
             if (username && password) {
@@ -1724,20 +1829,22 @@ export function registerDatasourceCommands(
             }
           } else {
             // 其他数据库类型，使用通用格式
-            jdbcUrl = `${dbType}://${host}:${port}${database ? `/${database}` : ""
-              }`;
+            jdbcUrl = `${dbType}://${host}:${port}${
+              database ? `/${database}` : ""
+            }`;
           }
 
           await vscode.env.clipboard.writeText(jdbcUrl);
           vscode.window.showInformationMessage("已复制完整连接地址");
         } catch (error) {
           vscode.window.showErrorMessage(
-            `复制失败: ${error instanceof Error ? error.message : String(error)
-            }`
+            `复制失败: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
           );
         }
-      }
-    )
+      },
+    ),
   );
 
   disposables.push(
@@ -1747,7 +1854,7 @@ export function registerDatasourceCommands(
         try {
           const raw = readFileSync(
             path.join(provider.context.extensionPath, "package.json"),
-            "utf-8"
+            "utf-8",
           );
           const v = (JSON.parse(raw) as { version?: string }).version;
           return typeof v === "string" ? v.trim() : "";
@@ -1781,7 +1888,9 @@ export function registerDatasourceCommands(
           } else {
             postWebviewStatus(panel.webview, {
               success: true,
-              message: enabled ? "✔️ 已安装（启用）驱动" : "✔️ 已卸载（停用）驱动",
+              message: enabled
+                ? "✔️ 已安装（启用）驱动"
+                : "✔️ 已卸载（停用）驱动",
             });
           }
           sendLoad();
@@ -1792,7 +1901,11 @@ export function registerDatasourceCommands(
           if (!id) {
             return;
           }
-          const r = await setPreviewPluginEnabled(provider.context, id, enabled);
+          const r = await setPreviewPluginEnabled(
+            provider.context,
+            id,
+            enabled,
+          );
           if (!r.ok) {
             postWebviewStatus(panel.webview, {
               success: false,
@@ -1807,41 +1920,54 @@ export function registerDatasourceCommands(
           sendLoad();
         }
       });
-    })
+    }),
   );
 
   disposables.push(
-    vscode.commands.registerCommand("cadb.connectionGroups.manage", async () => {
-      const panel = createWebview(provider, "settings", "连接分组");
-      const sendLoad = () => {
-        panel.webview.postMessage({
-          command: "load",
-          configType: "connectionGroups",
-          groups: getConnectionGroupsEditorLines(provider.context, provider.getConnections()),
-        });
-      };
-      sendLoad();
-      panel.webview.onDidReceiveMessage(async (message) => {
-        if (message.command === "saveConnectionGroups") {
-          const lines = Array.isArray((message as { groups?: unknown }).groups)
-            ? (message as { groups: unknown[] }).groups.map((x) => String(x))
-            : [];
-          const prevStored = getStoredConnectionGroupsOrder(provider.context);
-          const nextStored = normalizeConnectionGroupsOrderForSave(lines);
-          const removed = getRemovedGroupsForMigration(prevStored, nextStored);
-          if (removed.length > 0) {
-            await provider.migrateConnectionsToDefaultForGroups(new Set(removed));
-          }
-          await setConnectionGroupsOrder(provider.context, nextStored);
-          postWebviewStatus(panel.webview, {
-            success: true,
-            message: "✔️ 已保存连接分组",
+    vscode.commands.registerCommand(
+      "cadb.connectionGroups.manage",
+      async () => {
+        const panel = createWebview(provider, "settings", "连接分组");
+        const sendLoad = () => {
+          panel.webview.postMessage({
+            command: "load",
+            configType: "connectionGroups",
+            groups: getConnectionGroupsEditorLines(
+              provider.context,
+              provider.getConnections(),
+            ),
           });
-          provider.refresh();
-          sendLoad();
-        }
-      });
-    })
+        };
+        sendLoad();
+        panel.webview.onDidReceiveMessage(async (message) => {
+          if (message.command === "saveConnectionGroups") {
+            const lines = Array.isArray(
+              (message as { groups?: unknown }).groups,
+            )
+              ? (message as { groups: unknown[] }).groups.map((x) => String(x))
+              : [];
+            const prevStored = getStoredConnectionGroupsOrder(provider.context);
+            const nextStored = normalizeConnectionGroupsOrderForSave(lines);
+            const removed = getRemovedGroupsForMigration(
+              prevStored,
+              nextStored,
+            );
+            if (removed.length > 0) {
+              await provider.migrateConnectionsToDefaultForGroups(
+                new Set(removed),
+              );
+            }
+            await setConnectionGroupsOrder(provider.context, nextStored);
+            postWebviewStatus(panel.webview, {
+              success: true,
+              message: "✔️ 已保存连接分组",
+            });
+            provider.refresh();
+            sendLoad();
+          }
+        });
+      },
+    ),
   );
 
   return disposables;
@@ -1871,7 +1997,7 @@ function refreshDatasourceTableGridFocusContext() {
   void vscode.commands.executeCommand(
     "setContext",
     CONTEXT_DATASOURCE_TABLE_GRID_FOCUSED,
-    !!activePanel
+    !!activePanel,
   );
 }
 
@@ -1888,7 +2014,11 @@ function markDatasourceTableGridDomFocused(panel: vscode.WebviewPanel) {
     return;
   }
   lastActiveDatasourceTablePanel = panel;
-  void vscode.commands.executeCommand("setContext", CONTEXT_DATASOURCE_TABLE_GRID_FOCUSED, true);
+  void vscode.commands.executeCommand(
+    "setContext",
+    CONTEXT_DATASOURCE_TABLE_GRID_FOCUSED,
+    true,
+  );
 }
 
 function attachDatasourceTablePanelFocusTracking(panel: vscode.WebviewPanel) {
@@ -1903,15 +2033,18 @@ interface TablePanelRevealMeta {
   databaseName: string;
   tableName: string;
 }
-const panelRevealMetaMap = new WeakMap<vscode.WebviewPanel, TablePanelRevealMeta>();
+const panelRevealMetaMap = new WeakMap<
+  vscode.WebviewPanel,
+  TablePanelRevealMeta
+>();
 
 function triggerRevealForTablePanel(
   meta: TablePanelRevealMeta,
   outputChannel: vscode.OutputChannel,
-  reason: string
+  reason: string,
 ) {
   outputChannel.appendLine(
-    `[CADB REVEAL] ${reason} 触发表定位 connection=${meta.connectionName} database=${meta.databaseName} table=${meta.tableName}`
+    `[CADB REVEAL] ${reason} 触发表定位 connection=${meta.connectionName} database=${meta.databaseName} table=${meta.tableName}`,
   );
   void vscode.commands.executeCommand("cadb.datasource.revealByPath", {
     connectionName: meta.connectionName,
@@ -1923,7 +2056,7 @@ function triggerRevealForTablePanel(
 function attachTablePanelRevealTracking(
   panel: vscode.WebviewPanel,
   meta: TablePanelRevealMeta,
-  outputChannel: vscode.OutputChannel
+  outputChannel: vscode.OutputChannel,
 ) {
   panelRevealMetaMap.set(panel, meta);
   panel.onDidChangeViewState((e) => {
@@ -1948,9 +2081,12 @@ interface PersistedTablePanelState {
 let hasScheduledPersistedTablePanelRestore = false;
 
 function readPersistedTablePanels(
-  context: vscode.ExtensionContext
+  context: vscode.ExtensionContext,
 ): PersistedTablePanelState[] {
-  const raw = context.workspaceState.get<unknown>(CADB_WORKSPACE_OPEN_TABLE_PANELS_KEY, []);
+  const raw = context.workspaceState.get<unknown>(
+    CADB_WORKSPACE_OPEN_TABLE_PANELS_KEY,
+    [],
+  );
   if (!Array.isArray(raw)) {
     return [];
   }
@@ -1971,19 +2107,24 @@ function readPersistedTablePanels(
       tableName: item.tableName.trim(),
       kind: item.kind,
     }))
-    .filter((item) => item.connectionName && item.databaseName && item.tableName);
+    .filter(
+      (item) => item.connectionName && item.databaseName && item.tableName,
+    );
 }
 
 async function writePersistedTablePanels(
   context: vscode.ExtensionContext,
-  states: PersistedTablePanelState[]
+  states: PersistedTablePanelState[],
 ): Promise<void> {
-  await context.workspaceState.update(CADB_WORKSPACE_OPEN_TABLE_PANELS_KEY, states);
+  await context.workspaceState.update(
+    CADB_WORKSPACE_OPEN_TABLE_PANELS_KEY,
+    states,
+  );
 }
 
 async function upsertPersistedTablePanel(
   context: vscode.ExtensionContext,
-  state: PersistedTablePanelState
+  state: PersistedTablePanelState,
 ): Promise<void> {
   const all = readPersistedTablePanels(context);
   const idx = all.findIndex(
@@ -1991,7 +2132,7 @@ async function upsertPersistedTablePanel(
       it.connectionName === state.connectionName &&
       it.databaseName === state.databaseName &&
       it.tableName === state.tableName &&
-      it.kind === state.kind
+      it.kind === state.kind,
   );
   if (idx === -1) {
     all.push(state);
@@ -2003,7 +2144,7 @@ async function upsertPersistedTablePanel(
 
 async function removePersistedTablePanel(
   context: vscode.ExtensionContext,
-  state: PersistedTablePanelState
+  state: PersistedTablePanelState,
 ): Promise<void> {
   const all = readPersistedTablePanels(context);
   const next = all.filter(
@@ -2013,14 +2154,14 @@ async function removePersistedTablePanel(
         it.databaseName === state.databaseName &&
         it.tableName === state.tableName &&
         it.kind === state.kind
-      )
+      ),
   );
   await writePersistedTablePanels(context, next);
 }
 
 async function restorePersistedTablePanels(
   provider: DataSourceProvider,
-  outputChannel: vscode.OutputChannel
+  outputChannel: vscode.OutputChannel,
 ): Promise<void> {
   const states = readPersistedTablePanels(provider.context);
   if (states.length === 0) {
@@ -2034,7 +2175,7 @@ async function restorePersistedTablePanels(
         provider.context,
         state.connectionName,
         state.databaseName,
-        state.tableName
+        state.tableName,
       );
       if (!ds) {
         stale.push(state);
@@ -2051,27 +2192,32 @@ async function restorePersistedTablePanels(
   }
   if (stale.length > 0) {
     const staleSet = new Set(
-      stale.map((it) => `${it.connectionName}|${it.databaseName}|${it.tableName}|${it.kind}`)
+      stale.map(
+        (it) =>
+          `${it.connectionName}|${it.databaseName}|${it.tableName}|${it.kind}`,
+      ),
     );
     const next = states.filter(
       (it) =>
         !staleSet.has(
-          `${it.connectionName}|${it.databaseName}|${it.tableName}|${it.kind}`
-        )
+          `${it.connectionName}|${it.databaseName}|${it.tableName}|${it.kind}`,
+        ),
     );
     await writePersistedTablePanels(provider.context, next);
   }
 }
 
 function getGridPageSize(): number {
-  return vscode.workspace.getConfiguration("cadb").get<number>("grid.pageSize", 2000);
+  return vscode.workspace
+    .getConfiguration("cadb")
+    .get<number>("grid.pageSize", 2000);
 }
 
 /** 表数据 WebView 标签标题：仅显示表名（或 Redis 键名） */
 function formatGridWebviewTabTitle(
   _connectionName: string,
   _databaseName: string,
-  tableOrKey: string
+  tableOrKey: string,
 ): string {
   const t = String(tableOrKey ?? "").trim();
   return t || "数据表格";
@@ -2080,7 +2226,7 @@ function formatGridWebviewTabTitle(
 async function sqlResultView(
   datasource: Datasource,
   provider: DataSourceProvider,
-  outputChannel: vscode.OutputChannel
+  outputChannel: vscode.OutputChannel,
 ) {
   const pageSize = getGridPageSize();
   const tableName = datasource.label?.toString() || "";
@@ -2088,7 +2234,7 @@ async function sqlResultView(
   const connectionName =
     datasource.dataloader?.rootNode().label?.toString() || "";
   outputChannel.appendLine(
-    `[CADB REVEAL] sqlResultView 触发定位 connection=${connectionName} database=${databaseName} table=${tableName}`
+    `[CADB REVEAL] sqlResultView 触发定位 connection=${connectionName} database=${databaseName} table=${tableName}`,
   );
   void vscode.commands.executeCommand("cadb.datasource.revealByPath", {
     connectionName,
@@ -2117,7 +2263,7 @@ async function sqlResultView(
     offset: number,
     limit: number,
     messageFilter?: Record<string, unknown> | null,
-    messageSort?: ListDataSortCol[] | null
+    messageSort?: ListDataSortCol[] | null,
   ) => {
     if (messageFilter !== undefined) {
       lastFilterModel =
@@ -2131,7 +2277,7 @@ async function sqlResultView(
             (s) =>
               s &&
               typeof s.colId === "string" &&
-              (s.sort === "asc" || s.sort === "desc")
+              (s.sort === "asc" || s.sort === "desc"),
           )
         : [];
     }
@@ -2146,7 +2292,11 @@ async function sqlResultView(
 
   const data = await datasource.listData(listOpts(0, pageSize, {}, []));
 
-  const postLoad = (payload: TableResult | null, offset: number, limit: number) =>
+  const postLoad = (
+    payload: TableResult | null,
+    offset: number,
+    limit: number,
+  ) =>
     payload
       ? {
           command: "load" as const,
@@ -2164,11 +2314,15 @@ async function sqlResultView(
   const existing = openTablePanels.get(panelKey);
   if (existing) {
     existing.reveal();
-    existing.title = formatGridWebviewTabTitle(connectionName, databaseName, tableName);
+    existing.title = formatGridWebviewTabTitle(
+      connectionName,
+      databaseName,
+      tableName,
+    );
     triggerRevealForTablePanel(
       { connectionName, databaseName, tableName },
       outputChannel,
-      "existingTableDataReveal"
+      "existingTableDataReveal",
     );
     void upsertPersistedTablePanel(provider.context, persistedState);
     setTimeout(() => refreshDatasourceTableGridFocusContext(), 0);
@@ -2182,14 +2336,18 @@ async function sqlResultView(
   const panel = createWebview(
     provider,
     "datasourceTable",
-    formatGridWebviewTabTitle(connectionName, databaseName, tableName)
+    formatGridWebviewTabTitle(connectionName, databaseName, tableName),
   );
   openTablePanels.set(panelKey, panel);
-  attachTablePanelRevealTracking(panel, {
-    connectionName,
-    databaseName,
-    tableName,
-  }, outputChannel);
+  attachTablePanelRevealTracking(
+    panel,
+    {
+      connectionName,
+      databaseName,
+      tableName,
+    },
+    outputChannel,
+  );
   void upsertPersistedTablePanel(provider.context, persistedState);
   panel.onDidDispose(() => {
     openTablePanels.delete(panelKey);
@@ -2214,7 +2372,7 @@ async function sqlResultView(
     if (message.command === "ready") {
       const limit = getGridPageSize();
       const freshData = await datasource.listData(
-        listOpts(0, limit, message.filterModel, message.sortModel)
+        listOpts(0, limit, message.filterModel, message.sortModel),
       );
       const msg = postLoad(freshData, 0, limit);
       if (msg) panel.webview.postMessage(msg);
@@ -2224,7 +2382,7 @@ async function sqlResultView(
       const offset = typeof message.offset === "number" ? message.offset : 0;
       const limit = getGridPageSize();
       const freshData = await datasource.listData(
-        listOpts(offset, limit, message.filterModel, message.sortModel)
+        listOpts(offset, limit, message.filterModel, message.sortModel),
       );
       const msg = postLoad(freshData, offset, limit);
       if (msg) panel.webview.postMessage(msg);
@@ -2240,18 +2398,28 @@ async function sqlResultView(
       return;
     }
     if (message.command === "cellPreview") {
-      postDatasourceTableCellPreviewReply(provider.context, panel, message as {
-        pluginId?: string;
-        rawValue?: string;
-        columnField?: string;
-      });
+      postDatasourceTableCellPreviewReply(
+        provider.context,
+        panel,
+        message as {
+          pluginId?: string;
+          rawValue?: string;
+          columnField?: string;
+        },
+      );
       return;
     }
     if (message.command === "switchToTableEdit") {
       const conn = message.connectionName ?? connectionName;
       const db = message.databaseName ?? databaseName;
       const tbl = message.tableName ?? tableName;
-      const tableDs = await resolveTableDatasource(provider, provider.context, conn, db, tbl);
+      const tableDs = await resolveTableDatasource(
+        provider,
+        provider.context,
+        conn,
+        db,
+        tbl,
+      );
       if (tableDs) editEntry(provider, tableDs, outputChannel);
       return;
     }
@@ -2269,7 +2437,9 @@ async function sqlResultView(
       const db = message.databaseName ?? databaseName;
       const tbl = message.tableName ?? tableName;
       try {
-        const connectionData = provider.getConnections().find((ds) => ds.name === conn);
+        const connectionData = provider
+          .getConnections()
+          .find((ds) => ds.name === conn);
         if (!connectionData) {
           postWebviewStatus(panel.webview, {
             success: false,
@@ -2305,7 +2475,7 @@ async function sqlResultView(
                 resolve(createSql);
               });
             });
-          }
+          },
         );
         await vscode.env.clipboard.writeText(ddl);
         postWebviewStatus(panel.webview, {
@@ -2324,7 +2494,9 @@ async function sqlResultView(
       case "save":
         try {
           const saveRows = Array.isArray(message.data) ? message.data : [];
-          const deletedRows = Array.isArray(message.deleted) ? message.deleted : [];
+          const deletedRows = Array.isArray(message.deleted)
+            ? message.deleted
+            : [];
           if (saveRows.length === 0 && deletedRows.length === 0) {
             panel.webview.postMessage({
               command: "status",
@@ -2352,7 +2524,7 @@ async function sqlResultView(
             provider.getConnections(),
             provider.context,
             connectionData,
-            false
+            false,
           );
 
           if (!dsInstance.dataloader) {
@@ -2371,13 +2543,21 @@ async function sqlResultView(
             "id";
 
           // 新增行：先把 original 复制到 updated，用户修改再覆盖；full 用合并结果供 INSERT 使用
-          const normalizedRows = saveRows.map((r: { isNew?: boolean; original?: Record<string, any>; updated?: Record<string, any>; full?: Record<string, any>;[k: string]: any }) => {
-            if (!r.isNew || (!r.original && !r.updated)) return r;
-            const base = r.original || {};
-            const overrides = r.updated || {};
-            const merged = { ...base, ...overrides };
-            return { ...r, updated: merged, full: merged };
-          });
+          const normalizedRows = saveRows.map(
+            (r: {
+              isNew?: boolean;
+              original?: Record<string, any>;
+              updated?: Record<string, any>;
+              full?: Record<string, any>;
+              [k: string]: any;
+            }) => {
+              if (!r.isNew || (!r.original && !r.updated)) return r;
+              const base = r.original || {};
+              const overrides = r.updated || {};
+              const merged = { ...base, ...overrides };
+              return { ...r, updated: merged, full: merged };
+            },
+          );
 
           const saveResult = await dsInstance.dataloader.saveData({
             tableName: tableName,
@@ -2391,8 +2571,12 @@ async function sqlResultView(
             const msg = `成功更新 ${saveResult.successCount} 行`;
             vscode.window.showInformationMessage(msg);
             if (saveResult.executedSql?.length) {
-              const timestamp = new Date().toLocaleTimeString("zh-CN", { hour12: false });
-              outputChannel.appendLine(`-- [${timestamp}] 表格保存 · ${databaseName}.${tableName}`);
+              const timestamp = new Date().toLocaleTimeString("zh-CN", {
+                hour12: false,
+              });
+              outputChannel.appendLine(
+                `-- [${timestamp}] 表格保存 · ${databaseName}.${tableName}`,
+              );
               saveResult.executedSql.forEach((sql) => {
                 outputChannel.appendLine(sql.replace(/\s+/g, " ").trim());
               });
@@ -2404,12 +2588,15 @@ async function sqlResultView(
               message: msg,
             });
             const limit = getGridPageSize();
-            const refreshedData = await datasource.listData(listOpts(0, limit, undefined, undefined));
+            const refreshedData = await datasource.listData(
+              listOpts(0, limit, undefined, undefined),
+            );
             const loadMsg = postLoad(refreshedData, 0, limit);
             if (loadMsg) panel.webview.postMessage(loadMsg);
           } else {
-            const errMsg = `更新完成：成功 ${saveResult.successCount} 行，失败 ${saveResult.errorCount} 行。${saveResult.errors.length > 0 ? saveResult.errors[0] : ""
-              }`;
+            const errMsg = `更新完成：成功 ${saveResult.successCount} 行，失败 ${saveResult.errorCount} 行。${
+              saveResult.errors.length > 0 ? saveResult.errors[0] : ""
+            }`;
             panel.webview.postMessage({
               command: "status",
               success: false,
@@ -2431,7 +2618,7 @@ async function sqlResultView(
         const offset = typeof message.offset === "number" ? message.offset : 0;
         const limit = getGridPageSize();
         const freshData = await datasource.listData(
-          listOpts(offset, limit, message.filterModel, message.sortModel)
+          listOpts(offset, limit, message.filterModel, message.sortModel),
         );
         const loadMsg = postLoad(freshData, offset, limit);
         if (loadMsg) panel.webview.postMessage(loadMsg);
@@ -2443,18 +2630,23 @@ async function sqlResultView(
 
 async function keyValueResultView(
   datasource: Datasource,
-  provider: DataSourceProvider
+  provider: DataSourceProvider,
 ) {
   const key = datasource.label?.toString() || "";
   const dbNode = datasource.parent?.parent;
   const databaseName = dbNode?.label?.toString() || "";
-  const connectionName = datasource.dataloader?.rootNode().label?.toString() || "";
+  const connectionName =
+    datasource.dataloader?.rootNode().label?.toString() || "";
   const panelKey = `${connectionName}|${databaseName}|${key}`;
 
   const existing = openTablePanels.get(panelKey);
   if (existing) {
     existing.reveal();
-    existing.title = formatGridWebviewTabTitle(connectionName, databaseName, key);
+    existing.title = formatGridWebviewTabTitle(
+      connectionName,
+      databaseName,
+      key,
+    );
     setTimeout(() => refreshDatasourceTableGridFocusContext(), 0);
     const data = await datasource.listData();
     if (data) {
@@ -2478,7 +2670,7 @@ async function keyValueResultView(
     data = await datasource.listData();
   } catch (error) {
     vscode.window.showErrorMessage(
-      `加载键值数据失败: ${error instanceof Error ? error.message : String(error)}`
+      `加载键值数据失败: ${error instanceof Error ? error.message : String(error)}`,
     );
     return;
   }
@@ -2491,7 +2683,7 @@ async function keyValueResultView(
   const panel = createWebview(
     provider,
     "datasourceTable",
-    formatGridWebviewTabTitle(connectionName, databaseName, key)
+    formatGridWebviewTabTitle(connectionName, databaseName, key),
   );
   openTablePanels.set(panelKey, panel);
   panel.onDidDispose(() => {
@@ -2503,7 +2695,9 @@ async function keyValueResultView(
   });
   attachDatasourceTablePanelFocusTracking(panel);
 
-  const redisGridLoadPayload = (payload: NonNullable<Awaited<ReturnType<Datasource["listData"]>>>) => ({
+  const redisGridLoadPayload = (
+    payload: NonNullable<Awaited<ReturnType<Datasource["listData"]>>>,
+  ) => ({
     ...payload,
     connectionName,
     databaseName,
@@ -2540,11 +2734,15 @@ async function keyValueResultView(
       return;
     }
     if (message.command === "cellPreview") {
-      postDatasourceTableCellPreviewReply(provider.context, panel, message as {
-        pluginId?: string;
-        rawValue?: string;
-        columnField?: string;
-      });
+      postDatasourceTableCellPreviewReply(
+        provider.context,
+        panel,
+        message as {
+          pluginId?: string;
+          rawValue?: string;
+          columnField?: string;
+        },
+      );
       return;
     }
     switch (message.command) {
@@ -2559,7 +2757,8 @@ async function keyValueResultView(
         break;
       }
       case "save": {
-        const loader = datasource.dataloader as import("../entity/redis_dataloader").RedisDataloader;
+        const loader =
+          datasource.dataloader as import("../entity/redis_dataloader").RedisDataloader;
         if (!loader?.saveKeyData) {
           panel.webview.postMessage({
             command: "status",
@@ -2630,7 +2829,7 @@ const openRedisPubsubPanels = new Map<string, vscode.WebviewPanel>();
 
 async function openRedisPubsubView(
   item: Datasource,
-  provider: DataSourceProvider
+  provider: DataSourceProvider,
 ) {
   if (item.type !== "datasource" || item.data?.dbType !== "redis") {
     vscode.window.showWarningMessage("Pub/Sub 仅支持 Redis 连接");
@@ -2647,7 +2846,7 @@ async function openRedisPubsubView(
   const panel = createWebview(
     provider,
     "redisPubsub",
-    `Redis Pub/Sub - ${connectionName}`
+    `Redis Pub/Sub - ${connectionName}`,
   );
   openRedisPubsubPanels.set(connectionName, panel);
 
@@ -2656,14 +2855,20 @@ async function openRedisPubsubView(
   panel.onDidDispose(() => {
     openRedisPubsubPanels.delete(connectionName);
     if (subscriberClient?.isOpen) {
-      subscriberClient.quit().catch(() => { });
+      subscriberClient.quit().catch(() => {});
       subscriberClient = null;
     }
   });
 
-  const connectionData = provider.getConnections().find((c) => c.name === connectionName);
+  const connectionData = provider
+    .getConnections()
+    .find((c) => c.name === connectionName);
   if (!connectionData) {
-    panel.webview.postMessage({ command: "status", success: false, message: "连接配置不存在" });
+    panel.webview.postMessage({
+      command: "status",
+      success: false,
+      message: "连接配置不存在",
+    });
     return;
   }
 
@@ -2679,13 +2884,20 @@ async function openRedisPubsubView(
         provider.getConnections(),
         provider.context,
         connectionData,
-        false
+        false,
       );
-      loader = ds.dataloader instanceof RedisDataloader ? (ds.dataloader as RedisDataloader) : null;
+      loader =
+        ds.dataloader instanceof RedisDataloader
+          ? (ds.dataloader as RedisDataloader)
+          : null;
     }
 
     if (!loader) {
-      panel.webview.postMessage({ command: "status", success: false, message: "无法创建 Redis 连接" });
+      panel.webview.postMessage({
+        command: "status",
+        success: false,
+        message: "无法创建 Redis 连接",
+      });
       return;
     }
 
@@ -2699,7 +2911,11 @@ async function openRedisPubsubView(
           await subscriberClient.connect();
           subscriberClient.on("message", (ch: string, payload: string) => {
             if (panel.webview) {
-              panel.webview.postMessage({ command: "message", channel: ch, payload });
+              panel.webview.postMessage({
+                command: "message",
+                channel: ch,
+                payload,
+              });
             }
           });
         }
@@ -2720,12 +2936,20 @@ async function openRedisPubsubView(
         const channel = String(message.channel ?? "").trim();
         const messagePayload = message.message ?? "";
         if (!channel) {
-          panel.webview.postMessage({ command: "status", success: false, message: "请输入频道名" });
+          panel.webview.postMessage({
+            command: "status",
+            success: false,
+            message: "请输入频道名",
+          });
           return;
         }
         if (!loader.client.isOpen) await loader.client.connect();
         await loader.client.publish(channel, messagePayload);
-        panel.webview.postMessage({ command: "status", success: true, message: "发布成功" });
+        panel.webview.postMessage({
+          command: "status",
+          success: true,
+          message: "发布成功",
+        });
       }
     } catch (err) {
       panel.webview.postMessage({
@@ -2741,9 +2965,10 @@ export function registerDatasourceItemCommands(
   provider: DataSourceProvider,
   outputChannel: vscode.OutputChannel,
   databaseManager: DatabaseManager,
-  options?: { restorePersistedTablePanelsOnStartup?: boolean }
+  options?: { restorePersistedTablePanelsOnStartup?: boolean },
 ) {
-  const restorePersistedOnStartup = options?.restorePersistedTablePanelsOnStartup === true;
+  const restorePersistedOnStartup =
+    options?.restorePersistedTablePanelsOnStartup === true;
   if (!hasScheduledPersistedTablePanelRestore) {
     hasScheduledPersistedTablePanelRestore = true;
     if (restorePersistedOnStartup) {
@@ -2767,14 +2992,15 @@ export function registerDatasourceItemCommands(
       if (!connectionName || !databaseName || !tableName) {
         return false;
       }
-      const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+      const sleep = (ms: number) =>
+        new Promise<void>((resolve) => setTimeout(resolve, ms));
       for (let i = 0; i < 8; i++) {
         const ds = await resolveTableDatasource(
           provider,
           provider.context,
           connectionName,
           databaseName,
-          tableName
+          tableName,
         );
         if (ds) {
           if (kind === "tableEdit") {
@@ -2790,7 +3016,7 @@ export function registerDatasourceItemCommands(
         await sleep(260);
       }
       return false;
-    }
+    },
   );
   vscode.commands.registerCommand("cadb.item.showData", async (args) => {
     const datasource = args as Datasource;
@@ -2809,7 +3035,8 @@ export function registerDatasourceItemCommands(
   vscode.commands.registerCommand(
     "cadb.quickQuery",
     async (connectionName: string, databaseName: string, tableName: string) => {
-      const escapeTable = (s: string) => "`" + String(s).replace(/`/g, "``") + "`";
+      const escapeTable = (s: string) =>
+        "`" + String(s).replace(/`/g, "``") + "`";
       const baseSql = `SELECT * FROM ${escapeTable(tableName)} LIMIT 100`;
 
       await databaseManager.setActiveDatabase(connectionName, databaseName);
@@ -2820,14 +3047,14 @@ export function registerDatasourceItemCommands(
         const ext = uri.fsPath.toLowerCase().endsWith(".jsql") ? "jsql" : "sql";
         if (ext === "jsql") {
           const nbOpen = vscode.workspace.notebookDocuments.find(
-            (n) => n.uri.fsPath.toLowerCase() === uri.fsPath.toLowerCase()
+            (n) => n.uri.fsPath.toLowerCase() === uri.fsPath.toLowerCase(),
           );
           if (nbOpen) {
             const edit = new vscode.WorkspaceEdit();
             const newCell = new vscode.NotebookCellData(
               vscode.NotebookCellKind.Code,
               baseSql,
-              "sql"
+              "sql",
             );
             edit.set(uri, [
               vscode.NotebookEdit.insertCells(nbOpen.cellCount, [newCell]),
@@ -2843,7 +3070,10 @@ export function registerDatasourceItemCommands(
               selections: [new vscode.NotebookRange(lastIdx, lastIdx + 1)],
               preview: false,
             });
-            setTimeout(() => vscode.commands.executeCommand("notebook.cell.edit"), 100);
+            setTimeout(
+              () => vscode.commands.executeCommand("notebook.cell.edit"),
+              100,
+            );
           } else {
             const buf = await vscode.workspace.fs.readFile(uri);
             const raw = JSON.parse(new TextDecoder().decode(buf)) as {
@@ -2857,7 +3087,7 @@ export function registerDatasourceItemCommands(
             raw.database = databaseName;
             await vscode.workspace.fs.writeFile(
               uri,
-              Buffer.from(JSON.stringify(raw, null, 2), "utf-8")
+              Buffer.from(JSON.stringify(raw, null, 2), "utf-8"),
             );
             const nb = await vscode.workspace.openNotebookDocument(uri);
             const lastIdx = Math.max(0, nb.cellCount - 1);
@@ -2865,28 +3095,37 @@ export function registerDatasourceItemCommands(
               selections: [new vscode.NotebookRange(lastIdx, lastIdx + 1)],
               preview: false,
             });
-            setTimeout(() => vscode.commands.executeCommand("notebook.cell.edit"), 150);
+            setTimeout(
+              () => vscode.commands.executeCommand("notebook.cell.edit"),
+              150,
+            );
           }
         } else {
           const docOpen = vscode.workspace.textDocuments.find(
-            (d) => d.uri.fsPath.toLowerCase() === uri.fsPath.toLowerCase()
+            (d) => d.uri.fsPath.toLowerCase() === uri.fsPath.toLowerCase(),
           );
           if (docOpen) {
             const lastLine = Math.max(0, docOpen.lineCount - 1);
-            const pos = new vscode.Position(lastLine, docOpen.lineAt(lastLine).text.length);
+            const pos = new vscode.Position(
+              lastLine,
+              docOpen.lineAt(lastLine).text.length,
+            );
             const edit = new vscode.WorkspaceEdit();
             edit.insert(uri, pos, `\n\n${baseSql}\n`);
             await vscode.workspace.applyEdit(edit);
             const endLineIdx = docOpen.lineCount - 1;
             const endPos = new vscode.Position(
               endLineIdx,
-              docOpen.lineAt(endLineIdx).text.length
+              docOpen.lineAt(endLineIdx).text.length,
             );
             const editor = await vscode.window.showTextDocument(docOpen, {
               viewColumn: vscode.ViewColumn.Active,
               selection: new vscode.Range(endPos, endPos),
             });
-            editor.revealRange(new vscode.Range(endPos, endPos), vscode.TextEditorRevealType.InCenter);
+            editor.revealRange(
+              new vscode.Range(endPos, endPos),
+              vscode.TextEditorRevealType.InCenter,
+            );
           } else {
             const buf = await vscode.workspace.fs.readFile(uri);
             const text = new TextDecoder().decode(buf);
@@ -2894,16 +3133,26 @@ export function registerDatasourceItemCommands(
             const lastLine = Math.max(0, lines.length - 1);
             const lastLineLen = lines[lastLine]?.length ?? 0;
             const edit = new vscode.WorkspaceEdit();
-            edit.insert(uri, new vscode.Position(lastLine, lastLineLen), `\n\n${baseSql}\n`);
+            edit.insert(
+              uri,
+              new vscode.Position(lastLine, lastLineLen),
+              `\n\n${baseSql}\n`,
+            );
             await vscode.workspace.applyEdit(edit);
             const doc = await vscode.workspace.openTextDocument(uri);
             const endLineIdx = doc.lineCount - 1;
-            const endPos = new vscode.Position(endLineIdx, doc.lineAt(endLineIdx).text.length);
+            const endPos = new vscode.Position(
+              endLineIdx,
+              doc.lineAt(endLineIdx).text.length,
+            );
             const editor = await vscode.window.showTextDocument(doc, {
               viewColumn: vscode.ViewColumn.Active,
               selection: new vscode.Range(endPos, endPos),
             });
-            editor.revealRange(new vscode.Range(endPos, endPos), vscode.TextEditorRevealType.InCenter);
+            editor.revealRange(
+              new vscode.Range(endPos, endPos),
+              vscode.TextEditorRevealType.InCenter,
+            );
           }
         }
       };
@@ -2917,10 +3166,15 @@ export function registerDatasourceItemCommands(
 
       const allFiles = entries.filter(
         ([name]) =>
-          name.toLowerCase().endsWith(".jsql") || name.toLowerCase().endsWith(".sql")
+          name.toLowerCase().endsWith(".jsql") ||
+          name.toLowerCase().endsWith(".sql"),
       );
 
-      const queryFiles: { label: string; description: string; value: vscode.Uri }[] = [];
+      const queryFiles: {
+        label: string;
+        description: string;
+        value: vscode.Uri;
+      }[] = [];
       for (const [name] of allFiles) {
         if (name.toLowerCase().endsWith(".jsql")) {
           try {
@@ -2982,7 +3236,7 @@ export function registerDatasourceItemCommands(
             cells: [{ sql: baseSql }],
           },
           null,
-          2
+          2,
         );
         await vscode.workspace.fs.writeFile(uri, Buffer.from(content, "utf-8"));
         const nb = await vscode.workspace.openNotebookDocument(uri);
@@ -3006,7 +3260,7 @@ export function registerDatasourceItemCommands(
       } else {
         await appendToFile(choice.value as vscode.Uri);
       }
-    }
+    },
   );
 
   vscode.commands.registerCommand("cadb.oss.download", async (args) => {
@@ -3043,7 +3297,10 @@ export function registerDatasourceItemCommands(
           for (const obj of list) {
             if (!obj.Key) continue;
             const buf = await loader.getObject(bucket, obj.Key);
-            const relPath = obj.Key.slice(key.length).replace(/^\/+/, "") || obj.Key.split("/").pop() || "file";
+            const relPath =
+              obj.Key.slice(key.length).replace(/^\/+/, "") ||
+              obj.Key.split("/").pop() ||
+              "file";
             const fileUri = vscode.Uri.joinPath(baseDir, relPath);
             const parts = relPath.split("/").filter(Boolean);
             if (parts.length > 1) {
@@ -3056,7 +3313,7 @@ export function registerDatasourceItemCommands(
             }
             await vscode.workspace.fs.writeFile(fileUri, buf);
           }
-        }
+        },
       );
       vscode.window.showInformationMessage(`已下载 ${list.length} 个文件`);
       return;
@@ -3064,8 +3321,9 @@ export function registerDatasourceItemCommands(
     const defaultName = key.split("/").pop() || "download";
     const uri = await vscode.window.showSaveDialog({
       defaultUri: vscode.Uri.joinPath(
-        vscode.workspace.workspaceFolders?.[0]?.uri ?? vscode.Uri.file(process.env.HOME || ""),
-        defaultName
+        vscode.workspace.workspaceFolders?.[0]?.uri ??
+          vscode.Uri.file(process.env.HOME || ""),
+        defaultName,
       ),
       title: "保存 OSS 文件",
     });
@@ -3076,7 +3334,7 @@ export function registerDatasourceItemCommands(
       vscode.window.showInformationMessage("下载完成");
     } catch (e) {
       vscode.window.showErrorMessage(
-        `下载失败: ${e instanceof Error ? e.message : String(e)}`
+        `下载失败: ${e instanceof Error ? e.message : String(e)}`,
       );
     }
   });
@@ -3084,7 +3342,7 @@ export function registerDatasourceItemCommands(
   vscode.commands.registerCommand("cadb.oss.cache.clear", async () => {
     const cacheDir = vscode.Uri.joinPath(
       provider.context.globalStorageUri,
-      "cadb-oss-preview"
+      "cadb-oss-preview",
     );
     try {
       await vscode.workspace.fs.delete(cacheDir, { recursive: true });
@@ -3092,7 +3350,7 @@ export function registerDatasourceItemCommands(
       const err = e as { code?: string };
       if (err?.code !== "FileNotFound" && err?.code !== "ENOENT") {
         vscode.window.showErrorMessage(
-          `清除失败: ${e instanceof Error ? e.message : String(e)}`
+          `清除失败: ${e instanceof Error ? e.message : String(e)}`,
         );
         return;
       }
@@ -3129,9 +3387,8 @@ export function registerDatasourceItemCommands(
           fileItem.parent && findAncestorByType(fileItem.parent, "collection");
 
         // 使用 SQL Notebook 方式打开
-        const notebookDocument = await vscode.workspace.openNotebookDocument(
-          dsPath
-        );
+        const notebookDocument =
+          await vscode.workspace.openNotebookDocument(dsPath);
         await vscode.window.showNotebookDocument(notebookDocument, {
           preview: false,
           viewColumn: vscode.ViewColumn.Active,
@@ -3154,7 +3411,7 @@ export function registerDatasourceItemCommands(
         fileName,
       });
       outputChannel.appendLine(
-        `[CADB REVEAL] cadb.file.open 触发定位 connection=${connectionName} file=${fileName}`
+        `[CADB REVEAL] cadb.file.open 触发定位 connection=${connectionName} file=${fileName}`,
       );
     } catch (error) {
       vscode.window.showErrorMessage(`打开文件失败: ${error}`);
@@ -3192,7 +3449,14 @@ export function registerDatasourceItemCommands(
       // 原文件后缀；若用户输入未带后缀则自动补上
       const originalExt = path.extname(currentName) || path.extname(filePath);
       const trimmedNew = newName.trim();
-      const finalName = path.extname(trimmedNew) ? trimmedNew : trimmedNew + (originalExt ? (trimmedNew.endsWith(".") ? originalExt.slice(1) : originalExt) : "");
+      const finalName = path.extname(trimmedNew)
+        ? trimmedNew
+        : trimmedNew +
+          (originalExt
+            ? trimmedNew.endsWith(".")
+              ? originalExt.slice(1)
+              : originalExt
+            : "");
 
       const fileUri = vscode.Uri.file(filePath);
       const dirUri = vscode.Uri.file(path.dirname(filePath));
@@ -3220,8 +3484,9 @@ export function registerDatasourceItemCommands(
       }
     } catch (error) {
       vscode.window.showErrorMessage(
-        `重命名文件失败: ${error instanceof Error ? error.message : String(error)
-        }`
+        `重命名文件失败: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       );
     }
   });
@@ -3239,7 +3504,7 @@ export function registerDatasourceItemCommands(
       `确定要删除文件 "${fileName}" 吗？此操作无法撤销。`,
       { modal: true },
       "删除",
-      "取消"
+      "取消",
     );
 
     if (confirm !== "删除") {
@@ -3258,8 +3523,9 @@ export function registerDatasourceItemCommands(
       }
     } catch (error) {
       vscode.window.showErrorMessage(
-        `删除文件失败: ${error instanceof Error ? error.message : String(error)
-        }`
+        `删除文件失败: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       );
     }
   });
@@ -3284,16 +3550,12 @@ export function registerDatasourceItemCommands(
       }
 
       // 步骤 2: 选择数据源和数据库
-      const selectedConnection = await databaseManager.selectConnection();
-      if (!selectedConnection) {
+      const picked = await databaseManager.selectConnectionAndDatabase();
+      if (!picked) {
         return; // 用户取消
       }
-
-      const selectedDatabase =
-        await databaseManager.selectDatabaseFromConnection(selectedConnection);
-      if (!selectedDatabase) {
-        return; // 用户取消
-      }
+      const selectedConnection = picked.connection;
+      const selectedDatabase = picked.database;
 
       // 步骤 3: 执行 SQL（带事务）
       await executeSqlFileWithTransaction(
@@ -3301,12 +3563,13 @@ export function registerDatasourceItemCommands(
         selectedConnection,
         selectedDatabase,
         outputChannel,
-        provider
+        provider,
       );
     } catch (error) {
       vscode.window.showErrorMessage(
-        `执行 SQL 文件失败: ${error instanceof Error ? error.message : String(error)
-        }`
+        `执行 SQL 文件失败: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       );
     }
   });
@@ -3320,7 +3583,7 @@ async function executeSqlFileWithTransaction(
   connection: Datasource,
   database: Datasource,
   outputChannel: vscode.OutputChannel,
-  provider: DataSourceProvider
+  provider: DataSourceProvider,
 ): Promise<void> {
   return await vscode.window.withProgress(
     {
@@ -3367,7 +3630,7 @@ async function executeSqlFileWithTransaction(
           const cadbCfg = vscode.workspace.getConfiguration("cadb");
           const autoLimit = cadbCfg.get<boolean>(
             "query.autoAppendSelectLimit",
-            true
+            true,
           );
           const limitRows = cadbCfg.get<number>("grid.pageSize", 2000);
 
@@ -3386,7 +3649,7 @@ async function executeSqlFileWithTransaction(
 
             const sqlOneLine = toRun.replace(/\s+/g, " ").trim();
             outputChannel.appendLine(
-              `[${statementTimestamp} ${databaseName}] 执行: ${sqlOneLine}`
+              `[${statementTimestamp} ${databaseName}] 执行: ${sqlOneLine}`,
             );
             outputChannel.show(true);
 
@@ -3427,7 +3690,7 @@ async function executeSqlFileWithTransaction(
           const finalTimestamp = formatTimestamp(new Date());
           if (errorOccurred) {
             outputChannel.appendLine(
-              `[${finalTimestamp} ${databaseName}] 发生错误，回滚事务`
+              `[${finalTimestamp} ${databaseName}] 发生错误，回滚事务`,
             );
             outputChannel.show(true);
 
@@ -3447,11 +3710,11 @@ async function executeSqlFileWithTransaction(
             });
 
             vscode.window.showErrorMessage(
-              `SQL 执行失败: ${errorMessage}。已回滚所有更改。`
+              `SQL 执行失败: ${errorMessage}。已回滚所有更改。`,
             );
           } else {
             outputChannel.appendLine(
-              `[${finalTimestamp} ${databaseName}] 提交事务`
+              `[${finalTimestamp} ${databaseName}] 提交事务`,
             );
             outputChannel.show(true);
 
@@ -3471,12 +3734,12 @@ async function executeSqlFileWithTransaction(
             });
 
             vscode.window.showInformationMessage(
-              `SQL 执行成功！共执行 ${executedCount} 条语句。`
+              `SQL 执行成功！共执行 ${executedCount} 条语句。`,
             );
           }
-        }
+        },
       );
-    }
+    },
   );
 }
 
@@ -3546,7 +3809,7 @@ export function registerDatabaseCommands(databaseManager: DatabaseManager) {
 
   // 注册数据库选择命令（用于 Notebook 工具栏）
   vscode.commands.registerCommand("cadb.sql.selectDatabase", () =>
-    databaseManager.selectDatabase()
+    databaseManager.selectDatabase(),
   );
 
   // 返回 selector 以便在 extension.ts 中注册到 subscriptions
@@ -3557,19 +3820,23 @@ export function registerResultCommands(resultProvider: ResultWebviewProvider) {
   // 注册显示结果命令
   vscode.commands.registerCommand(
     "cadb.result.show",
-    (result: any, sql: string) => resultProvider.showResult(result, sql)
+    (result: any, sql: string) => resultProvider.showResult(result, sql),
   );
 
   // 注册显示错误命令
   vscode.commands.registerCommand(
     "cadb.result.showError",
-    (error: string, sql: string) => resultProvider.showError(error, sql)
+    (error: string, sql: string) => resultProvider.showError(error, sql),
   );
 }
 
 /** 表数据网格：命令面板「切换表格右侧工具栏」→ 向 webview postMessage；表格内为 ⌘F/Ctrl+F（见 grid.js） */
 export function registerGridSidePanelCommand(): vscode.Disposable {
-  void vscode.commands.executeCommand("setContext", CONTEXT_DATASOURCE_TABLE_GRID_FOCUSED, false);
+  void vscode.commands.executeCommand(
+    "setContext",
+    CONTEXT_DATASOURCE_TABLE_GRID_FOCUSED,
+    false,
+  );
 
   return vscode.commands.registerCommand("cadb.grid.toggleSidePanel", () => {
     let p: vscode.WebviewPanel | undefined;
@@ -3597,7 +3864,11 @@ export function registerGridSidePanelCommand(): vscode.Disposable {
     }
     if (!stillOpen) {
       lastActiveDatasourceTablePanel = undefined;
-      void vscode.commands.executeCommand("setContext", CONTEXT_DATASOURCE_TABLE_GRID_FOCUSED, false);
+      void vscode.commands.executeCommand(
+        "setContext",
+        CONTEXT_DATASOURCE_TABLE_GRID_FOCUSED,
+        false,
+      );
       return;
     }
     void p.webview.postMessage({ command: "toggleSidePanel" });

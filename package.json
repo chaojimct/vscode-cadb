@@ -3,7 +3,7 @@
     "displayName": "vscode-cadb",
     "publisher": "codingsoul",
     "description": "Powerful database management VSCode plugin!",
-    "version": "0.1.7",
+    "version": "0.1.8",
     "engines": {
         "vscode": "^1.104.0"
     },
@@ -244,6 +244,16 @@
             {
                 "command": "cadb.sql.explain",
                 "title": "解释 SQL",
+                "icon": "$(search)"
+            },
+            {
+                "command": "cadb.sql.runFile",
+                "title": "运行 SQL 文件",
+                "icon": "$(play)"
+            },
+            {
+                "command": "cadb.scanDbConnections",
+                "title": "扫描数据库连接",
                 "icon": "$(search)"
             },
             {
@@ -489,6 +499,18 @@
                     "command": "cadb.sql.runAll",
                     "when": "resourceLangId == sql",
                     "group": "navigation@3"
+                }
+            ],
+            "explorer/context": [
+                {
+                    "command": "cadb.sql.runFile",
+                    "when": "resourceExtname == .sql",
+                    "group": "cadb@1"
+                },
+                {
+                    "command": "cadb.scanDbConnections",
+                    "when": "explorerResourceIsFolder || resourceScheme == file",
+                    "group": "cadb@2"
                 }
             ]
         },

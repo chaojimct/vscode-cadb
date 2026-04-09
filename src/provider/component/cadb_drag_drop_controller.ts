@@ -19,18 +19,18 @@ export class CadbDragAndDropController implements vscode.TreeDragAndDropControll
     dataTransfer: vscode.DataTransfer,
     _token: vscode.CancellationToken,
   ): Promise<void> {
-    const tableNodes = source.filter((node) => node.type === "document");
-    if (tableNodes.length === 0) {
+    const nodes = source.filter((node) => !!node.label?.toString());
+    if (nodes.length === 0) {
       return;
     }
 
-    const items: CadbTableDragData[] = [];
-    for (const node of tableNodes) {
+    // 仅对 document 类型节点（数据表）填充结构化拖拽数据
+    const tableItems: CadbTableDragData[] = [];
+    for (const node of nodes.filter((n) => n.type === "document")) {
       const tableName = node.label?.toString() || "";
       if (!tableName) {
         continue;
       }
-
       let databaseName = "";
       let connectionName = "";
       let cur: Datasource | undefined = node.parent;
@@ -43,24 +43,34 @@ export class CadbDragAndDropController implements vscode.TreeDragAndDropControll
         }
         cur = cur.parent;
       }
-
-      items.push({ connectionName, databaseName, tableName });
+      tableItems.push({ connectionName, databaseName, tableName });
     }
 
-    if (items.length === 0) {
-      return;
+    if (tableItems.length > 0) {
+      dataTransfer.set(
+        CADB_TABLE_DRAG_MIME_TYPE,
+        new vscode.DataTransferItem(JSON.stringify(tableItems)),
+      );
     }
 
-    dataTransfer.set(
-      CADB_TABLE_DRAG_MIME_TYPE,
-      new vscode.DataTransferItem(JSON.stringify(items)),
-    );
-
-    // text/plain fallback：拖入聊天等场景时粘贴表名列表
-    const tableNames = items.map((i) => `\`${i.tableName}\``).join("、");
+    // text/plain：所有节点均以 `label` 格式输出，拖入编辑器/聊天等场景直接可用
+    // fieldType 节点：展开子字段列表，格式为 `field1`, `field2`, ...
+    const plainParts: string[] = [];
+    for (const node of nodes) {
+      if (node.type === "fieldType") {
+        const fields = (node.children ?? [])
+          .filter((c) => c.type === "field" && !!c.label?.toString())
+          .map((c) => `\`${c.label?.toString()}\``);
+        if (fields.length > 0) {
+          plainParts.push(fields.join(", "));
+          continue;
+        }
+      }
+      plainParts.push(`\`${node.label?.toString()}\``);
+    }
     dataTransfer.set(
       "text/plain",
-      new vscode.DataTransferItem(`数据表：${tableNames}`),
+      new vscode.DataTransferItem(plainParts.join(" ")),
     );
   }
 

@@ -21,6 +21,8 @@ export interface DatasourceInputData {
     | "collection"
     | "documentType"
     | "document" // 表
+    | "viewType" // 视图
+    | "view"
     | "fieldType"
     | "field" // 字段
     | "indexType"
@@ -42,17 +44,27 @@ export interface DatasourceInputData {
   dbType?: string;
   group?: string;
   saveLocation?: "workspace" | "user";
-  markColor?: "red" | "yellow" | "blue" | "green" | "cyan" | "purple" | "gray" | "orange" | "pink" | "none";
+  markColor?:
+    | "red"
+    | "yellow"
+    | "blue"
+    | "green"
+    | "cyan"
+    | "purple"
+    | "gray"
+    | "orange"
+    | "pink"
+    | "none";
   database?: string;
   username?: string;
   password?: string;
   host?: string;
   port?: number;
-	endpoint?: string;
-	accessKeyId?: string;
-	accessSecretKey?: string;
-	bucket?: string;
-	region?: string;
+  endpoint?: string;
+  accessKeyId?: string;
+  accessSecretKey?: string;
+  bucket?: string;
+  region?: string;
 }
 
 export class Datasource extends vscode.TreeItem {
@@ -112,7 +124,7 @@ export class Datasource extends vscode.TreeItem {
 
   public create = async (
     context: vscode.ExtensionContext,
-    databaseManager?: DatabaseManager
+    databaseManager?: DatabaseManager,
   ): Promise<void> => {
     switch (this.type) {
       case "datasourceType": {
@@ -137,46 +149,49 @@ export class Datasource extends vscode.TreeItem {
             data: {},
             options: { collation: options },
           });
-          panel.webview.onDidReceiveMessage(async (message: { command: string; payload?: any }) => {
-            switch (message.command) {
-              case "save":
-                try {
-                  const databaseName = message.payload?.name;
-                  await dataloader.createDatabase(message.payload);
-                  panel.webview.postMessage({
-                    command: "status",
-                    success: true,
-                    message: "✔️ 数据库创建成功",
-                  });
-                  setTimeout(() => panel.dispose(), 1000);
-                  host.refresh(item);
-                  setTimeout(async () => {
-                    try {
-                      const databases = await item.expand(context);
-                      item.children = databases || [];
-                      const newDatabase = item.children.find(
-                        (db: Datasource) => db.label?.toString() === databaseName
-                      );
-                      if (newDatabase && newDatabase.type === "collection") {
-                        await host.loadCollectionChildren(newDatabase);
+          panel.webview.onDidReceiveMessage(
+            async (message: { command: string; payload?: any }) => {
+              switch (message.command) {
+                case "save":
+                  try {
+                    const databaseName = message.payload?.name;
+                    await dataloader.createDatabase(message.payload);
+                    panel.webview.postMessage({
+                      command: "status",
+                      success: true,
+                      message: "✔️ 数据库创建成功",
+                    });
+                    setTimeout(() => panel.dispose(), 1000);
+                    host.refresh(item);
+                    setTimeout(async () => {
+                      try {
+                        const databases = await item.expand(context);
+                        item.children = databases || [];
+                        const newDatabase = item.children.find(
+                          (db: Datasource) =>
+                            db.label?.toString() === databaseName,
+                        );
+                        if (newDatabase && newDatabase.type === "collection") {
+                          await host.loadCollectionChildren(newDatabase);
+                        }
+                      } catch (err) {
+                        console.error("加载新数据库子节点失败:", err);
                       }
-                    } catch (err) {
-                      console.error("加载新数据库子节点失败:", err);
-                    }
-                  }, 500);
-                } catch (error) {
-                  panel.webview.postMessage({
-                    command: "status",
-                    success: false,
-                    message: `❗ 创建失败: ${error instanceof Error ? error.message : String(error)}`,
-                  });
-                }
-                break;
-              case "cancel":
-                panel.dispose();
-                break;
-            }
-          });
+                    }, 500);
+                  } catch (error) {
+                    panel.webview.postMessage({
+                      command: "status",
+                      success: false,
+                      message: `❗ 创建失败: ${error instanceof Error ? error.message : String(error)}`,
+                    });
+                  }
+                  break;
+                case "cancel":
+                  panel.dispose();
+                  break;
+              }
+            },
+          );
         }
         break;
       }
@@ -186,10 +201,18 @@ export class Datasource extends vscode.TreeItem {
         }
         const kind = await vscode.window.showQuickPick(
           [
-            { label: "创建 SQL 文件 (.sql)", description: "纯文本，支持 CodeLens 运行全部与 Explain", value: "sql" as const },
-            { label: "创建 JSQL Notebook (.jsql)", description: "笔记本，按单元格执行", value: "jsql" as const },
+            {
+              label: "创建 SQL 文件 (.sql)",
+              description: "纯文本，支持 CodeLens 运行全部与 Explain",
+              value: "sql" as const,
+            },
+            {
+              label: "创建 JSQL Notebook (.jsql)",
+              description: "笔记本，按单元格执行",
+              value: "jsql" as const,
+            },
           ],
-          { placeHolder: "选择：创建 SQL 文件 或 JSQL Notebook" }
+          { placeHolder: "选择：创建 SQL 文件 或 JSQL Notebook" },
         );
         if (!kind) {
           return Promise.resolve();
@@ -199,7 +222,9 @@ export class Datasource extends vscode.TreeItem {
 
         const connectionNameForPath = this.parent.label.toString();
         const dsPath =
-          Datasource.createDatabaseHost?.getConnectionFilesDirUri?.(connectionNameForPath) ??
+          Datasource.createDatabaseHost?.getConnectionFilesDirUri?.(
+            connectionNameForPath,
+          ) ??
           vscode.Uri.joinPath(context.globalStorageUri, connectionNameForPath);
 
         const dayjs = require("dayjs");
@@ -231,12 +256,19 @@ export class Datasource extends vscode.TreeItem {
             cells: [],
           };
           const content = JSON.stringify(emptyNotebook, null, 2);
-          await vscode.workspace.fs.writeFile(fileUri, Buffer.from(content, "utf-8"));
+          await vscode.workspace.fs.writeFile(
+            fileUri,
+            Buffer.from(content, "utf-8"),
+          );
 
-          const notebookDocument = await vscode.workspace.openNotebookDocument(fileUri);
+          const notebookDocument =
+            await vscode.workspace.openNotebookDocument(fileUri);
           await vscode.window.showNotebookDocument(notebookDocument);
         } else {
-          await vscode.workspace.fs.writeFile(fileUri, Buffer.from("", "utf-8"));
+          await vscode.workspace.fs.writeFile(
+            fileUri,
+            Buffer.from("", "utf-8"),
+          );
           const textDoc = await vscode.workspace.openTextDocument(fileUri);
           await vscode.window.showTextDocument(textDoc);
         }
@@ -306,7 +338,7 @@ export class Datasource extends vscode.TreeItem {
   public constructor(
     input: DatasourceInputData,
     dataloader?: Dataloader,
-    parent?: Datasource
+    parent?: Datasource,
   ) {
     super(input.name);
     this.data = input;
@@ -362,6 +394,9 @@ export class Datasource extends vscode.TreeItem {
       case "file":
       case "fileType":
         this.initFileType(input);
+      case "view":
+      case "viewType":
+        this.initViewType(input);
         break;
     }
   }
@@ -381,6 +416,20 @@ export class Datasource extends vscode.TreeItem {
     }
   }
 
+  private initViewType(input: DatasourceInputData): void {
+    if (input.type === "view") {
+      this.description = `${input.extra}`;
+      this.iconPath = new vscode.ThemeIcon("table");
+      this.command = {
+        title: "查看数据",
+        command: "cadb.item.showData",
+        arguments: [this],
+      };
+    } else {
+      this.iconPath = new vscode.ThemeIcon("folder");
+    }
+  }
+
   private initIndexType(input: DatasourceInputData): void {
     if (input.type === "index") {
       this.description = input.extra;
@@ -394,7 +443,7 @@ export class Datasource extends vscode.TreeItem {
     if (input.type === "field") {
       this.description = input.extra;
       this.iconPath = new vscode.ThemeIcon(
-        input.nullable !== false ? "symbol-constant" : "symbol-event"
+        input.nullable !== false ? "symbol-constant" : "symbol-event",
       );
     } else {
       this.iconPath = new vscode.ThemeIcon("folder");
@@ -431,7 +480,7 @@ export class Datasource extends vscode.TreeItem {
 
   private initItem(_: DatasourceInputData): void {
     this.iconPath = new vscode.ThemeIcon("note");
-		this.command = {
+    this.command = {
       title: "查看数据",
       command: "cadb.item.showData",
       arguments: [this],
@@ -470,7 +519,7 @@ export class Datasource extends vscode.TreeItem {
     model: DatasourceInputData[],
     context: vscode.ExtensionContext,
     input: DatasourceInputData,
-    save: boolean = false
+    save: boolean = false,
   ): Promise<Datasource> {
     return new Promise<Datasource>((resolve) => {
       const instance = new Datasource(input);

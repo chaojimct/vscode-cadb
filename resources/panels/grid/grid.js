@@ -3,7 +3,9 @@
  * 负责工具栏、分页与消息通信
  */
 (function () {
-  const vscode = window.vscode || (typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : null);
+  const vscode =
+    window.vscode ||
+    (typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : null);
 
   const dbTable = new DatabaseTableData({
     tableSelector: "#grid",
@@ -36,13 +38,34 @@
 
   const $ = (sel, root = document) => root.querySelector(sel);
 
+  /** 当前预览的单元格上下文，用于「应用 JSON 编辑」时定位并更新行/列数据 */
+  let currentPreviewContext = null;
+
+  /**
+   * 由预览面板的「应用」按钮调用，将编辑后的 JSON 字符串写回对应单元格。
+   * @param {string} newJsonString
+   * @returns {boolean}
+   */
+  window.cadbApplyPreviewJsonEdit = function (newJsonString) {
+    if (!currentPreviewContext) return false;
+    const { columnField, rowData } = currentPreviewContext;
+    if (!columnField || !rowData || rowData.__rowIndex == null) return false;
+    const node =
+      dbTable.gridApi && dbTable.gridApi.getRowNode(String(rowData.__rowIndex));
+    if (!node) return false;
+    node.setDataValue(columnField, newJsonString);
+    return true;
+  };
+
   /** 同步 document.title（仅表名）与分页区表名标签（悬停全路径：连接 / 数据库 / 表） */
   function applyGridDocumentTitle(meta) {
     const c = meta && String(meta.connectionName ?? "").trim();
     const d = meta && String(meta.databaseName ?? "").trim();
     const t = meta && String(meta.tableName ?? "").trim();
     const labelEl = document.getElementById("grid-toolbar-table-label");
-    const labelTextEl = labelEl?.querySelector?.(".grid-toolbar__table-name-text");
+    const labelTextEl = labelEl?.querySelector?.(
+      ".grid-toolbar__table-name-text",
+    );
     if (c && d && t) {
       document.title = t;
       if (labelEl) {
@@ -83,7 +106,7 @@
       lastPointer.x = ev.clientX;
       lastPointer.y = ev.clientY;
     },
-    true
+    true,
   );
 
   let copyFormatPopupCleanup = null;
@@ -100,8 +123,10 @@
    */
   function showGridCopyFormatPopup(clientX, clientY) {
     closeCopyFormatPopup();
-    const x = typeof clientX === "number" && clientX > 0 ? clientX : lastPointer.x;
-    const y = typeof clientY === "number" && clientY > 0 ? clientY : lastPointer.y;
+    const x =
+      typeof clientX === "number" && clientX > 0 ? clientX : lastPointer.x;
+    const y =
+      typeof clientY === "number" && clientY > 0 ? clientY : lastPointer.y;
 
     const root = document.createElement("div");
     root.id = "grid-copy-format-popup";
@@ -176,7 +201,11 @@
               : res.reason === "no-columns"
                 ? "当前没有可复制的数据列"
                 : "复制到剪贴板失败";
-          vscode.postMessage({ command: "showMessage", type: "warning", message: msg });
+          vscode.postMessage({
+            command: "showMessage",
+            type: "warning",
+            message: msg,
+          });
         });
       });
     });
@@ -192,11 +221,20 @@
       const changed = dbTable.getChangedRows();
       const deleted = dbTable.getDeletedRows?.() ?? [];
       if (changed.length === 0 && deleted.length === 0) {
-        vscode?.postMessage({ command: "status", success: false, message: "没有需要保存的修改" });
+        vscode?.postMessage({
+          command: "status",
+          success: false,
+          message: "没有需要保存的修改",
+        });
         return;
       }
       const primaryKeyField = dbTable.getPrimaryKeyField?.() ?? undefined;
-      vscode?.postMessage({ command: "save", data: changed, deleted, primaryKeyField });
+      vscode?.postMessage({
+        command: "save",
+        data: changed,
+        deleted,
+        primaryKeyField,
+      });
     },
     refresh: () =>
       vscode?.postMessage({
@@ -216,7 +254,11 @@
     download: () => {},
     "export-csv": () => dbTable.exportCSV(),
     "copy-table-ddl": () => {
-      if (tableMeta.connectionName && tableMeta.databaseName && tableMeta.tableName) {
+      if (
+        tableMeta.connectionName &&
+        tableMeta.databaseName &&
+        tableMeta.tableName
+      ) {
         vscode?.postMessage({
           command: "copyTableDdl",
           connectionName: tableMeta.connectionName,
@@ -232,7 +274,11 @@
       }
     },
     switchToTableEdit: () => {
-      if (tableMeta.connectionName && tableMeta.databaseName && tableMeta.tableName) {
+      if (
+        tableMeta.connectionName &&
+        tableMeta.databaseName &&
+        tableMeta.tableName
+      ) {
         vscode?.postMessage({
           command: "switchToTableEdit",
           connectionName: tableMeta.connectionName,
@@ -242,7 +288,11 @@
       }
     },
     quickQuery: () => {
-      if (tableMeta.connectionName && tableMeta.databaseName && tableMeta.tableName) {
+      if (
+        tableMeta.connectionName &&
+        tableMeta.databaseName &&
+        tableMeta.tableName
+      ) {
         vscode?.postMessage({
           command: "quickQuery",
           connectionName: tableMeta.connectionName,
@@ -287,7 +337,10 @@
       }
       if (toggleBtn) toggleBtn.title = collapsed ? "展开面板" : "收起面板";
       try {
-        localStorage.setItem("cadb.grid.sidePanelCollapsed", collapsed ? "1" : "0");
+        localStorage.setItem(
+          "cadb.grid.sidePanelCollapsed",
+          collapsed ? "1" : "0",
+        );
       } catch (_) {}
       // 从收起变为展开：聚焦「搜索字段」输入框（快捷键/点击标签打开侧栏后可直接输入）
       if (wasCollapsed && !collapsed) {
@@ -392,10 +445,11 @@
     window.addEventListener(
       "resize",
       function () {
-        if (!panel || body.classList.contains("grid-side-panel-collapsed")) return;
+        if (!panel || body.classList.contains("grid-side-panel-collapsed"))
+          return;
         applySidePanelWidthPx(panel.offsetWidth);
       },
-      { passive: true }
+      { passive: true },
     );
   })();
 
@@ -403,7 +457,11 @@
   function focusFieldSearchInputDeferred() {
     const run = () => {
       const input = document.getElementById("grid-field-search");
-      if (!input || document.body.classList.contains("grid-side-panel-collapsed")) return;
+      if (
+        !input ||
+        document.body.classList.contains("grid-side-panel-collapsed")
+      )
+        return;
       try {
         input.focus({ preventScroll: true });
       } catch (_) {
@@ -423,10 +481,14 @@
           const cols = dbTable.columns || [];
           const first = cols.find((c) => {
             const f = c.field;
-            return f != null && String(f).trim() !== "" && f !== "__cadb_rownum__";
+            return (
+              f != null && String(f).trim() !== "" && f !== "__cadb_rownum__"
+            );
           });
           const rowCount =
-            typeof api.getDisplayedRowCount === "function" ? api.getDisplayedRowCount() : 0;
+            typeof api.getDisplayedRowCount === "function"
+              ? api.getDisplayedRowCount()
+              : 0;
           if (first && rowCount > 0) {
             api.setFocusedCell(0, first.field);
             focused = true;
@@ -485,17 +547,19 @@
     }
   }
 
-  document.querySelector(".grid-side-panel__tabs")?.addEventListener("click", (e) => {
-    const btn = e.target.closest(".grid-side-panel__tab-btn[data-tab]");
-    if (!btn) {
-      return;
-    }
-    e.preventDefault();
-    const tab = btn.getAttribute("data-tab");
-    if (tab) {
-      activateGridSideTab(tab);
-    }
-  });
+  document
+    .querySelector(".grid-side-panel__tabs")
+    ?.addEventListener("click", (e) => {
+      const btn = e.target.closest(".grid-side-panel__tab-btn[data-tab]");
+      if (!btn) {
+        return;
+      }
+      e.preventDefault();
+      const tab = btn.getAttribute("data-tab");
+      if (tab) {
+        activateGridSideTab(tab);
+      }
+    });
 
   /** 根据当前表格列刷新侧边栏「字段」列表 */
   function refreshColumnList() {
@@ -508,10 +572,13 @@
       const field = col.field;
       if (field == null || String(field).trim() === "") return;
       if (!shouldIncludeField(field, col)) return;
-      const headerName = col.headerName != null ? col.headerName : String(field);
+      const headerName =
+        col.headerName != null ? col.headerName : String(field);
       const visible = userColumnVisibility.has(field)
         ? !!userColumnVisibility.get(field)
-        : (typeof dbTable.getColumnVisible === "function" ? dbTable.getColumnVisible(field) : true);
+        : typeof dbTable.getColumnVisible === "function"
+          ? dbTable.getColumnVisible(field)
+          : true;
       const li = document.createElement("li");
       li.innerHTML = `
         <label>
@@ -536,26 +603,32 @@
   }
 
   // 侧边栏字段列表：点击复选框时同步表格列显隐
-  document.getElementById("grid-column-list")?.addEventListener("change", (e) => {
-    const cb = e.target.closest('input[type="checkbox"][data-field]');
-    if (!cb) return;
-    const field = cb.getAttribute("data-field");
-    if (!field) return;
-    userColumnVisibility.set(field, cb.checked);
-    applyFieldSearch();
-  });
+  document
+    .getElementById("grid-column-list")
+    ?.addEventListener("change", (e) => {
+      const cb = e.target.closest('input[type="checkbox"][data-field]');
+      if (!cb) return;
+      const field = cb.getAttribute("data-field");
+      if (!field) return;
+      userColumnVisibility.set(field, cb.checked);
+      applyFieldSearch();
+    });
 
-  document.getElementById("grid-field-search")?.addEventListener("input", () => {
-    applyFieldSearch();
-  });
-  document.getElementById("grid-field-search")?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      actions.toggleFieldSearch();
-      return;
-    }
-    // Escape：由 document 捕获阶段统一处理（字段 Tab 清空过滤或收起侧栏；预览 Tab 直接收起）
-  });
+  document
+    .getElementById("grid-field-search")
+    ?.addEventListener("input", () => {
+      applyFieldSearch();
+    });
+  document
+    .getElementById("grid-field-search")
+    ?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        actions.toggleFieldSearch();
+        return;
+      }
+      // Escape：由 document 捕获阶段统一处理（字段 Tab 清空过滤或收起侧栏；预览 Tab 直接收起）
+    });
 
   function updateFieldSearchToggleUI() {
     const btn = document.querySelector('[data-action="toggleFieldSearch"]');
@@ -568,10 +641,16 @@
       const q = getSearchQuery();
       if (!q) {
         btn.title = hideMatchedFields ? "隐藏所有字段" : "显示所有字段";
-        btn.setAttribute("aria-label", hideMatchedFields ? "隐藏所有字段" : "显示所有字段");
+        btn.setAttribute(
+          "aria-label",
+          hideMatchedFields ? "隐藏所有字段" : "显示所有字段",
+        );
       } else {
         btn.title = hideMatchedFields ? "隐藏匹配字段" : "显示匹配字段";
-        btn.setAttribute("aria-label", hideMatchedFields ? "隐藏匹配字段" : "显示匹配字段");
+        btn.setAttribute(
+          "aria-label",
+          hideMatchedFields ? "隐藏匹配字段" : "显示匹配字段",
+        );
       }
     }
   }
@@ -624,14 +703,19 @@
     columns.forEach((col) => {
       const field = col.field;
       if (field == null || String(field).trim() === "") return;
-      const manualVisible = userColumnVisibility.has(field) ? !!userColumnVisibility.get(field) : true;
+      const manualVisible = userColumnVisibility.has(field)
+        ? !!userColumnVisibility.get(field)
+        : true;
       const matchVisible = q ? shouldIncludeField(field, col) : true;
       const visible = manualVisible && matchVisible;
       state.push({ colId: field, hide: !visible });
     });
 
     try {
-      if (dbTable.gridApi && typeof dbTable.gridApi.applyColumnState === "function") {
+      if (
+        dbTable.gridApi &&
+        typeof dbTable.gridApi.applyColumnState === "function"
+      ) {
         dbTable.gridApi.applyColumnState({ state, applyOrder: false });
       } else {
         state.forEach((s) => dbTable.setColumnVisible(s.colId, !s.hide));
@@ -717,16 +801,24 @@
             const isRowSelectionCheckbox =
               isCopyKey &&
               tag === "INPUT" &&
-              String(el.getAttribute("type") || "").toLowerCase() === "checkbox" &&
-              !!(el.closest &&
-                (el.closest("#grid") || el.closest(".ag-root-wrapper") || el.closest(".ag-root")));
+              String(el.getAttribute("type") || "").toLowerCase() ===
+                "checkbox" &&
+              !!(
+                el.closest &&
+                (el.closest("#grid") ||
+                  el.closest(".ag-root-wrapper") ||
+                  el.closest(".ag-root"))
+              );
             if (!isRowSelectionCheckbox) {
               return;
             }
           }
         }
         if (isCopyKey) {
-          if (typeof dbTable.hasGridRowSelectionForCopy !== "function" || !dbTable.hasGridRowSelectionForCopy()) {
+          if (
+            typeof dbTable.hasGridRowSelectionForCopy !== "function" ||
+            !dbTable.hasGridRowSelectionForCopy()
+          ) {
             return;
           }
           e.preventDefault();
@@ -750,7 +842,11 @@
                 : res.reason === "no-columns"
                   ? "当前没有可粘贴的数据列"
                   : "粘贴失败";
-            vscode.postMessage({ command: "showMessage", type: "warning", message: msg });
+            vscode.postMessage({
+              command: "showMessage",
+              type: "warning",
+              message: msg,
+            });
           });
           return;
         }
@@ -759,13 +855,21 @@
       if (e.key !== "f" && e.key !== "F") {
         return;
       }
-      if (typeof DatabaseTableData === "undefined" || !DatabaseTableData.primaryModifierActive(e)) {
+      if (
+        typeof DatabaseTableData === "undefined" ||
+        !DatabaseTableData.primaryModifierActive(e)
+      ) {
         return;
       }
       const el = e.target;
       if (el instanceof HTMLElement) {
         const tag = el.tagName;
-        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable) {
+        if (
+          tag === "INPUT" ||
+          tag === "TEXTAREA" ||
+          tag === "SELECT" ||
+          el.isContentEditable
+        ) {
           return;
         }
       }
@@ -773,7 +877,7 @@
       e.stopPropagation();
       actions.toggleSidePanel();
     },
-    true
+    true,
   );
 
   // VSCode 消息
@@ -793,10 +897,17 @@
         tableName: payload?.tableName ?? "",
       };
       applyGridDocumentTitle(tableMeta);
-      const hasMeta = tableMeta.connectionName && tableMeta.databaseName && tableMeta.tableName;
-      document.querySelectorAll("[data-action=switchToTableEdit], [data-action=quickQuery]").forEach((el) => {
-        el.style.display = hasMeta ? "" : "none";
-      });
+      const hasMeta =
+        tableMeta.connectionName &&
+        tableMeta.databaseName &&
+        tableMeta.tableName;
+      document
+        .querySelectorAll(
+          "[data-action=switchToTableEdit], [data-action=quickQuery]",
+        )
+        .forEach((el) => {
+          el.style.display = hasMeta ? "" : "none";
+        });
       const columnDefs = payload?.columnDefs;
       const rowData = Array.isArray(payload?.rowData) ? payload.rowData : [];
       if (!columnDefs?.length) return;
@@ -819,7 +930,14 @@
       const data = event.data || {};
       ensureSidePanelOpenForPreview();
       activateGridSideTab("preview");
-      const render = typeof window !== "undefined" && window.CadbGridPreviewRender;
+      currentPreviewContext = data.success
+        ? {
+            columnField: data.columnField || null,
+            rowData: dbTable._lastInteractedRowData || null,
+          }
+        : null;
+      const render =
+        typeof window !== "undefined" && window.CadbGridPreviewRender;
       if (render && typeof render.applyPreviewMessage === "function") {
         render.applyPreviewMessage({
           metaEl: document.getElementById("grid-preview-meta"),
@@ -845,7 +963,11 @@
         if (typeof window.showErrorMessage === "function") {
           window.showErrorMessage(msg);
         } else {
-          vscode?.postMessage({ command: "showMessage", type: "error", message: msg });
+          vscode?.postMessage({
+            command: "showMessage",
+            type: "error",
+            message: msg,
+          });
         }
       }
     }
@@ -865,7 +987,7 @@
     () => {
       if (vscode) vscode.postMessage({ command: "gridPanelDomFocus" });
     },
-    true
+    true,
   );
 
   window.dbTable = dbTable;

@@ -11,7 +11,7 @@ export class DatabaseManager {
   private currentDatabase: Datasource | null = null;
   private currentConnection: Datasource | null = null;
   public provider: DataSourceProvider;
-  
+
   private _onDidChangeDatabase = new vscode.EventEmitter<void>();
   public readonly onDidChangeDatabase = this._onDidChangeDatabase.event;
 
@@ -27,53 +27,160 @@ export class DatabaseManager {
   }
 
   /**
-   * 显示数据库选择器
+   * 显示数据库选择器（单次选择，格式：连接名称 / 数据库名称）
    */
   public async selectDatabase(): Promise<void> {
-    try {
-      // 步骤 1: 选择连接
-      const selectedConnection = await this.selectConnection();
-      if (!selectedConnection) {
-        // 用户取消，不改变状态
-        return;
-      }
-
-      // 保存连接并立即更新状态栏
-      this.currentConnection = selectedConnection;
-      this.currentDatabase = null; // 切换连接时重置数据库
-      this.notifyDatabaseChanged();
-
-      // 步骤 2: 选择数据库
-      const selectedDatabase = await this.selectDatabaseFromConnection(
-        selectedConnection
-      );
-      if (!selectedDatabase) {
-        // 用户取消选择数据库，保持连接但清除数据库
-        this.currentDatabase = null;
-        this.notifyDatabaseChanged();
-        return;
-      }
-
-      // 保存数据库并更新状态栏
-      this.currentDatabase = selectedDatabase;
-      this.notifyDatabaseChanged();
-    } catch (error) {
-      console.error("[DatabaseManager] 选择数据库时出错:", error);
-      vscode.window.showErrorMessage(
-        `选择数据库失败: ${
-          error instanceof Error ? error.message : String(error)
-        }`
-      );
-      // 出错时也通知更新
-      this.notifyDatabaseChanged();
+    const result = await this.selectConnectionAndDatabase();
+    if (!result) {
+      return;
     }
+    this.currentConnection = result.connection;
+    this.currentDatabase = result.database;
+    this.notifyDatabaseChanged();
   }
 
   /**
-   * 选择连接
+   * 一次性展示所有连接下的数据库，格式：连接名称 / 数据库名称
+   * @param lastTarget 可选，用于在列表顶部显示「使用上次选择」
    */
-  public async selectConnection(docType: string = "sql"): Promise<Datasource | undefined> {
-    const connections = this.provider.getConnections().map((conn) => new Datasource(conn));
+  public async selectConnectionAndDatabase(lastTarget?: {
+    connectionName: string;
+    databaseName: string;
+  }): Promise<{ connection: Datasource; database: Datasource } | undefined> {
+    const connections = this.provider
+      .getConnections()
+      .map((conn) => new Datasource(conn))
+      .filter((c) => driverSupportsSqlExecution(c.data.dbType));
+
+    if (connections.length === 0) {
+      vscode.window.showWarningMessage("请先添加数据库连接");
+      return undefined;
+    }
+
+    interface CombinedPickItem extends vscode.QuickPickItem {
+      connection?: Datasource;
+      database?: Datasource;
+      isLastChoice?: boolean;
+    }
+
+    return await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: "正在加载数据库列表...",
+        cancellable: false,
+      },
+      async () => {
+        // 并行展开所有连接，获取各自的数据库列表
+        const results = await Promise.all(
+          connections.map(async (conn) => {
+            try {
+              const objects = await conn.expand(this.provider.context);
+              const typeNode = objects.find((o) => o.type === "datasourceType");
+              if (!typeNode) {
+                return { conn, dbs: [] as Datasource[] };
+              }
+              const dbs = await typeNode.expand(this.provider.context);
+              return { conn, dbs };
+            } catch {
+              return { conn, dbs: [] as Datasource[] };
+            }
+          }),
+        );
+
+        const items: CombinedPickItem[] = [];
+
+        // 「使用上次选择」置顶
+        if (lastTarget?.connectionName && lastTarget?.databaseName) {
+          const hit = results.find(
+            (r) =>
+              String(r.conn.data?.name ?? r.conn.label ?? "").trim() ===
+                lastTarget.connectionName &&
+              r.dbs.some(
+                (d) => String(d.label ?? "") === lastTarget.databaseName,
+              ),
+          );
+          if (hit) {
+            items.push({
+              label: "$(history) 使用上次选择",
+              description: `${lastTarget.connectionName} / ${lastTarget.databaseName}`,
+              detail: "直接沿用上次选择的连接与数据库",
+              isLastChoice: true,
+            });
+          }
+        }
+
+        for (const { conn, dbs } of results) {
+          const connLabel = String(conn.label ?? "");
+          const d = conn.data;
+          const connInfo = [
+            d.dbType ?? "",
+            d.host ? (d.port ? `${d.host}:${d.port}` : d.host) : "",
+            d.username ?? "",
+          ]
+            .filter(Boolean)
+            .join("  ·  ");
+          for (const db of dbs) {
+            const dbLabel = String(db.label ?? "");
+            items.push({
+              label: `$(database) ${connLabel} / ${dbLabel}`,
+              description:
+                connInfo ||
+                (typeof conn.tooltip === "string" ? conn.tooltip : ""),
+              connection: conn,
+              database: db,
+            });
+          }
+        }
+
+        if (items.length === 0) {
+          vscode.window.showWarningMessage("暂无可用数据库");
+          return undefined;
+        }
+
+        const selected = await vscode.window.showQuickPick(items, {
+          placeHolder: "选择数据库（连接名称 / 数据库名称）",
+          matchOnDescription: true,
+        });
+
+        if (!selected) {
+          return undefined;
+        }
+
+        if (selected.isLastChoice && lastTarget) {
+          const hit = results.find(
+            (r) =>
+              String(r.conn.data?.name ?? r.conn.label ?? "").trim() ===
+              lastTarget.connectionName,
+          );
+          if (!hit) {
+            return undefined;
+          }
+          const db = hit.dbs.find(
+            (d) => String(d.label ?? "") === lastTarget.databaseName,
+          );
+          if (!db) {
+            return undefined;
+          }
+          return { connection: hit.conn, database: db };
+        }
+
+        if (!selected.connection || !selected.database) {
+          return undefined;
+        }
+        return { connection: selected.connection, database: selected.database };
+      },
+    );
+  }
+
+  /**
+   * 选择连接（保留兼容性，新代码请使用 selectConnectionAndDatabase）
+   */
+  public async selectConnection(
+    docType: string = "sql",
+  ): Promise<Datasource | undefined> {
+    const connections = this.provider
+      .getConnections()
+      .map((conn) => new Datasource(conn));
 
     if (connections.length === 0) {
       vscode.window.showWarningMessage("请先添加数据库连接");
@@ -83,18 +190,18 @@ export class DatabaseManager {
     interface ConnectionQuickPickItem extends vscode.QuickPickItem {
       datasource: Datasource;
     }
-    const connectionItems: ConnectionQuickPickItem[] = connections.filter((e) => {
-      if (docType === "sql") {
-        return driverSupportsSqlExecution(e.data.dbType);
-      }
-      return false;
-    }).map(
-      (conn) => ({
+    const connectionItems: ConnectionQuickPickItem[] = connections
+      .filter((e) => {
+        if (docType === "sql") {
+          return driverSupportsSqlExecution(e.data.dbType);
+        }
+        return false;
+      })
+      .map((conn) => ({
         label: `$(plug) ${conn.label}`,
         description: typeof conn.tooltip === "string" ? conn.tooltip : "",
         datasource: conn,
-      })
-    );
+      }));
 
     const selected = await vscode.window.showQuickPick(connectionItems, {
       placeHolder: "选择数据库连接",
@@ -105,10 +212,10 @@ export class DatabaseManager {
   }
 
   /**
-   * 从指定连接中选择数据库
+   * 从指定连接中选择数据库（保留兼容性）
    */
   public async selectDatabaseFromConnection(
-    connection: Datasource
+    connection: Datasource,
   ): Promise<Datasource | undefined> {
     return await vscode.window.withProgress(
       {
@@ -122,7 +229,7 @@ export class DatabaseManager {
 
         // 找到 datasourceType 节点
         const datasourceTypeNode = objects.find(
-          (obj) => obj.type === "datasourceType"
+          (obj) => obj.type === "datasourceType",
         );
         if (!datasourceTypeNode) {
           vscode.window.showWarningMessage("无法找到数据库列表节点");
@@ -131,7 +238,7 @@ export class DatabaseManager {
 
         // 展开 datasourceType 节点获取所有数据库
         const databases = await datasourceTypeNode.expand(
-          this.provider.context
+          this.provider.context,
         );
 
         if (databases.length === 0) {
@@ -149,7 +256,7 @@ export class DatabaseManager {
             description:
               typeof db.description === "string" ? db.description : "",
             datasource: db,
-          })
+          }),
         );
 
         const selected = await vscode.window.showQuickPick(databaseItems, {
@@ -158,7 +265,7 @@ export class DatabaseManager {
         });
 
         return selected?.datasource;
-      }
+      },
     );
   }
 
@@ -186,7 +293,9 @@ export class DatabaseManager {
           return undefined;
         }
 
-        const databases = await datasourceTypeNode.expand(this.provider.context);
+        const databases = await datasourceTypeNode.expand(
+          this.provider.context,
+        );
 
         if (databases.length === 0) {
           vscode.window.showWarningMessage("该连接没有可用的数据库");
@@ -266,76 +375,85 @@ export class DatabaseManager {
    * @param database - 数据库 Datasource 对象（type: collection）
    * @param silent - 是否静默设置（不显示成功消息）
    */
-  public setCurrentDatabase(database: Datasource, silent: boolean = false): void {
+  public setCurrentDatabase(
+    database: Datasource,
+    silent: boolean = false,
+  ): void {
     // 查找数据库的连接节点
     // 结构可能为: datasource -> datasourceType -> collection
     let connectionNode: Datasource | undefined = undefined;
-    
+
     let current = database.parent;
     while (current) {
-      if (current.type === 'datasource') {
+      if (current.type === "datasource") {
         connectionNode = current;
         break;
       }
       current = current.parent;
     }
-    
+
     if (!connectionNode) {
-      vscode.window.showErrorMessage('无法确定数据库所属的连接');
+      vscode.window.showErrorMessage("无法确定数据库所属的连接");
       return;
     }
-    
+
     // 设置连接和数据库
     this.currentConnection = connectionNode;
     this.currentDatabase = database;
-    
+
     // 通知更新
     this.notifyDatabaseChanged();
-    
+
     // 显示成功消息
     if (!silent) {
       vscode.window.showInformationMessage(
-        `已切换到数据库: ${this.currentConnection.label} / ${this.currentDatabase.label}`
+        `已切换到数据库: ${this.currentConnection.label} / ${this.currentDatabase.label}`,
       );
     }
   }
 
   /**
-    * 根据名称设置当前数据库（用于从缓存或文件恢复状态）
-    */
-   public async setActiveDatabase(connectionName: string, databaseName: string): Promise<boolean> {
-     const connections = this.provider.getConnections().map((conn) => new Datasource(conn));
-     const connection = connections.find(c => c.label === connectionName || c.data.name === connectionName);
-     
-     if (!connection) {
-       return false;
-     }
- 
-     // 设置当前连接
-     this.currentConnection = connection;
-     
-     // 构造一个临时的数据库节点对象
-     // 注意：这个对象可能不包含完整的信息，仅用于显示和记录状态
-     const dbNode = new Datasource({
-         type: 'collection',
-         name: databaseName,
-         tooltip: databaseName
-     });
-     dbNode.label = databaseName;
-     
-     // 构建层级关系，以便 getCurrentConnection 能正常工作（虽然我们直接设置了 currentConnection）
-     const typeNode = new Datasource({
-         type: 'datasourceType',
-         name: 'Databases',
-         tooltip: 'Databases'
-     });
-     typeNode.parent = connection;
-     dbNode.parent = typeNode;
-     
-     this.currentDatabase = dbNode;
-     this.notifyDatabaseChanged();
-     
-     return true;
-   }
-}
+   * 根据名称设置当前数据库（用于从缓存或文件恢复状态）
+   */
+  public async setActiveDatabase(
+    connectionName: string,
+    databaseName: string,
+  ): Promise<boolean> {
+    const connections = this.provider
+      .getConnections()
+      .map((conn) => new Datasource(conn));
+    const connection = connections.find(
+      (c) => c.label === connectionName || c.data.name === connectionName,
+    );
 
+    if (!connection) {
+      return false;
+    }
+
+    // 设置当前连接
+    this.currentConnection = connection;
+
+    // 构造一个临时的数据库节点对象
+    // 注意：这个对象可能不包含完整的信息，仅用于显示和记录状态
+    const dbNode = new Datasource({
+      type: "collection",
+      name: databaseName,
+      tooltip: databaseName,
+    });
+    dbNode.label = databaseName;
+
+    // 构建层级关系，以便 getCurrentConnection 能正常工作（虽然我们直接设置了 currentConnection）
+    const typeNode = new Datasource({
+      type: "datasourceType",
+      name: "Databases",
+      tooltip: "Databases",
+    });
+    typeNode.parent = connection;
+    dbNode.parent = typeNode;
+
+    this.currentDatabase = dbNode;
+    this.notifyDatabaseChanged();
+
+    return true;
+  }
+}

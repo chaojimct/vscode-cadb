@@ -17,7 +17,6 @@ import { SqlNotebookRenderer } from "./provider/component/sql_notebook_renderer"
 import { DatabaseManager } from "./provider/component/database_manager";
 import { ResultWebviewProvider } from "./provider/result_provider";
 import { CaCompletionItemProvider } from "./provider/completion_item_provider";
-import { SqlCodeLensProvider } from "./provider/component/sql_codelens_provider";
 import {
   SqlHoverProvider,
   lastHoveredTableInfo,
@@ -38,6 +37,7 @@ import {
 } from "./provider/cadb_storage_keys";
 import { format as formatSql } from "sql-formatter";
 import { CadbDragAndDropController } from "./provider/component/cadb_drag_drop_controller";
+import { showScanResultsInQuickPick } from "./provider/component/db_connection_scanner";
 
 interface SqlStatementSpan {
   start: number;
@@ -105,17 +105,15 @@ const QUICK_EXECUTE_SQL_HISTORY_KEY = "cadb.quickExecuteSql.history";
 
 function getQuickExecuteSqlHistoryMaxEntries(): number {
   const n =
-    vscode.workspace.getConfiguration("cadb").get<number>(
-      "quickExecuteSql.historyMaxEntries",
-      10,
-    ) ?? 10;
+    vscode.workspace
+      .getConfiguration("cadb")
+      .get<number>("quickExecuteSql.historyMaxEntries", 10) ?? 10;
   return Math.max(1, Math.min(200, Math.floor(n)));
 }
 
 /** 历史列表 QuickPick 主行：取首行并截断 */
 function previewQuickExecuteHistoryLabel(sql: string, maxLen: number): string {
-  const line =
-    sql.trim().split(/\r?\n/)[0]?.replace(/\s+/g, " ").trim() ?? "";
+  const line = sql.trim().split(/\r?\n/)[0]?.replace(/\s+/g, " ").trim() ?? "";
   if (!line) {
     return "(空语句)";
   }
@@ -252,28 +250,11 @@ export function activate(context: vscode.ExtensionContext) {
     context.globalState.get<boolean>(
       CADB_GLOBAL_DATASOURCE_SIDEBAR_LAST_VISIBLE_KEY,
     ) === true;
-  const revealLog = (message: string, data?: unknown): void => {
-    const ts = new Date().toISOString();
-    if (data === undefined) {
-      outputChannel.appendLine(`[CADB REVEAL][${ts}] ${message}`);
-      return;
-    }
-    try {
-      outputChannel.appendLine(
-        `[CADB REVEAL][${ts}] ${message} ${JSON.stringify(data)}`,
-      );
-    } catch {
-      outputChannel.appendLine(`[CADB REVEAL][${ts}] ${message}`);
-    }
-  };
 
   if (!shouldAutoShowDatasourceSidebar) {
     void context.workspaceState.update(
       CADB_WORKSPACE_OPEN_TABLE_PANELS_KEY,
       [],
-    );
-    revealLog(
-      "启动：上次未停留在数据源侧栏，已清空 openTablePanels（不自动恢复表面板）",
     );
   }
 
@@ -386,12 +367,7 @@ export function activate(context: vscode.ExtensionContext) {
         }
       };
       for (let attempt = 1; attempt <= 3; attempt++) {
-        revealLog("ensureDatasourceVisible: 开始尝试", {
-          attempt,
-          visible: treeView.visible,
-        });
         if (treeView.visible) {
-          revealLog("ensureDatasourceVisible: 视图已可见，直接返回");
           return;
         }
         await runCmd("workbench.action.focusSideBar");
@@ -403,14 +379,10 @@ export function activate(context: vscode.ExtensionContext) {
         }
         await sleepLocal(180);
         if (treeView.visible) {
-          revealLog("ensureDatasourceVisible: 命令后视图可见，直接返回", {
-            attempt,
-          });
           return;
         }
         await sleepLocal(500);
       }
-      revealLog("ensureDatasourceVisible: 多次尝试后仍不可见，结束");
     })().finally(() => {
       ensureDatasourceVisibleTask = undefined;
     });
@@ -435,12 +407,10 @@ export function activate(context: vscode.ExtensionContext) {
   );
   // 仅当用户上次关闭前停留在 CADB 数据源视图时，启动后再尝试拉起侧栏（避免每次打开 VS Code 都强制切 Activity Bar）
   if (shouldAutoShowDatasourceSidebar) {
-    revealLog("启动：上次停留在数据源视图，尝试自动聚焦侧栏");
     setTimeout(() => {
       void ensureDatasourceVisible();
     }, 500);
   } else {
-    revealLog("启动：上次未停留在数据源视图，跳过自动聚焦侧栏");
     const focusExplorerSidebar = async (): Promise<void> => {
       try {
         await vscode.commands.executeCommand("workbench.view.explorer");
@@ -483,20 +453,13 @@ export function activate(context: vscode.ExtensionContext) {
   const findConnectionForUri = (
     uri: vscode.Uri,
   ): { connectionName: string; fileName: string } | undefined => {
-    revealLog("findConnectionForUri: 开始", {
-      uri: uri.toString(),
-      scheme: uri.scheme,
-      fsPath: uri.fsPath,
-    });
     const rawPath = uri.fsPath || "";
     if (!rawPath) {
-      revealLog("findConnectionForUri: fsPath 为空，跳过");
       return undefined;
     }
     const filePath = toComparablePath(rawPath);
     const ext = path.extname(uri.fsPath).toLowerCase();
     if (ext !== ".sql" && ext !== ".jsql") {
-      revealLog("findConnectionForUri: 非 sql/jsql，跳过", { ext });
       return undefined;
     }
 
@@ -516,17 +479,8 @@ export function activate(context: vscode.ExtensionContext) {
       }
     }
     if (!bestMatch) {
-      revealLog("findConnectionForUri: 未命中任何连接", {
-        filePath,
-        connections: provider.getConnections().map((c) => c.name || ""),
-      });
       return undefined;
     }
-    revealLog("findConnectionForUri: 命中连接", {
-      connectionName: bestMatch.connectionName,
-      fileName: path.basename(uri.fsPath),
-      basePath: bestMatch.basePath,
-    });
     return {
       connectionName: bestMatch.connectionName,
       fileName: path.basename(uri.fsPath),
@@ -554,25 +508,9 @@ export function activate(context: vscode.ExtensionContext) {
         return comparable === target;
       });
       if (conn) {
-        revealLog("findConnectionNode: 命中连接节点", {
-          connectionName,
-          group: root.label?.toString() || "",
-          connection: conn.label?.toString() || "",
-        });
         return { group: root, connection: conn };
       }
     }
-    const allConnectionNames = provider
-      .getRootNodes()
-      .flatMap((root) =>
-        (root.children || []).filter((c) => c.type === "datasource"),
-      )
-      .map((c) => c.label?.toString() || "");
-    revealLog("findConnectionNode: 未命中连接节点", {
-      connectionName,
-      allConnections: allConnectionNames,
-      rootCount: provider.getRootNodes().length,
-    });
     return undefined;
   };
 
@@ -605,10 +543,8 @@ export function activate(context: vscode.ExtensionContext) {
     databaseName: string;
     tableName: string;
   }): Promise<boolean> => {
-    revealLog("revealTableInDatasource: 开始", target);
     const found = findConnectionNode(target.connectionName);
     if (!found) {
-      revealLog("revealTableInDatasource: 连接节点未找到", target);
       return false;
     }
     try {
@@ -617,12 +553,6 @@ export function activate(context: vscode.ExtensionContext) {
         (c) => c.type === "datasourceType",
       );
       if (!datasourceTypeNode) {
-        revealLog("revealTableInDatasource: datasourceType 节点未找到", {
-          connectionChildrenTypes: connectionChildren.map((c) => c.type),
-          connectionChildrenLabels: connectionChildren.map(
-            (c) => c.label?.toString() || "",
-          ),
-        });
         return false;
       }
       const dbNodes = await getFreshChildren(datasourceTypeNode);
@@ -632,10 +562,6 @@ export function activate(context: vscode.ExtensionContext) {
           equalsLabel(db.label?.toString(), target.databaseName),
       );
       if (!dbNode) {
-        revealLog("revealTableInDatasource: database 节点未找到", {
-          targetDatabase: target.databaseName,
-          dbCandidates: dbNodes.map((n) => n.label?.toString() || ""),
-        });
         return false;
       }
       const dbChildren = await getFreshChildren(dbNode);
@@ -643,11 +569,6 @@ export function activate(context: vscode.ExtensionContext) {
         (c) => c.type === "collectionType",
       );
       if (!collectionTypeNode) {
-        revealLog("revealTableInDatasource: collectionType 节点未找到", {
-          database: dbNode.label?.toString() || "",
-          dbChildrenTypes: dbChildren.map((c) => c.type),
-          dbChildrenLabels: dbChildren.map((c) => c.label?.toString() || ""),
-        });
         return false;
       }
       const tableNodes = await getFreshChildren(collectionTypeNode);
@@ -657,10 +578,6 @@ export function activate(context: vscode.ExtensionContext) {
           equalsLabel(t.label?.toString(), target.tableName),
       );
       if (!tableNode) {
-        revealLog("revealTableInDatasource: table 节点未找到", {
-          targetTable: target.tableName,
-          tableCandidates: tableNodes.map((n) => n.label?.toString() || ""),
-        });
         return false;
       }
       // 仅对最终目标节点执行 reveal，避免中间节点多次滚动造成闪烁
@@ -669,14 +586,8 @@ export function activate(context: vscode.ExtensionContext) {
         select: true,
         focus: false,
       });
-      revealLog("revealTableInDatasource: 定位成功", {
-        table: tableNode.label?.toString() || "",
-      });
       return true;
     } catch (error) {
-      revealLog("revealTableInDatasource: 异常", {
-        message: error instanceof Error ? error.message : String(error),
-      });
       console.error("定位当前表到数据源视图失败:", error);
       return false;
     }
@@ -698,10 +609,8 @@ export function activate(context: vscode.ExtensionContext) {
     connectionName: string;
     fileName: string;
   }): Promise<boolean> => {
-    revealLog("revealTargetInDatasource: 开始", target);
     const found = findConnectionNode(target.connectionName);
     if (!found) {
-      revealLog("revealTargetInDatasource: 连接节点未找到", target);
       return false;
     }
     try {
@@ -710,12 +619,6 @@ export function activate(context: vscode.ExtensionContext) {
         (c) => c.type === "fileType",
       );
       if (!fileTypeNode) {
-        revealLog("revealTargetInDatasource: fileType 节点未找到", {
-          connectionChildrenTypes: connectionChildren.map((c) => c.type),
-          connectionChildrenLabels: connectionChildren.map(
-            (c) => c.label?.toString() || "",
-          ),
-        });
         return false;
       }
       let fileNodes = await getFreshChildren(fileTypeNode);
@@ -725,10 +628,6 @@ export function activate(context: vscode.ExtensionContext) {
           equalsLabel(file.label?.toString(), target.fileName),
       );
       if (!targetFile) {
-        revealLog("revealTargetInDatasource: file 首次未命中，准备强制重载", {
-          targetFile: target.fileName,
-          fileCandidates: fileNodes.map((n) => n.label?.toString() || ""),
-        });
         // 文件列表可能有缓存，未命中时强制重载一次
         fileTypeNode.children = [];
         fileNodes = await getChildrenSafe(fileTypeNode);
@@ -739,10 +638,6 @@ export function activate(context: vscode.ExtensionContext) {
         );
       }
       if (!targetFile) {
-        revealLog("revealTargetInDatasource: file 仍未命中", {
-          targetFile: target.fileName,
-          fileCandidates: fileNodes.map((n) => n.label?.toString() || ""),
-        });
         return false;
       }
       // 仅对最终目标节点执行 reveal，避免中间节点多次滚动造成闪烁
@@ -751,14 +646,8 @@ export function activate(context: vscode.ExtensionContext) {
         select: true,
         focus: false,
       });
-      revealLog("revealTargetInDatasource: 定位成功", {
-        file: targetFile.label?.toString() || "",
-      });
       return true;
     } catch (error) {
-      revealLog("revealTargetInDatasource: 异常", {
-        message: error instanceof Error ? error.message : String(error),
-      });
       console.error("定位当前文件到数据源视图失败:", error);
       return false;
     }
@@ -779,15 +668,10 @@ export function activate(context: vscode.ExtensionContext) {
   const enqueueReveal = (reason: string, job: () => Promise<void>): void => {
     revealQueue = revealQueue
       .then(async () => {
-        revealLog("enqueueReveal: 开始", { reason });
         await job();
-        revealLog("enqueueReveal: 完成", { reason });
       })
       .catch((error) => {
-        revealLog("enqueueReveal: 异常", {
-          reason,
-          message: error instanceof Error ? error.message : String(error),
-        });
+        console.error("[CADB] enqueueReveal 异常", reason, error);
       });
   };
 
@@ -817,19 +701,14 @@ export function activate(context: vscode.ExtensionContext) {
 
   const revealActiveEditorInDatasource = async (): Promise<void> => {
     if (!treeView.visible) {
-      revealLog("revealActiveEditorInDatasource: 视图不可见，跳过本次定位");
       return;
     }
     const uri = getActiveDocumentUri();
     if (!uri) {
-      revealLog("revealActiveEditorInDatasource: 当前无激活文档");
       return;
     }
     const target = findConnectionForUri(uri);
     if (!target) {
-      revealLog("revealActiveEditorInDatasource: 当前文档无关联连接", {
-        uri: uri.toString(),
-      });
       return;
     }
     const activeKey = `${target.connectionName}|${target.fileName}`;
@@ -838,30 +717,18 @@ export function activate(context: vscode.ExtensionContext) {
       activeKey === lastActiveEditorRevealKey &&
       now - lastActiveEditorRevealAt < ACTIVE_EDITOR_REVEAL_DEDUP_MS
     ) {
-      revealLog("revealActiveEditorInDatasource: 命中去重窗口，跳过重复定位", {
-        activeKey,
-        elapsedMs: now - lastActiveEditorRevealAt,
-      });
       return;
     }
-    revealLog("revealActiveEditorInDatasource: 解析到目标", target);
     // 初始化期间根节点/连接节点可能尚未准备好，做短暂重试
     for (let i = 0; i < 6; i++) {
       const ok = await revealTargetInDatasource(target);
       if (ok) {
         lastActiveEditorRevealKey = activeKey;
         lastActiveEditorRevealAt = Date.now();
-        revealLog("revealActiveEditorInDatasource: 定位成功", {
-          attempt: i + 1,
-        });
         return;
       }
-      revealLog("revealActiveEditorInDatasource: 本轮定位失败，继续重试", {
-        attempt: i + 1,
-      });
       await sleep(200);
     }
-    revealLog("revealActiveEditorInDatasource: 重试后仍失败", target);
   };
 
   context.subscriptions.push(
@@ -873,13 +740,9 @@ export function activate(context: vscode.ExtensionContext) {
         tableName?: string;
         fileName?: string;
       }) => {
-        revealLog("cadb.datasource.revealByPath: 收到请求", payload);
         enqueueReveal("revealByPath", async () => {
           const connectionName = String(payload?.connectionName || "").trim();
           if (!connectionName) {
-            revealLog(
-              "cadb.datasource.revealByPath: connectionName 为空，忽略",
-            );
             return;
           }
           const dedupKey =
@@ -894,13 +757,6 @@ export function activate(context: vscode.ExtensionContext) {
               dedupKey === lastRevealByPathKey &&
               now - lastRevealByPathAt < REVEAL_BY_PATH_DEDUP_MS
             ) {
-              revealLog(
-                "cadb.datasource.revealByPath: 命中去重窗口，跳过重复请求",
-                {
-                  dedupKey,
-                  elapsedMs: now - lastRevealByPathAt,
-                },
-              );
               return;
             }
             lastRevealByPathKey = dedupKey;
@@ -916,22 +772,13 @@ export function activate(context: vscode.ExtensionContext) {
             for (let i = 0; i < 6; i++) {
               const ok = await revealTableInDatasource(target);
               if (ok) {
-                revealLog("cadb.datasource.revealByPath: 表定位成功", {
-                  attempt: i + 1,
-                  target,
-                });
                 return;
               }
               if (i === 2) {
-                revealLog(
-                  "cadb.datasource.revealByPath: 表定位触发中途 refresh",
-                  { attempt: i + 1 },
-                );
                 provider.refresh();
               }
               await sleep(180);
             }
-            revealLog("cadb.datasource.revealByPath: 表定位最终失败", target);
             return;
           }
           if (payload?.fileName) {
@@ -942,22 +789,13 @@ export function activate(context: vscode.ExtensionContext) {
             for (let i = 0; i < 6; i++) {
               const ok = await revealTargetInDatasource(target);
               if (ok) {
-                revealLog("cadb.datasource.revealByPath: 文件定位成功", {
-                  attempt: i + 1,
-                  target,
-                });
                 return;
               }
               if (i === 2) {
-                revealLog(
-                  "cadb.datasource.revealByPath: 文件定位触发中途 refresh",
-                  { attempt: i + 1 },
-                );
                 provider.refresh();
               }
               await sleep(180);
             }
-            revealLog("cadb.datasource.revealByPath: 文件定位最终失败", target);
           }
         });
       },
@@ -974,19 +812,16 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.window.onDidChangeActiveTextEditor(() => {
-      revealLog("事件: onDidChangeActiveTextEditor");
       scheduleActiveEditorReveal("onDidChangeActiveTextEditor");
     }),
   );
   context.subscriptions.push(
     vscode.window.onDidChangeActiveNotebookEditor(() => {
-      revealLog("事件: onDidChangeActiveNotebookEditor");
       scheduleActiveEditorReveal("onDidChangeActiveNotebookEditor");
     }),
   );
   context.subscriptions.push(
     vscode.workspace.onDidChangeWorkspaceFolders(() => {
-      revealLog("事件: onDidChangeWorkspaceFolders");
       provider.refresh();
       scheduleActiveEditorReveal("onDidChangeWorkspaceFolders");
     }),
@@ -1400,15 +1235,6 @@ export function activate(context: vscode.ExtensionContext) {
     ),
   );
 
-  // SQL CodeLens：顶部「运行全部」+ 符合条件的 Explain（不展示逐行「运行」，避免多行格式化后杂乱）
-  const sqlCodeLensProvider = new SqlCodeLensProvider();
-  context.subscriptions.push(
-    vscode.languages.registerCodeLensProvider(
-      { language: "sql" },
-      sqlCodeLensProvider,
-    ),
-  );
-
   // SQL 悬浮提示（表名展示 DDL，字段名展示类型、备注等）
   const sqlHoverProvider = new SqlHoverProvider();
   sqlHoverProvider.setProvider(provider);
@@ -1512,17 +1338,16 @@ export function activate(context: vscode.ExtensionContext) {
   );
   context.subscriptions.push(sqlExecutor);
 
-  const getDocumentForQuickSqlExecution =
-    (): Thenable<vscode.TextDocument> => {
-      const ed = vscode.window.activeTextEditor;
-      if (ed?.document.languageId === "sql") {
-        return Promise.resolve(ed.document);
-      }
-      return vscode.workspace.openTextDocument({
-        language: "sql",
-        content: "",
-      });
-    };
+  const getDocumentForQuickSqlExecution = (): Thenable<vscode.TextDocument> => {
+    const ed = vscode.window.activeTextEditor;
+    if (ed?.document.languageId === "sql") {
+      return Promise.resolve(ed.document);
+    }
+    return vscode.workspace.openTextDocument({
+      language: "sql",
+      content: "",
+    });
+  };
 
   const runBundledQuickSqlStatements = async (
     trimmed: string,
@@ -1545,86 +1370,18 @@ export function activate(context: vscode.ExtensionContext) {
       try {
         const last = getQuickExecuteSqlLastTarget(context);
 
-        interface ConnPick extends vscode.QuickPickItem {
-          pickMode: "last" | "connection";
-          datasource?: Datasource;
-        }
-        const connItems: ConnPick[] = [];
-        if (last && isQuickExecuteSqlLastStillValid(provider, last)) {
-          connItems.push({
-            label: "$(history) 使用上次选择",
-            description: `${last.connectionName} · ${last.databaseName}`,
-            detail: "跳过连接与数据库步骤，沿用上次目标",
-            pickMode: "last",
-          });
-        }
-
-        const connections = provider
-          .getConnections()
-          .map((c) => new Datasource(c));
-        for (const conn of connections) {
-          if (!driverSupportsSqlExecution(conn.data.dbType)) {
-            continue;
-          }
-          connItems.push({
-            label: `$(plug) ${conn.label}`,
-            description:
-              typeof conn.tooltip === "string" ? conn.tooltip : "",
-            pickMode: "connection",
-            datasource: conn,
-          });
-        }
-
-        if (connItems.length === 0) {
-          vscode.window.showWarningMessage(
-            "请先添加支持 SQL 的数据库连接",
-          );
+        const picked = await databaseManager.selectConnectionAndDatabase(
+          last && isQuickExecuteSqlLastStillValid(provider, last)
+            ? last
+            : undefined,
+        );
+        if (!picked) {
           return;
         }
 
-        const connPick = await vscode.window.showQuickPick(connItems, {
-          placeHolder: "选择数据库连接（可选用「使用上次选择」）",
-          matchOnDescription: true,
-        });
-        if (!connPick) {
-          return;
-        }
-
-        let connForSave: Datasource;
-        let dbForSave: Datasource;
-
-        if (connPick.pickMode === "last") {
-          const ok = await databaseManager.setActiveDatabase(
-            last!.connectionName,
-            last!.databaseName,
-          );
-          if (!ok) {
-            vscode.window.showWarningMessage(
-              "上次选择的连接或数据库已不可用，请重新选择",
-            );
-            return;
-          }
-          const c = databaseManager.getCurrentConnection();
-          const d = databaseManager.getCurrentDatabase();
-          if (!c || !d) {
-            return;
-          }
-          connForSave = c;
-          dbForSave = d;
-        } else {
-          const conn = connPick.datasource!;
-          const db =
-            await databaseManager.selectDatabaseFromConnectionWithLastRecall(
-              conn,
-              last,
-            );
-          if (!db) {
-            return;
-          }
-          databaseManager.setCurrentDatabase(db, true);
-          connForSave = conn;
-          dbForSave = db;
-        }
+        databaseManager.setCurrentDatabase(picked.database, true);
+        const connForSave = picked.connection;
+        const dbForSave = picked.database;
 
         const connLabel = connForSave.label?.toString() ?? "";
         const dbLabel = dbForSave.label?.toString() ?? "";
@@ -1677,9 +1434,7 @@ export function activate(context: vscode.ExtensionContext) {
           const detailCap = 400;
           const items: HistPick[] = list.map((sql, i) => {
             const detail =
-              sql.length <= detailCap
-                ? sql
-                : `${sql.slice(0, detailCap - 1)}…`;
+              sql.length <= detailCap ? sql : `${sql.slice(0, detailCap - 1)}…`;
             return {
               label: `${i + 1}. ${previewQuickExecuteHistoryLabel(sql, 56)}`,
               description:
@@ -1759,7 +1514,6 @@ export function activate(context: vscode.ExtensionContext) {
       await sqlExecutor.executeSql(stmt, document);
     }
     await persistSelectionForDocument(document);
-    sqlCodeLensProvider.refresh();
   };
 
   // 运行当前语句（按分号拆分，取光标所在语句）
@@ -1789,7 +1543,6 @@ export function activate(context: vscode.ExtensionContext) {
       }
       await sqlExecutor.executeSql(sql, editor.document);
       await persistSelectionForDocument(editor.document);
-      sqlCodeLensProvider.refresh();
     }),
   );
 
@@ -1846,7 +1599,6 @@ export function activate(context: vscode.ExtensionContext) {
         }
         await sqlExecutor.executeSql(sql, document);
         await persistSelectionForDocument(document);
-        sqlCodeLensProvider.refresh();
       },
     ),
   );
@@ -1872,6 +1624,79 @@ export function activate(context: vscode.ExtensionContext) {
       if (!editor) return;
       await executeSqlStatements(editor.document, editor.document.getText());
     }),
+  );
+
+  // 从资源管理器右键菜单运行 *.sql 文件（先选择连接与数据库，再执行文件中的所有 SQL）
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "cadb.sql.runFile",
+      async (fileUri?: vscode.Uri) => {
+        // 确定目标文件 URI
+        const targetUri =
+          fileUri ??
+          (() => {
+            const ed = vscode.window.activeTextEditor;
+            return ed?.document.languageId === "sql"
+              ? ed.document.uri
+              : undefined;
+          })();
+
+        if (!targetUri) {
+          vscode.window.showWarningMessage("未找到要执行的 SQL 文件");
+          return;
+        }
+
+        // 一次性选择连接与数据库
+        const picked = await databaseManager.selectConnectionAndDatabase();
+        if (!picked) {
+          return;
+        }
+
+        // 将所选连接和数据库写入 databaseManager，以便 sqlExecutor 读取
+        const connectionName = picked.connection.label?.toString() ?? "";
+        const databaseName = picked.database.label?.toString() ?? "";
+        await databaseManager.setActiveDatabase(connectionName, databaseName);
+
+        // 步骤 3：读取文件内容
+        let sqlText: string;
+        try {
+          const bytes = await vscode.workspace.fs.readFile(targetUri);
+          sqlText = Buffer.from(bytes).toString("utf-8");
+        } catch (e) {
+          vscode.window.showErrorMessage(
+            `读取 SQL 文件失败: ${e instanceof Error ? e.message : String(e)}`,
+          );
+          return;
+        }
+
+        const statements = splitSqlStatements(sqlText);
+        if (statements.length === 0) {
+          vscode.window.showWarningMessage("SQL 文件中没有可执行的语句");
+          return;
+        }
+
+        // 步骤 4：打开文档（用于 sqlExecutor 接口），显示输出面板
+        const document = await vscode.workspace.openTextDocument(targetUri);
+        outputChannel.show(true);
+        const fileName = targetUri.fsPath.split(/[\\/]/).pop() ?? "";
+        const ts = new Date().toISOString().replace("T", " ").slice(0, 19);
+        outputChannel.appendLine(
+          `\n[${ts}] 开始执行文件 ${fileName} (${statements.length} 条语句) @ ${connectionName} / ${databaseName}`,
+        );
+
+        // 步骤 5：逐条执行
+        for (const stmt of statements) {
+          await sqlExecutor.executeSql(stmt, document);
+        }
+
+        outputChannel.appendLine(
+          `[${new Date().toISOString().replace("T", " ").slice(0, 19)}] 文件 ${fileName} 执行完毕`,
+        );
+
+        // 记忆本次选择，供该文件下次自动恢复
+        await persistSelectionForDocument(document);
+      },
+    ),
   );
 
   // SQL 文档格式化：*.sql、未保存 SQL、SQL Notebook（vscode-notebook-cell）单元格均适用
@@ -1963,8 +1788,6 @@ export function activate(context: vscode.ExtensionContext) {
 
           await sqlExecutor.executeSql(sql, document);
           await persistSelectionForDocument(document);
-          // 刷新 CodeLens
-          sqlCodeLensProvider.refresh();
         }
       },
     ),
@@ -2020,10 +1843,15 @@ export function activate(context: vscode.ExtensionContext) {
 
           await sqlExecutor.explainSql(sql, document);
           await persistSelectionForDocument(document);
-          // 刷新 CodeLens
-          sqlCodeLensProvider.refresh();
         }
       },
+    ),
+  );
+
+  // 扫描工作区文件中的数据库连接配置
+  context.subscriptions.push(
+    vscode.commands.registerCommand("cadb.scanDbConnections", () =>
+      showScanResultsInQuickPick(),
     ),
   );
 }

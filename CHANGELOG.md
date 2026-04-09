@@ -1,6 +1,28 @@
 # 更新日志
 
-## [0.1.7]
+## [0.1.8]
+
+### 新增
+
+- **Grid JSON 单元格编辑**：单元格预览面板中，对 JSON 类型内容提供内联编辑能力。点击「编辑」图标切换至可编辑的 Tree 模式；点击「应用」（✓）将修改后的 JSON 写回表格单元格并触发常规行变更跟踪；点击「取消」（discard）回退到只读覆览模式。预览面板工具栏按钮全部改为图标形式（fold / unfold / edit / check / discard）。
+- **扫描数据库连接**：资源管理器右键菜单新增「扫描数据库连接」。扫描工作区内 `*.yaml`、`*.yml`、`*.py`、`*.properties`、`*.go`、`.env.*` 等文件，支持多种模式：
+  - **DSN/URL**：`mysql://user:pass@host:port/db` 等通用连接串（全文件类型通用）
+  - **YAML/Properties 键値型**：Spring Boot `jdbc:mysql://...` URL、`host` + `port` + `database` 分离写法
+  - **Python**：SQLAlchemy `create_engine()`、pymysql / psycopg2 `connect()` 参数形式
+  - **Go**：`database/sql` `sql.Open()`、GORM `mysql.Open()` 等
+  - 结果自动去重，在 QuickPick 中展示；选定条目后跳转到来源文件对应行。
+- **运行 SQL 文件**：资源管理器对 `*.sql` 文件添加右键菜单「运行 SQL 文件」，一次性选择连接与数据库后逐条执行并输出到 CADB SQL 日志面板。
+- **拖放增强**：数据源树任意节点均可拖放（不再限于表节点），拖放至编辑器时插入 `` `节点名` ``；`fieldType` 节点（字段列表）拖放时自动展开为 `` `字段1`, `字段2`, ... `` 格式。
+
+### 优化
+
+- **连接与数据库选择**：将原两步选择（先选连接、再选数据库）并为单步 QuickPick，格式为「连接名 / 数据库名」；`description` 中展示数据源类型、`host:port`、用户名等连接信息。
+- **自动展开所有连接**：`Promise.all` 并行加载各连接下的数据库列表，减少等待时间。
+
+### 移除
+
+- **运行全部 CodeLens**：移除文件顶部「运行全部」透镜以及所有 `sqlCodeLensProvider.refresh()` 调用；Explain 透镜保留。
+
 
 ### 新增
 
