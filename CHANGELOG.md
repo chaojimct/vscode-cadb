@@ -1,5 +1,19 @@
 # 更新日志
 
+## [0.3.1]
+
+### 修复
+
+- **AI 数据库助手 · 选库列表为空**：在扩展刚加载、数据源树尚未完成同步或未展开时，仅从树同步读取会得到空的「连接 / 数据库」选项。现改为树收集结果为空时，按 `getConnections()` 直连拉取库列表（逻辑与已有表名展开一致），并跳过已手动关闭的连接、遵守侧栏「过滤显示的数据库」；收到树刷新且仍停留在选库界面时会重新填充下拉框。
+
+### 新增
+
+- **GitHub Actions 发版**：推送 `v*` 标签时执行 `vsce publish` 与 `ovsx publish`（见 `.github/workflows/publish.yml`）。需在仓库 **Actions Secrets** 中配置 `VSCE_PAT`（VS Marketplace）；`OVSX_PAT`（Open VSX）可选，未配置时跳过 Open VSX 步骤。
+
+### 变更
+
+- **.vscodeignore**：增加 `.github/**`，避免将 CI 工作流打入 `.vsix`。
+
 ## [0.3.0]
 
 ### 新增

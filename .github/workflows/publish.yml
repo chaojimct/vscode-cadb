@@ -1,0 +1,49 @@
+# 推送版本标签时发布到 VS Marketplace 与 Open VSX
+#
+# 用法：
+#   git tag v0.3.0
+#   git push origin v0.3.0
+#
+# 在仓库 Settings → Secrets and variables → Actions 中配置：
+#   VSCE_PAT   — 必填。Azure DevOps / VS Marketplace Personal Access Token（发布范围：Marketplace > Manage）
+#   OVSX_PAT   — 可选。未配置时跳过 Open VSX 步骤。https://open-vsx.org 用户设置中生成的 Personal Access Token
+#
+# 推送前请确保 package.json 的 version 与标签一致（例如标签 v0.3.0 对应 version 0.3.0）。
+
+name: Publish Extension
+
+on:
+  push:
+    tags:
+      # 建议使用 v0.3.0 形式；亦匹配 v1.0.0-rc.1 等
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Publish to Visual Studio Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx --yes @vscode/vsce publish --no-dependencies
+
+      - name: Publish to Open VSX Registry
+        if: ${{ secrets.OVSX_PAT != '' }}
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: npx --yes ovsx publish --no-dependencies

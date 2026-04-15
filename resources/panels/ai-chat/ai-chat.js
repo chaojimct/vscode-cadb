@@ -341,6 +341,9 @@
 
       case "refresh":
         dbOptions = Array.isArray(msg.dbOptions) ? msg.dbOptions : dbOptions;
+        if (dbPickerScreen && !dbPickerScreen.classList.contains("hidden")) {
+          populateDbPicker();
+        }
         break;
 
       case "updateTableTags":

@@ -132,6 +132,7 @@ export class AiChatProvider {
   private async _sendInit(): Promise<void> {
     const config = vscode.workspace.getConfiguration("cadb.ai");
     const { sessions, currentId } = this._readSessions();
+    const dbOptions = await this._resolveDatabaseOptions();
     this.panel?.webview.postMessage({
       type: "init",
       config: {
@@ -139,17 +140,18 @@ export class AiChatProvider {
         baseUrl: config.get<string>("baseUrl", "https://api.openai.com/v1"),
         model: config.get<string>("model", "gpt-4o"),
       },
-      dbOptions: this._collectDatabaseOptions(),
+      dbOptions,
       sessions,
       currentSessionId: currentId,
     });
   }
 
-  private _sendRefresh(): void {
+  private async _sendRefresh(): Promise<void> {
     if (!this.panel) return;
+    const dbOptions = await this._resolveDatabaseOptions();
     this.panel.webview.postMessage({
       type: "refresh",
-      dbOptions: this._collectDatabaseOptions(),
+      dbOptions,
     });
   }
 
@@ -160,7 +162,7 @@ export class AiChatProvider {
     }
     this.treeRefreshTimer = setTimeout(() => {
       this.treeRefreshTimer = undefined;
-      this._sendRefresh();
+      void this._sendRefresh();
     }, 350);
   }
 
@@ -192,6 +194,64 @@ export class AiChatProvider {
       }
     }
     return options;
+  }
+
+  /**
+   * 树尚未展开或刷新未完成时，getRootNodes 下无库节点，同步收集会得到空列表。
+   * 此处按配置直连拉取库列表（与 _expandTablesForDatabase 一致），并尊重「已关闭连接」与「过滤显示的数据库」。
+   */
+  private async _collectDatabaseOptionsFromConnections(): Promise<TagItem[]> {
+    if (!this.provider || !this.context) return [];
+    const treeState = this.provider.getTreeState();
+    const closed = new Set(treeState.closedConnectionNames ?? []);
+    const options: TagItem[] = [];
+
+    for (const raw of this.provider.getConnections()) {
+      if (!driverSupportsSqlExecution(raw.dbType)) continue;
+      const connName = (raw.name || "").trim();
+      if (!connName || closed.has(connName)) continue;
+
+      try {
+        const connNode = new Datasource(
+          { ...raw, type: "datasource" } as DatasourceInputData,
+        );
+        if (!connNode.dataloader) continue;
+
+        const top = await connNode.expand(this.context);
+        const dbTypeNode = top.find((o) => o.type === "datasourceType");
+        if (!dbTypeNode) continue;
+
+        const databases = await dbTypeNode.expand(this.context);
+        const selected = treeState.selectedDatabases?.[connName];
+        const allow =
+          Array.isArray(selected) && selected.length > 0
+            ? new Set(selected)
+            : null;
+
+        for (const db of databases) {
+          if (db.type !== "collection") continue;
+          const dbName = db.label?.toString() || "";
+          if (!dbName) continue;
+          if (allow && !allow.has(dbName)) continue;
+          options.push({
+            id: connName + "/" + dbName,
+            name: connName + " / " + dbName,
+          });
+        }
+      } catch {
+        // 单个连接失败时跳过
+      }
+    }
+
+    return options;
+  }
+
+  private async _resolveDatabaseOptions(): Promise<TagItem[]> {
+    const fromTree = this._collectDatabaseOptions();
+    if (fromTree.length > 0) {
+      return fromTree;
+    }
+    return this._collectDatabaseOptionsFromConnections();
   }
 
   // ─── requestTables: 返回指定库的表名列表 ──────────────────
