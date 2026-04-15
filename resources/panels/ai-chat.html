@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="Content-Security-Policy" content="{{csp}}" />
   <link rel="stylesheet" href="{{node-resources-uri}}/chatarea/lib/ChatArea.css" />
+  <link rel="stylesheet" href="{{node-resources-uri}}/@vscode/codicons/dist/codicon.css" />
   <link rel="stylesheet" href="{{resources-uri}}/ai-chat/ai-chat.css" />
   <title>AI 数据库助手</title>
 </head>
@@ -89,6 +90,14 @@
 
   <!-- 底部输入区 -->
   <div class="chat-input-area" id="chatInputArea">
+    <div class="chat-mode-bar" id="chatModeBar">
+      <label class="quick-mode-toggle" title="开启后单次 function calling 仅调用 execute_sql 一次，直接生成并执行最终 SQL">
+        <input type="checkbox" id="quickQueryToggle" />
+        <span class="quick-mode-toggle-track" aria-hidden="true"></span>
+        <span class="quick-mode-toggle-text">快速查询</span>
+      </label>
+      <span class="quick-mode-desc">单次生成并执行 SQL</span>
+    </div>
     <div id="chatInput"></div>
   </div>
 

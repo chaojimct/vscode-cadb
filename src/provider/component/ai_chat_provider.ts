@@ -98,6 +98,7 @@ export class AiChatProvider {
           msg.text as string,
           msg.dbId as string,
           msg.history as ChatMessage[],
+          Boolean(msg.quickSql),
         );
         break;
 
@@ -282,6 +283,7 @@ export class AiChatProvider {
     _text: string,
     dbId: string,
     history: ChatMessage[],
+    quickSql: boolean,
   ): Promise<void> {
     const config = vscode.workspace.getConfiguration("cadb.ai");
     const apiKey = config.get<string>("apiKey", "");
@@ -339,6 +341,7 @@ export class AiChatProvider {
       connName,
       databaseName: dbName,
       tableNames,
+      quickSqlMode: quickSql,
     };
 
     this.panel?.webview.postMessage({ type: "stream-start" });

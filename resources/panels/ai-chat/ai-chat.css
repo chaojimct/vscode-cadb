@@ -315,6 +315,8 @@ body {
   padding: 1px 5px;
   border-radius: 3px;
   background: var(--vscode-textCodeBlock-background, rgba(127,127,127,.15));
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .msg-bubble pre {
   position: relative;
@@ -322,14 +324,90 @@ body {
   border-radius: 6px;
   padding: 12px 14px;
   margin: 8px 0;
-  overflow-x: auto;
+  overflow-x: hidden;
+  overflow-y: visible;
 }
 .msg-bubble pre code {
   display: block;
   padding: 0;
   background: none;
-  white-space: pre;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
   line-height: 1.5;
+}
+/* Markdown 表格折叠容器（与工具面板风格协调） */
+.msg-bubble .md-table-fold {
+  margin: 8px 0;
+  border-radius: 8px;
+  border: 1px solid var(--vscode-widget-border, rgba(127,127,127,.25));
+  background: var(--vscode-textCodeBlock-background, rgba(127,127,127,.06));
+  overflow: hidden;
+}
+.msg-bubble .md-table-fold[open] {
+  border-color: var(--vscode-focusBorder, var(--vscode-textLink-foreground));
+}
+.msg-bubble .md-table-fold-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+  transition: background .15s;
+}
+.msg-bubble .md-table-fold-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.msg-bubble .icon-btn-codicon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 4px;
+  font-family: inherit;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.msg-bubble .icon-btn-codicon .codicon {
+  font-size: 14px;
+  line-height: 1;
+}
+.msg-bubble .md-table-copy-btn {
+  border: 1px solid var(--vscode-input-border, rgba(127,127,127,.45));
+  background: var(--vscode-button-secondaryBackground, rgba(127,127,127,.2));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+  cursor: pointer;
+}
+.msg-bubble .md-table-copy-btn:hover {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border-color: var(--vscode-button-background);
+}
+.msg-bubble .md-table-fold-summary::-webkit-details-marker { display: none; }
+.msg-bubble .md-table-fold-summary::marker { content: ""; }
+.msg-bubble .md-table-fold-summary:hover {
+  background: var(--vscode-list-hoverBackground, rgba(127,127,127,.1));
+}
+.msg-bubble .md-table-fold-body {
+  padding: 0 8px 10px;
+  max-height: min(55vh, 420px);
+  overflow: auto;
+  border-top: 1px solid var(--vscode-widget-border, rgba(127,127,127,.15));
+}
+.msg-bubble .md-table-fold-body table {
+  margin: 8px 0 0;
 }
 .msg-bubble table {
   border-collapse: collapse;
@@ -384,7 +462,7 @@ body {
   text-decoration: underline;
 }
 
-/* 代码块复制按钮 */
+/* 代码块复制按钮（codicon） */
 .code-block-wrapper {
   position: relative;
 }
@@ -396,9 +474,7 @@ body {
   background: var(--vscode-button-secondaryBackground, rgba(127,127,127,.3));
   color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
   cursor: pointer;
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 3px;
+  border-radius: 4px;
   opacity: 0;
   transition: opacity .2s;
 }
@@ -543,6 +619,71 @@ body {
   padding: 10px 14px;
   flex-shrink: 0;
   background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+}
+
+/* 快速查询模式条（上方开关 + ChatArea openTipTag） */
+.chat-mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 0 2px;
+  flex-wrap: wrap;
+}
+.quick-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  color: var(--vscode-foreground);
+}
+.quick-mode-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.quick-mode-toggle-track {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, rgba(127,127,127,.45));
+  flex-shrink: 0;
+  transition: background .2s, border-color .2s;
+}
+.quick-mode-toggle-track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--vscode-foreground);
+  opacity: 0.55;
+  transition: transform .2s, opacity .2s;
+}
+.quick-mode-toggle input:checked + .quick-mode-toggle-track {
+  background: var(--vscode-button-background);
+  border-color: var(--vscode-button-background);
+}
+.quick-mode-toggle input:checked + .quick-mode-toggle-track::after {
+  transform: translateX(16px);
+  background: var(--vscode-button-foreground);
+  opacity: 1;
+}
+.quick-mode-toggle-text {
+  font-weight: 600;
+}
+.quick-mode-desc {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  line-height: 1.4;
 }
 
 /* ===== 数据库选择屏 ===== */

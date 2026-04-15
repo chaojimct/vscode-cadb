@@ -10,8 +10,13 @@
 
 ![](https://raw.githubusercontent.com/caoaolong/vscode-cadb/refs/heads/master/examples/example1.gif)
 
++ **AI 数据库助手**（自然语言查库、快速查询模式、可折叠结果表与复制等）
+
+![](https://raw.githubusercontent.com/caoaolong/vscode-cadb/refs/heads/master/examples/example4.png)
+
 ## 功能特性
 
+- **AI 数据库助手**：命令面板执行 **「AI 数据库助手」**（`cadb.ai.openChat`），新会话中选择数据源与数据库后对话；支持 `@` 插表名、会话持久化、流式回复；**快速查询**开关启用单次 function calling 直接生成并执行 SQL；结果 Markdown 表格可折叠、支持复制为 TSV；代码块与表格复制使用 Codicon 图标按钮。
 - **MySQL**：连接数据库，浏览库/表，执行 SQL、解释 SQL，表数据查看与编辑，复制连接信息
 - **工作区符号**：`Ctrl+T` / `Cmd+T` 可搜索并快速打开 MySQL 表（仅包含当前「过滤显示」的数据库下的表）
 - **Redis**：连接实例，浏览键值，Pub/Sub

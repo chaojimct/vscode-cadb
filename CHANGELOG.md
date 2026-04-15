@@ -1,5 +1,25 @@
 # 更新日志
 
+## [0.3.0]
+
+### 新增
+
+- **AI 数据库助手**
+  - 基于 Webview 的对话界面：绑定当前数据源与数据库，`@` 插入表名（ChatArea），流式展示助手回复；会话列表、清空、API Key / Base URL / Model 配置（`cadb.ai`）。
+  - **快速查询**：输入区上方开关；开启时通过 [ChatArea `openTipTag`](https://www.jianfv.top/ChatAreaDoc/guide/api) 在输入框前展示模式说明；后端使用 OpenAI 兼容 **function calling**（`tool_choice: required` + 仅 `execute_sql` 工具），**单次**生成并执行最终 SQL，适合明确的数据查询场景。
+  - **结果表格**：助手消息内 Markdown 表格默认收入 **可折叠** 区域（摘要显示行数，点击展开）；支持 **复制表格**（TSV，便于粘贴 Excel）。
+  - **代码块复制**：代码块右上角复制操作与表格复制均改为 **VS Code Codicons** 图标按钮（`@vscode/codicons`）。
+
+### 优化
+
+- **AI 助手 Markdown**：正文与 GFM 表格之间仅单换行时自动补空行，避免「共 N 行。」紧贴 `|` 表头导致表格无法解析、整段显示为乱格式。
+- **代码块展示**：`pre` / `pre code` 使用 `pre-wrap` 与换行策略，长 SQL **自动换行**，**不再出现横向滚动条**。
+- **智能体提示词**：约束最终 SELECT 结果勿大段复述表格内容；强调表格块前须有空行，减少模型输出与渲染错位。
+
+### 文档
+
+- **README**：补充 **AI 数据库助手** 演示截图（`examples/example4.png`）。
+
 ## [0.1.8]
 
 ### 新增
