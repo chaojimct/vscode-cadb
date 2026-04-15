@@ -1,5 +1,11 @@
 # 更新日志
 
+## [0.3.2]
+
+### 修复
+
+- **AI 数据库助手 · 安装版 Webview 资源 404 / `ChatArea is not defined`**：从市场安装后，通过 `node_modules` 加载 `chatarea`、`marked`、`@vscode/codicons` 时，在新版 VS Code 的 Webview 本地资源管线（`loadLocalResource` / `fileReader`、`vscode-resource`）下易出现加载失败与脚本未定义。现于构建前通过 `scripts/copy-ai-chat-vendor.cjs` 将上述静态文件复制到 `resources/panels/ai-chat/vendor/`，HTML 改为仅从 `resources/panels`（已在 `localResourceRoots` 中）引用，保证打包与安装环境一致可用。
+
 ## [0.3.1]
 
 ### 修复
