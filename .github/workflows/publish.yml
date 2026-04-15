@@ -42,8 +42,13 @@ jobs:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: npx --yes @vscode/vsce publish --no-dependencies
 
+      # 注意：不能在 steps.if 里使用 secrets.*（GitHub 不允许）。未配置 OVSX_PAT 时在脚本内跳过。
       - name: Publish to Open VSX Registry
-        if: ${{ secrets.OVSX_PAT != '' }}
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
-        run: npx --yes ovsx publish --no-dependencies
+        run: |
+          if [ -z "${OVSX_PAT:-}" ]; then
+            echo "OVSX_PAT 未配置，跳过 Open VSX 发布"
+            exit 0
+          fi
+          npx --yes ovsx publish --no-dependencies
