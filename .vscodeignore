@@ -10,6 +10,8 @@ node_modules/**
 !node_modules/layui/dist/**
 !node_modules/@vscode/codicons/dist/**
 !node_modules/jsoneditor/dist/**
+!node_modules/chatarea/**
+!node_modules/marked/**
 src/**
 .gitignore
 .yarnrc
