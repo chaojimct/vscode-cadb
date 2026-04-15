@@ -1,6 +1,6 @@
 # CADB
 
-在 VS Code 中管理多种数据源的扩展：MySQL、Redis、OSS，支持 SQL 执行、Notebook 与查询面板。
+在 VS Code 中管理多种数据源的扩展：MySQL、Redis、OSS，支持 SQL 执行与查询面板。
 
 + 驱动管理
 
@@ -10,17 +10,13 @@
 
 ![](https://raw.githubusercontent.com/caoaolong/vscode-cadb/refs/heads/master/examples/example1.gif)
 
-+ SQL Notebook
-
-![](https://raw.githubusercontent.com/caoaolong/vscode-cadb/refs/heads/master/examples/example3.gif)
-
 ## 功能特性
 
 - **MySQL**：连接数据库，浏览库/表，执行 SQL、解释 SQL，表数据查看与编辑，复制连接信息
 - **工作区符号**：`Ctrl+T` / `Cmd+T` 可搜索并快速打开 MySQL 表（仅包含当前「过滤显示」的数据库下的表）
 - **Redis**：连接实例，浏览键值，Pub/Sub
 - **OSS**：浏览 Bucket/目录与文件，点击文件下载到临时目录后按后缀用默认编辑器打开，支持文件夹下载、清除临时缓存
-- **SQL Notebook**：`.jsql` 笔记本，执行 SQL 并查看结果
+- **SQL 文件**：`.sql` 查询文件，支持 IntelliSense（表/字段等）、执行与 Explain
 - **查询面板**：数据源树、搜索、过滤，右键菜单（编辑、下载、删除、复制连接等）
 - 数据源树每次加载均从服务器拉取最新结构，用户设置的「过滤显示的数据库/表」与展开状态会保留
 
@@ -42,7 +38,7 @@
 | 下载 | OSS 文件/文件夹下载到本地 |
 | 清除 OSS 临时缓存 | 删除 OSS 预览用临时文件 |
 | 执行 SQL | 执行当前 SQL |
-| 新建 Notebook | 创建 SQL Notebook |
+| 选择数据库 | 切换当前 SQL 执行目标库 |
 
 ## 许可证
 

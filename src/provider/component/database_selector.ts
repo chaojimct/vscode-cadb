@@ -11,7 +11,7 @@ export class DatabaseSelector {
   constructor(databaseManager: DatabaseManager) {
     this.databaseManager = databaseManager;
 
-    // 不再创建状态栏项，功能已移至 Notebook 工具栏
+    // 不再创建右侧状态栏项；数据库选择在左侧 DatabaseStatusBar 中展示
     // 保留 statusBarItem 引用以避免错误，但不显示
     this.statusBarItem = vscode.window.createStatusBarItem(
       vscode.StatusBarAlignment.Right,
@@ -21,10 +21,10 @@ export class DatabaseSelector {
   }
 
   /**
-   * 更新状态栏显示（已禁用，功能移至 Notebook 工具栏）
+   * 更新状态栏显示（已禁用，由 DatabaseStatusBar 负责）
    */
   public updateStatusBar(): void {
-    // 不再更新状态栏，功能已移至 Notebook 工具栏
+    // 不再更新状态栏
       this.statusBarItem.hide();
   }
 

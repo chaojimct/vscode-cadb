@@ -11,10 +11,8 @@ import {
   registerResultCommands,
   registerGridSidePanelCommand,
 } from "./provider/component/commands";
-import { SqlNotebookSerializer } from "./provider/component/sql_notebook_serializer";
-import { SqlNotebookController } from "./provider/component/sql_notebook_controller";
-import { SqlNotebookRenderer } from "./provider/component/sql_notebook_renderer";
 import { DatabaseManager } from "./provider/component/database_manager";
+import { AiChatProvider } from "./provider/component/ai_chat_provider";
 import { ResultWebviewProvider } from "./provider/result_provider";
 import { CaCompletionItemProvider } from "./provider/completion_item_provider";
 import {
@@ -147,7 +145,7 @@ function readQuickExecuteSqlHistory(ctx: vscode.ExtensionContext): string[] {
   return prev.slice(0, max).filter((s) => s.trim());
 }
 
-/** 与编辑器缩进选项一致的 SQL 格式化（供普通 .sql / Notebook 单元格等任意 scheme 的 sql 文档使用） */
+/** 与编辑器缩进选项一致的 SQL 格式化（供普通 .sql 等 languageId 为 sql 的文档使用） */
 function formatSqlWithEditorOptions(
   text: string,
   options: vscode.FormattingOptions,
@@ -160,7 +158,7 @@ function formatSqlWithEditorOptions(
   } as any);
 }
 
-/** 不限定 scheme，覆盖 file / untitled / vscode-notebook-cell（SQL Notebook）等 */
+/** 不限定 scheme，覆盖 file / untitled 等任意 scheme 的 sql 文档 */
 const SQL_DOCUMENT_SELECTOR: vscode.DocumentSelector = { language: "sql" };
 
 function parseSqlStatementSpans(text: string): SqlStatementSpan[] {
@@ -459,7 +457,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
     const filePath = toComparablePath(rawPath);
     const ext = path.extname(uri.fsPath).toLowerCase();
-    if (ext !== ".sql" && ext !== ".jsql") {
+    if (ext !== ".sql") {
       return undefined;
     }
 
@@ -597,10 +595,6 @@ export function activate(context: vscode.ExtensionContext) {
     const editor = vscode.window.activeTextEditor;
     if (editor) {
       return editor.document.uri;
-    }
-    const notebookEditor = vscode.window.activeNotebookEditor;
-    if (notebookEditor?.notebook) {
-      return notebookEditor.notebook.uri;
     }
     return undefined;
   };
@@ -816,11 +810,6 @@ export function activate(context: vscode.ExtensionContext) {
     }),
   );
   context.subscriptions.push(
-    vscode.window.onDidChangeActiveNotebookEditor(() => {
-      scheduleActiveEditorReveal("onDidChangeActiveNotebookEditor");
-    }),
-  );
-  context.subscriptions.push(
     vscode.workspace.onDidChangeWorkspaceFolders(() => {
       provider.refresh();
       scheduleActiveEditorReveal("onDidChangeWorkspaceFolders");
@@ -968,267 +957,22 @@ export function activate(context: vscode.ExtensionContext) {
   registerResultCommands(resultProvider);
   context.subscriptions.push(registerGridSidePanelCommand());
 
-  // SQL Notebook API（用于打开 .jsql 文件）
-  const notebookSerializer = new SqlNotebookSerializer();
+  // AI 数据库聊天助手
+  const aiChatProvider = new AiChatProvider();
   context.subscriptions.push(
-    vscode.workspace.registerNotebookSerializer(
-      "cadb.sqlNotebook",
-      notebookSerializer,
-    ),
-  );
-
-  // SQL Notebook 控制器（执行 SQL 代码单元格）
-  const notebookController = new SqlNotebookController(
-    "cadb.sql-notebook-controller",
-    "cadb.sqlNotebook",
-    "SQL Notebook",
-    provider,
-    context,
-    databaseManager, // 传入 databaseManager 以获取当前选择的数据库
-  );
-  context.subscriptions.push(notebookController);
-
-  // SQL Notebook 渲染器（渲染查询结果和错误）
-  const notebookRenderer = new SqlNotebookRenderer(context);
-  context.subscriptions.push(notebookRenderer);
-
-  // 监听 Notebook 打开事件，自动设置数据库连接
-  context.subscriptions.push(
-    vscode.workspace.onDidOpenNotebookDocument(async (notebook) => {
-      // 只处理 SQL Notebook
-      if (notebook.notebookType !== "cadb.sqlNotebook") {
-        return;
-      }
-
-      // 读取 Notebook 元数据中的数据库连接信息
-      const metadata = notebook.metadata;
-      const datasourceName = metadata?.datasource;
-      const databaseName = metadata?.database;
-
-      if (datasourceName && databaseName) {
-        console.log(
-          `[Notebook] 检测到连接信息: ${datasourceName} / ${databaseName}`,
-        );
-        // 立即设置数据库状态，确保顶部工具栏/状态栏能回显（不依赖后续展开）
-        const ok = await databaseManager.setActiveDatabase(
-          datasourceName,
-          databaseName,
-        );
-        if (ok) {
-          console.log(
-            `[Notebook] 已回显数据库: ${datasourceName} / ${databaseName}`,
-          );
-        }
-        // 可选：后台尝试用完整节点更新（用于依赖树结构的逻辑）
-        try {
-          const connections = provider.getConnections();
-          const connectionData = connections.find(
-            (conn) => conn.name === datasourceName,
-          );
-          if (connectionData) {
-            const connection = new Datasource(connectionData);
-            const objects = await connection.expand(context);
-            const datasourceTypeNode = objects.find(
-              (obj) => obj.type === "datasourceType",
-            );
-            if (datasourceTypeNode) {
-              const databases = await datasourceTypeNode.expand(context);
-              const database = databases.find(
-                (db) => db.label === databaseName,
-              );
-              if (database) {
-                databaseManager.setCurrentDatabase(database, true);
-              }
-            }
-          }
-        } catch (error) {
-          console.error("[Notebook] 后台加载数据库节点失败:", error);
-        }
-      }
+    vscode.commands.registerCommand("cadb.ai.openChat", () => {
+      aiChatProvider.open(provider, context, databaseManager);
     }),
+    new vscode.Disposable(() => aiChatProvider.dispose()),
   );
 
-  // 已选择数据库时显示的按钮，点击可更换（同 selectDatabase）
-  context.subscriptions.push(
-    vscode.commands.registerCommand(
-      "cadb.notebook.currentDatabase",
-      async () => {
-        await databaseManager.selectDatabase();
-      },
-    ),
-  );
-
-  // Cell 底部执行栏（kernel 选择器左侧）：展示该 cell 的数据源/库，点击可设置或切换
-  try {
-    const registerFn = (vscode.notebooks as any)
-      .registerNotebookCellStatusBarItemProvider;
-    if (typeof registerFn === "function") {
-      const Right = (vscode as any).NotebookCellStatusBarAlignment?.Right ?? 1;
-      context.subscriptions.push(
-        registerFn.call(
-          vscode.notebooks,
-          { viewType: "cadb.sqlNotebook" },
-          {
-            provideCellStatusBarItems: (
-              cell: vscode.NotebookCell,
-              _token: vscode.CancellationToken,
-            ) => {
-              const cadb = cell.metadata?.cadb as
-                | { datasource?: string; database?: string }
-                | undefined;
-              const ds = cadb?.datasource ?? "";
-              const db = cadb?.database ?? "";
-              const text =
-                ds && db ? `${ds} / ${db}` : "$(database) 设置数据源";
-              return [
-                {
-                  text,
-                  alignment: Right,
-                  command: {
-                    command: "cadb.notebook.setCellDatabase",
-                    arguments: [cell],
-                  },
-                  tooltip:
-                    ds && db
-                      ? `点击更换数据源：${ds} / ${db}`
-                      : "点击设置该 Cell 的数据源",
-                },
-              ];
-            },
-          },
-        ),
-      );
-    }
-  } catch (e) {
-    console.warn("[CADB] registerNotebookCellStatusBarItemProvider 不可用:", e);
-  }
-
-  // 为当前 Cell 单独设置数据库连接（保存到 cell.metadata）
-  context.subscriptions.push(
-    vscode.commands.registerCommand(
-      "cadb.notebook.setCellDatabase",
-      async (cell?: vscode.NotebookCell) => {
-        const editor = vscode.window.activeNotebookEditor;
-        if (!editor || editor.notebook.notebookType !== "cadb.sqlNotebook")
-          return;
-        let targetCell: vscode.NotebookCell | undefined = cell;
-        if (!targetCell) {
-          const sel = (editor as any).selection;
-          if (sel && typeof sel.start === "number") {
-            targetCell = editor.notebook.cellAt(sel.start);
-          }
-          targetCell ??= editor.notebook.getCells()[0];
-        }
-        if (!targetCell || !targetCell.notebook) return;
-        await databaseManager.selectDatabase();
-        const conn = databaseManager.getCurrentConnection();
-        const db = databaseManager.getCurrentDatabase();
-        if (!conn || !db) return;
-        const datasource = conn.label?.toString() ?? "";
-        const database = db.label?.toString() ?? "";
-        const edit = new vscode.WorkspaceEdit();
-        const newMetadata = {
-          ...targetCell.metadata,
-          cadb: { datasource, database },
-        };
-        edit.set(targetCell.notebook.uri, [
-          vscode.NotebookEdit.updateCellMetadata(targetCell.index, newMetadata),
-        ]);
-        await vscode.workspace.applyEdit(edit);
-        vscode.window.showInformationMessage(
-          `已为 Cell 设置: ${datasource} / ${database}`,
-        );
-      },
-    ),
-  );
-
-  // 收起/展开全部结果：通过 createRendererMessaging 发到 renderer
-  const rendererMessaging = vscode.notebooks.createRendererMessaging(
-    "cadb.sql-notebook-renderer",
-  );
-  context.subscriptions.push(
-    vscode.commands.registerCommand("cadb.notebook.collapseAllResults", () => {
-      const editor = vscode.window.activeNotebookEditor;
-      if (editor?.notebook?.notebookType !== "cadb.sqlNotebook") return;
-      void rendererMessaging.postMessage({ type: "collapseAll" }, editor);
-    }),
-  );
-  context.subscriptions.push(
-    vscode.commands.registerCommand("cadb.notebook.expandAllResults", () => {
-      const editor = vscode.window.activeNotebookEditor;
-      if (editor?.notebook?.notebookType !== "cadb.sqlNotebook") return;
-      void rendererMessaging.postMessage({ type: "expandAll" }, editor);
-    }),
-  );
-
-  context.subscriptions.push(
-    rendererMessaging.onDidReceiveMessage(({ editor, message }) => {
-      if (editor.notebook.notebookType !== "cadb.sqlNotebook") {
-        return;
-      }
-      void notebookController.handleRendererMessage(editor, message);
-    }),
-  );
-
-  // 注册 Notebook 数据库状态显示命令（用于工具栏显示）
-  context.subscriptions.push(
-    vscode.commands.registerCommand("cadb.notebook.showDatabaseStatus", () => {
-      const connection = databaseManager.getCurrentConnection();
-      const database = databaseManager.getCurrentDatabase();
-
-      if (connection && database) {
-        vscode.window.showInformationMessage(
-          `当前数据库: ${connection.label} / ${database.label}`,
-        );
-      } else if (connection) {
-        vscode.window.showWarningMessage(
-          `已选择连接: ${connection.label}，但未选择数据库`,
-        );
-      } else {
-        vscode.window.showWarningMessage("未选择数据库连接");
-      }
-    }),
-  );
-
-  // 注册 Notebook 相关命令
-  context.subscriptions.push(
-    vscode.commands.registerCommand("cadb.notebook.new", async () => {
-      // 创建新的 .jsql 文件
-      const uri = await vscode.window.showSaveDialog({
-        filters: {
-          "SQL Notebook": ["jsql"],
-        },
-        defaultUri: vscode.Uri.file("untitled.jsql"),
-      });
-
-      if (uri) {
-        // 创建空的 notebook 内容
-        const emptyNotebook = {
-          datasource: null,
-          database: null,
-          cells: [],
-        };
-        const content = JSON.stringify(emptyNotebook, null, 2);
-
-        // 写入文件
-        await vscode.workspace.fs.writeFile(uri, Buffer.from(content, "utf-8"));
-
-        // 打开文件
-        const document = await vscode.workspace.openTextDocument(uri);
-        await vscode.window.showNotebookDocument(
-          await vscode.workspace.openNotebookDocument(uri),
-        );
-      }
-    }),
-  );
-
-  // SQL 自动补全（仅支持 Notebook）
+  // SQL 自动补全（基于当前数据源/库选择，适用于 *.sql 等）
   const completionProvider = new CaCompletionItemProvider();
   completionProvider.setProvider(provider);
   completionProvider.setDatabaseManager(databaseManager);
   context.subscriptions.push(
     vscode.languages.registerCompletionItemProvider(
-      { notebookType: "cadb.sqlNotebook" },
+      SQL_DOCUMENT_SELECTOR,
       completionProvider,
       ".", // 触发字符：点号用于 table.column
       " ", // 触发字符：空格用于关键字后
@@ -1699,7 +1443,7 @@ export function activate(context: vscode.ExtensionContext) {
     ),
   );
 
-  // SQL 文档格式化：*.sql、未保存 SQL、SQL Notebook（vscode-notebook-cell）单元格均适用
+  // SQL 文档格式化：*.sql、未保存 SQL 等
   const sqlFormatterProvider: vscode.DocumentFormattingEditProvider = {
     provideDocumentFormattingEdits(document, options) {
       try {

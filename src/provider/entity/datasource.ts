@@ -118,7 +118,7 @@ export class Datasource extends vscode.TreeItem {
     createWebview(viewType: string, title: string): vscode.WebviewPanel;
     refresh(item?: Datasource): void;
     loadCollectionChildren(node: Datasource): Promise<void>;
-    /** 获取某连接下 JSQL/查询文件根目录（随连接保存位置：工作区 .cadb/连接名 或 globalStorage/连接名） */
+    /** 获取某连接下 SQL 查询文件根目录（随连接保存位置：工作区 .cadb/连接名 或 globalStorage/连接名） */
     getConnectionFilesDirUri?(connectionName: string): vscode.Uri;
   };
 
@@ -199,27 +199,6 @@ export class Datasource extends vscode.TreeItem {
         if (!this.parent || !this.parent.label) {
           return Promise.resolve();
         }
-        const kind = await vscode.window.showQuickPick(
-          [
-            {
-              label: "创建 SQL 文件 (.sql)",
-              description: "纯文本，支持 CodeLens 运行全部与 Explain",
-              value: "sql" as const,
-            },
-            {
-              label: "创建 JSQL Notebook (.jsql)",
-              description: "笔记本，按单元格执行",
-              value: "jsql" as const,
-            },
-          ],
-          { placeHolder: "选择：创建 SQL 文件 或 JSQL Notebook" },
-        );
-        if (!kind) {
-          return Promise.resolve();
-        }
-
-        const fileKind = kind.value;
-
         const connectionNameForPath = this.parent.label.toString();
         const dsPath =
           Datasource.createDatabaseHost?.getConnectionFilesDirUri?.(
@@ -229,8 +208,7 @@ export class Datasource extends vscode.TreeItem {
 
         const dayjs = require("dayjs");
         const stamp = dayjs().format("YYYYMMDDHHmmss");
-        const ext = fileKind === "jsql" ? ".jsql" : ".sql";
-        const filename = stamp + ext;
+        const filename = stamp + ".sql";
         const fileUri = vscode.Uri.joinPath(dsPath, filename);
 
         let datasourceName: string | null = null;
@@ -249,29 +227,12 @@ export class Datasource extends vscode.TreeItem {
 
         await vscode.workspace.fs.createDirectory(dsPath);
 
-        if (fileKind === "jsql") {
-          const emptyNotebook = {
-            datasource: datasourceName,
-            database: databaseName,
-            cells: [],
-          };
-          const content = JSON.stringify(emptyNotebook, null, 2);
-          await vscode.workspace.fs.writeFile(
-            fileUri,
-            Buffer.from(content, "utf-8"),
-          );
-
-          const notebookDocument =
-            await vscode.workspace.openNotebookDocument(fileUri);
-          await vscode.window.showNotebookDocument(notebookDocument);
-        } else {
-          await vscode.workspace.fs.writeFile(
-            fileUri,
-            Buffer.from("", "utf-8"),
-          );
-          const textDoc = await vscode.workspace.openTextDocument(fileUri);
-          await vscode.window.showTextDocument(textDoc);
-        }
+        await vscode.workspace.fs.writeFile(
+          fileUri,
+          Buffer.from("", "utf-8"),
+        );
+        const textDoc = await vscode.workspace.openTextDocument(fileUri);
+        await vscode.window.showTextDocument(textDoc);
 
         if (databaseManager && databaseName) {
           let dbNode: Datasource | undefined = this.parent;

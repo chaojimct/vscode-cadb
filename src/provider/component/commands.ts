@@ -3044,116 +3044,58 @@ export function registerDatasourceItemCommands(
       const connDir = provider.getConnectionFilesDirUri(connectionName);
 
       const appendToFile = async (uri: vscode.Uri) => {
-        const ext = uri.fsPath.toLowerCase().endsWith(".jsql") ? "jsql" : "sql";
-        if (ext === "jsql") {
-          const nbOpen = vscode.workspace.notebookDocuments.find(
-            (n) => n.uri.fsPath.toLowerCase() === uri.fsPath.toLowerCase(),
+        const docOpen = vscode.workspace.textDocuments.find(
+          (d) => d.uri.fsPath.toLowerCase() === uri.fsPath.toLowerCase(),
+        );
+        if (docOpen) {
+          const lastLine = Math.max(0, docOpen.lineCount - 1);
+          const pos = new vscode.Position(
+            lastLine,
+            docOpen.lineAt(lastLine).text.length,
           );
-          if (nbOpen) {
-            const edit = new vscode.WorkspaceEdit();
-            const newCell = new vscode.NotebookCellData(
-              vscode.NotebookCellKind.Code,
-              baseSql,
-              "sql",
-            );
-            edit.set(uri, [
-              vscode.NotebookEdit.insertCells(nbOpen.cellCount, [newCell]),
-              vscode.NotebookEdit.updateNotebookMetadata({
-                ...nbOpen.metadata,
-                datasource: connectionName,
-                database: databaseName,
-              }),
-            ]);
-            await vscode.workspace.applyEdit(edit);
-            const lastIdx = nbOpen.cellCount - 1;
-            await vscode.window.showNotebookDocument(nbOpen, {
-              selections: [new vscode.NotebookRange(lastIdx, lastIdx + 1)],
-              preview: false,
-            });
-            setTimeout(
-              () => vscode.commands.executeCommand("notebook.cell.edit"),
-              100,
-            );
-          } else {
-            const buf = await vscode.workspace.fs.readFile(uri);
-            const raw = JSON.parse(new TextDecoder().decode(buf)) as {
-              datasource?: string;
-              database?: string;
-              cells?: { sql: string }[];
-            };
-            if (!raw.cells) raw.cells = [];
-            raw.cells.push({ sql: baseSql });
-            raw.datasource = connectionName;
-            raw.database = databaseName;
-            await vscode.workspace.fs.writeFile(
-              uri,
-              Buffer.from(JSON.stringify(raw, null, 2), "utf-8"),
-            );
-            const nb = await vscode.workspace.openNotebookDocument(uri);
-            const lastIdx = Math.max(0, nb.cellCount - 1);
-            await vscode.window.showNotebookDocument(nb, {
-              selections: [new vscode.NotebookRange(lastIdx, lastIdx + 1)],
-              preview: false,
-            });
-            setTimeout(
-              () => vscode.commands.executeCommand("notebook.cell.edit"),
-              150,
-            );
-          }
+          const edit = new vscode.WorkspaceEdit();
+          edit.insert(uri, pos, `\n\n${baseSql}\n`);
+          await vscode.workspace.applyEdit(edit);
+          const endLineIdx = docOpen.lineCount - 1;
+          const endPos = new vscode.Position(
+            endLineIdx,
+            docOpen.lineAt(endLineIdx).text.length,
+          );
+          const editor = await vscode.window.showTextDocument(docOpen, {
+            viewColumn: vscode.ViewColumn.Active,
+            selection: new vscode.Range(endPos, endPos),
+          });
+          editor.revealRange(
+            new vscode.Range(endPos, endPos),
+            vscode.TextEditorRevealType.InCenter,
+          );
         } else {
-          const docOpen = vscode.workspace.textDocuments.find(
-            (d) => d.uri.fsPath.toLowerCase() === uri.fsPath.toLowerCase(),
+          const buf = await vscode.workspace.fs.readFile(uri);
+          const text = new TextDecoder().decode(buf);
+          const lines = text.split(/\r?\n/);
+          const lastLine = Math.max(0, lines.length - 1);
+          const lastLineLen = lines[lastLine]?.length ?? 0;
+          const edit = new vscode.WorkspaceEdit();
+          edit.insert(
+            uri,
+            new vscode.Position(lastLine, lastLineLen),
+            `\n\n${baseSql}\n`,
           );
-          if (docOpen) {
-            const lastLine = Math.max(0, docOpen.lineCount - 1);
-            const pos = new vscode.Position(
-              lastLine,
-              docOpen.lineAt(lastLine).text.length,
-            );
-            const edit = new vscode.WorkspaceEdit();
-            edit.insert(uri, pos, `\n\n${baseSql}\n`);
-            await vscode.workspace.applyEdit(edit);
-            const endLineIdx = docOpen.lineCount - 1;
-            const endPos = new vscode.Position(
-              endLineIdx,
-              docOpen.lineAt(endLineIdx).text.length,
-            );
-            const editor = await vscode.window.showTextDocument(docOpen, {
-              viewColumn: vscode.ViewColumn.Active,
-              selection: new vscode.Range(endPos, endPos),
-            });
-            editor.revealRange(
-              new vscode.Range(endPos, endPos),
-              vscode.TextEditorRevealType.InCenter,
-            );
-          } else {
-            const buf = await vscode.workspace.fs.readFile(uri);
-            const text = new TextDecoder().decode(buf);
-            const lines = text.split(/\r?\n/);
-            const lastLine = Math.max(0, lines.length - 1);
-            const lastLineLen = lines[lastLine]?.length ?? 0;
-            const edit = new vscode.WorkspaceEdit();
-            edit.insert(
-              uri,
-              new vscode.Position(lastLine, lastLineLen),
-              `\n\n${baseSql}\n`,
-            );
-            await vscode.workspace.applyEdit(edit);
-            const doc = await vscode.workspace.openTextDocument(uri);
-            const endLineIdx = doc.lineCount - 1;
-            const endPos = new vscode.Position(
-              endLineIdx,
-              doc.lineAt(endLineIdx).text.length,
-            );
-            const editor = await vscode.window.showTextDocument(doc, {
-              viewColumn: vscode.ViewColumn.Active,
-              selection: new vscode.Range(endPos, endPos),
-            });
-            editor.revealRange(
-              new vscode.Range(endPos, endPos),
-              vscode.TextEditorRevealType.InCenter,
-            );
-          }
+          await vscode.workspace.applyEdit(edit);
+          const doc = await vscode.workspace.openTextDocument(uri);
+          const endLineIdx = doc.lineCount - 1;
+          const endPos = new vscode.Position(
+            endLineIdx,
+            doc.lineAt(endLineIdx).text.length,
+          );
+          const editor = await vscode.window.showTextDocument(doc, {
+            viewColumn: vscode.ViewColumn.Active,
+            selection: new vscode.Range(endPos, endPos),
+          });
+          editor.revealRange(
+            new vscode.Range(endPos, endPos),
+            vscode.TextEditorRevealType.InCenter,
+          );
         }
       };
 
@@ -3164,10 +3106,8 @@ export function registerDatasourceItemCommands(
         await vscode.workspace.fs.createDirectory(connDir);
       }
 
-      const allFiles = entries.filter(
-        ([name]) =>
-          name.toLowerCase().endsWith(".jsql") ||
-          name.toLowerCase().endsWith(".sql"),
+      const allFiles = entries.filter(([name]) =>
+        name.toLowerCase().endsWith(".sql"),
       );
 
       const queryFiles: {
@@ -3176,79 +3116,28 @@ export function registerDatasourceItemCommands(
         value: vscode.Uri;
       }[] = [];
       for (const [name] of allFiles) {
-        if (name.toLowerCase().endsWith(".jsql")) {
-          try {
-            const uri = vscode.Uri.joinPath(connDir, name);
-            const buf = await vscode.workspace.fs.readFile(uri);
-            const raw = JSON.parse(new TextDecoder().decode(buf)) as {
-              datasource?: string;
-              database?: string;
-            };
-            if (
-              String(raw.datasource || "").trim() === connectionName &&
-              String(raw.database || "").trim() === databaseName
-            ) {
-              queryFiles.push({
-                label: `$(file-code) ${name}`,
-                description: name,
-                value: uri,
-              });
-            }
-          } catch {
-            // 解析失败则跳过
-          }
-        } else {
-          queryFiles.push({
-            label: `$(file-code) ${name}`,
-            description: name,
-            value: vscode.Uri.joinPath(connDir, name),
-          });
-        }
+        queryFiles.push({
+          label: `$(file-code) ${name}`,
+          description: name,
+          value: vscode.Uri.joinPath(connDir, name),
+        });
       }
       queryFiles.sort((a, b) => a.description.localeCompare(b.description));
 
-      const newJsqlItem = {
-        label: "$(add) 新建查询",
-        description: "在本连接下新建 .jsql",
-        value: "__new_jsql__" as const,
-      };
       const newSqlItem = {
         label: "$(add) 新建 SQL 文件",
         description: "在本连接下新建 .sql",
         value: "__new_sql__" as const,
       };
 
-      const items = [newJsqlItem, newSqlItem, ...queryFiles];
+      const items = [newSqlItem, ...queryFiles];
 
       const choice = await vscode.window.showQuickPick(items, {
         placeHolder: `选择要追加查询的文件（${connectionName} / ${databaseName}）`,
       });
       if (!choice) return;
 
-      if (choice.value === "__new_jsql__") {
-        const dayjs = require("dayjs");
-        const filename = dayjs().format("YYYYMMDDHHmmss") + ".jsql";
-        const uri = vscode.Uri.joinPath(connDir, filename);
-        const content = JSON.stringify(
-          {
-            datasource: connectionName,
-            database: databaseName,
-            cells: [{ sql: baseSql }],
-          },
-          null,
-          2,
-        );
-        await vscode.workspace.fs.writeFile(uri, Buffer.from(content, "utf-8"));
-        const nb = await vscode.workspace.openNotebookDocument(uri);
-        await vscode.window.showNotebookDocument(nb, {
-          selections: [new vscode.NotebookRange(0, 1)],
-          preview: false,
-        });
-        setTimeout(() => {
-          vscode.commands.executeCommand("notebook.cell.edit");
-        }, 200);
-        provider.refresh();
-      } else if (choice.value === "__new_sql__") {
+      if (choice.value === "__new_sql__") {
         const dayjs = require("dayjs");
         const filename = dayjs().format("YYYYMMDDHHmmss") + ".sql";
         const uri = vscode.Uri.joinPath(connDir, filename);
@@ -3378,33 +3267,17 @@ export function registerDatasourceItemCommands(
     const dsPath = vscode.Uri.joinPath(connDir, fileName);
 
     try {
-      // 判断文件扩展名是否为 .jsql
+      const doc = await vscode.workspace.openTextDocument(dsPath);
+      await vscode.window.showTextDocument(doc, {
+        preview: false,
+        viewColumn: vscode.ViewColumn.Active,
+      });
       if (fileName.toLowerCase().endsWith(".jsql")) {
-        // 查找文件所属的数据库节点
-        // 文件结构: datasource -> datasourceType -> collection -> collectionType -> fileType -> file
-        // 或: datasource -> datasourceType -> collection -> fileType -> file
         const databaseNode =
           fileItem.parent && findAncestorByType(fileItem.parent, "collection");
-
-        // 使用 SQL Notebook 方式打开
-        const notebookDocument =
-          await vscode.workspace.openNotebookDocument(dsPath);
-        await vscode.window.showNotebookDocument(notebookDocument, {
-          preview: false,
-          viewColumn: vscode.ViewColumn.Active,
-        });
-
-        // 如果找到了数据库节点，自动设置数据库（静默模式）
         if (databaseNode && databaseManager) {
           databaseManager.setCurrentDatabase(databaseNode, true);
         }
-      } else {
-        // 使用普通文本编辑器打开
-        const doc = await vscode.workspace.openTextDocument(dsPath);
-        await vscode.window.showTextDocument(doc, {
-          preview: false,
-          viewColumn: vscode.ViewColumn.Active,
-        });
       }
       void vscode.commands.executeCommand("cadb.datasource.revealByPath", {
         connectionName,
@@ -3807,7 +3680,7 @@ export function registerDatabaseCommands(databaseManager: DatabaseManager) {
   // 创建数据库选择器（不再显示状态栏）
   const databaseSelector = new DatabaseSelector(databaseManager);
 
-  // 注册数据库选择命令（用于 Notebook 工具栏）
+  // 注册数据库选择命令（命令面板等）
   vscode.commands.registerCommand("cadb.sql.selectDatabase", () =>
     databaseManager.selectDatabase(),
   );
@@ -3875,6 +3748,3 @@ export function registerGridSidePanelCommand(): vscode.Disposable {
   });
 }
 
-/**
- * 注册 Book (SQL Notebook) 面板命令
- */

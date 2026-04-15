@@ -85,6 +85,15 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
         ),
         "utf-8"
       ),
+      aiChat: readFileSync(
+        path.join(
+          this.context.extensionPath,
+          "resources",
+          "panels",
+          "ai-chat.html"
+        ),
+        "utf-8"
+      ),
     };
 
     // 加载树状态（含已关闭的连接名）
@@ -436,7 +445,7 @@ export class DataSourceProvider implements vscode.TreeDataProvider<Datasource> {
   }
 
   /**
-   * 获取某连接下 JSQL/查询文件的根目录，随该连接的保存位置变化：
+   * 获取某连接下 SQL 查询文件（.sql）的根目录，随该连接的保存位置变化：
    * - 若连接保存在工作区：返回工作区 .cadb/<连接名>
    * - 若保存在用户或无法使用工作区：返回 globalStorageUri/<连接名>
    */

@@ -6,7 +6,7 @@
 export interface DriverCapabilities {
   /** 树节点「数据库」下支持创建库向导（如 MySQL） */
   createDatabase?: boolean;
-  /** 可作为 SQL 执行 / 状态栏选库 / Notebook 等 SQL 通道的目标 */
+  /** 可作为 SQL 执行 / 状态栏选库等 SQL 通道的目标 */
   sqlExecutionTarget?: boolean;
   /** 支持在资源树中删除库/表等（当前实现依赖 MySQL 连接） */
   supportsTreeDelete?: boolean;

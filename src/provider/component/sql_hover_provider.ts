@@ -105,29 +105,6 @@ export class SqlHoverProvider implements vscode.HoverProvider {
     let datasourceName = "";
     let databaseName = "";
 
-    if (document.uri.scheme === "vscode-notebook-cell") {
-      const notebook = vscode.workspace.notebookDocuments.find((nb) =>
-        nb.getCells().some(
-          (c) => c.document.uri.toString() === document.uri.toString()
-        )
-      );
-      if (notebook) {
-        const cell = notebook
-          .getCells()
-          .find((c) => c.document.uri.toString() === document.uri.toString());
-        const cellCadb = cell?.metadata?.cadb as
-          | { datasource?: string; database?: string }
-          | undefined;
-        if (cellCadb?.datasource && cellCadb?.database) {
-          datasourceName = cellCadb.datasource;
-          databaseName = cellCadb.database;
-        } else if (notebook.metadata) {
-          datasourceName = (notebook.metadata.datasource as string) || "";
-          databaseName = (notebook.metadata.database as string) || "";
-        }
-      }
-    }
-
     if ((!datasourceName || !databaseName) && this._databaseManager) {
       const conn = this._databaseManager.getCurrentConnection();
       const db = this._databaseManager.getCurrentDatabase();

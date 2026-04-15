@@ -6,7 +6,7 @@ import type { DataSourceProvider } from "./database_provider";
 /**
  * SQL 自动补全提供者
  * 提供数据库、表、字段、索引、视图等名称的智能补全
- * 仅支持 Notebook
+ * 适用于 languageId 为 sql 的编辑器（含 *.sql、未命名 SQL 等）
  */
 export class CaCompletionItemProvider implements vscode.CompletionItemProvider {
   private _databaseManager?: DatabaseManager;
@@ -35,39 +35,22 @@ export class CaCompletionItemProvider implements vscode.CompletionItemProvider {
   ): Promise<
     vscode.CompletionItem[] | vscode.CompletionList<vscode.CompletionItem>
   > {
-    // 只支持 Notebook cell
-    if (document.uri.scheme !== 'vscode-notebook-cell') {
+    if (document.languageId !== "sql") {
       return [];
     }
 
-    // 对于 Notebook 单元格，尝试从 notebook metadata 获取连接信息
     let currentConnection: any = null;
     let currentDatabase: any = null;
 
-    // 尝试从 notebook 获取 metadata
-    const notebookUri = vscode.workspace.notebookDocuments.find(
-      nb => nb.getCells().some(cell => cell.document.uri.toString() === document.uri.toString())
-    );
-    
-    if (notebookUri) {
-      const cell = notebookUri.getCells().find(c => c.document.uri.toString() === document.uri.toString());
-      const cellCadb = cell?.metadata?.cadb as { datasource?: string; database?: string } | undefined;
-      const metadata = notebookUri.metadata;
-      const datasourceName = cellCadb?.datasource ?? (metadata?.datasource as string | undefined);
-      const databaseName = cellCadb?.database ?? (metadata?.database as string | undefined);
-      if (datasourceName && databaseName) {
-        currentConnection = { label: datasourceName, name: datasourceName };
-        currentDatabase = { label: databaseName };
-      }
-    }
-
-    // 如果 Notebook metadata 中没有，尝试使用 databaseManager 中的当前选择
-    if (!currentConnection && this._databaseManager) {
+    if (this._databaseManager) {
       const conn = this._databaseManager.getCurrentConnection();
       const db = this._databaseManager.getCurrentDatabase();
       if (conn && db) {
-        currentConnection = { label: conn.label?.toString() || '', name: conn.label?.toString() || '' };
-        currentDatabase = { label: db.label?.toString() || '' };
+        currentConnection = {
+          label: conn.label?.toString() || "",
+          name: conn.label?.toString() || "",
+        };
+        currentDatabase = { label: db.label?.toString() || "" };
       }
     }
 
