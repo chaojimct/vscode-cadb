@@ -1,5 +1,17 @@
 # 更新日志
 
+## [0.3.5]
+
+### 新增
+
+- **查询结果导出**：底部「查询」面板中，每个结果标签上方提供 **JSON / CSV / TSV** 导出按钮；右键结果标签亦可选择对应格式。通过 `showSaveDialog` 选择保存路径（默认文件名来自结果标题，默认目录为当前工作区根目录；无工作区时使用扩展全局存储目录）。CSV/TSV 含表头并对含分隔符、引号、换行的单元格做转义；JSON 为对象数组，对 `Date`、`Buffer`（含 Webview 传来的 `{ type, data }`）、`BigInt` 等做可读序列化。
+- **SQL · 运行当前语句快捷键**：命令 `cadb.sql.runCurrent` 绑定 **Windows / Linux：`Ctrl+Enter`**，**macOS：`Cmd+Enter`**（`editorLangId == sql` 且非 Notebook 编辑器时生效）。
+
+### 优化
+
+- **\*.sql 智能补全**：触发补全前按当前 SQL 文档 URI 恢复已保存的数据源/库绑定；使用光标前跨行文本判断 `USE` / `FROM` / `JOIN` / `表.列` 等上下文；连接解析同时匹配配置的 `name` 与树节点展示名；字段与表补全的 **detail** 中分别标明「所属表」「所属数据库」；未选连接时仍提供 SQL 关键字提示。
+- **`[sql]` 编辑器默认行为**：`configurationDefaults` 中为 SQL 增加 `editor.quickSuggestions`（普通代码区开启，注释与字符串内关闭），减少干扰并便于触发扩展补全。
+
 ## [0.3.4]
 
 ### 修复
