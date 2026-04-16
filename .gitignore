@@ -1,6 +1,7 @@
 out
 dist
 node_modules
+resources/panels/ai-chat/vendor/
 .vscode-test/
 *.vsix
 .env
