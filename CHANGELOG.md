@@ -1,16 +1,26 @@
 # 更新日志
 
+## [0.3.4]
+
+### 修复
+
+- **Webview Codicons（数据表格 / 配置管理 / AI 助手）**：`grid.html`、`settings.html` 仍经 `node_modules` 的 Webview URI 加载 `@vscode/codicons` 时，与 AI 助手同类问题，易导致 Codicon 字体与图标不显示。现通过 `scripts/copy-ai-chat-vendor.cjs` 将 `codicon.css`、`codicon.ttf` 复制到 `resources/panels/common/vendor/codicons/dist/`（仅复制上述二文件，避免 `dist` 内 `.ts` 被 webpack 误编译）；`ai-chat.html`、`grid.html`、`settings.html` 统一经 `{{resources-uri}}/common/vendor/codicons/...` 引用；`resources/panels/common/vendor/` 列入 `.gitignore` 并由打包流程写入 `.vsix`。
+
+### 变更
+
+- **`.vscodeignore`**：移除对 `node_modules/@vscode/codicons/dist` 的打包白名单；运行时改由 `resources/panels/common/vendor` 提供 Codicons，并略减小 `.vsix` 体积。
+
 ## [0.3.3]
 
 ### 修复
 
-- **AI 数据库助手 · 安装版 Webview 资源 404 / `ChatArea is not defined`（落地）**：从市场安装后，经 `node_modules` 的 Webview URI 加载 `chatarea`、`marked`、`@vscode/codicons` 在新版 VS Code 本地资源管线下易失败。现通过 `scripts/copy-ai-chat-vendor.cjs` 在 `postinstall` 及 `compile` / `watch` / `package` 前将 `chatarea`、`marked` 复制到 `resources/panels/ai-chat/vendor/`，将 `codicon.css` / `codicon.ttf` 复制到 `resources/panels/common/vendor/codicons/dist/`（避免 `dist` 内 `.ts` 被 webpack 误编译）；`ai-chat.html`、`grid.html`、`settings.html` 经 `{{resources-uri}}/common/vendor/codicons/...` 引用；`vendor/` 目录列入 `.gitignore` 并由打包流程写入 `.vsix`。
+- **AI 数据库助手 · 安装版 Webview 资源 404 / `ChatArea is not defined`（落地）**：从市场安装后，经 `node_modules` 的 Webview URI 加载 `chatarea`、`marked` 在新版 VS Code 本地资源管线下易失败。现通过 `scripts/copy-ai-chat-vendor.cjs` 在 `postinstall` 及 `compile` / `watch` / `package` 前将所需静态文件复制到 `resources/panels/ai-chat/vendor/`；`ai-chat.html` 改为仅从 `{{resources-uri}}/ai-chat/vendor/...` 引用；`resources/panels/ai-chat/vendor/` 列入 `.gitignore` 并由打包流程写入 `.vsix`。
 
 ## [0.3.2]
 
 ### 修复
 
-- **AI 数据库助手 · 安装版 Webview 资源 404 / `ChatArea is not defined`**：问题与修复方向说明；完整实现见 **0.3.3**。
+- **AI 数据库助手 · 安装版 Webview 资源 404 / `ChatArea is not defined`**：问题与修复方向说明；`chatarea` / `marked` 落地见 **0.3.3**；Codicons 等 Webview 静态资源见 **0.3.4**。
 
 ## [0.3.1]
 
