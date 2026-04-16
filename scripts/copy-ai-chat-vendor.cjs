@@ -1,12 +1,23 @@
 /**
- * 将 AI 聊天 Webview 依赖的静态资源复制到 resources/panels/ai-chat/vendor，
- * 避免安装版扩展通过 node_modules 的 webview URI 在新版 VS Code 下 404。
+ * 将 AI 聊天 Webview 依赖复制到 resources/panels/ai-chat/vendor；
+ * 将 @vscode/codicons 复制到 resources/panels/common/vendor（供 grid / settings / ai-chat 等
+ * 经 {{resources-uri}} 引用），避免经 node_modules 的 webview URI 在安装版或新版 VS Code 下 404。
  */
 const fs = require("fs");
 const path = require("path");
 
 const root = path.join(__dirname, "..");
 const vendorRoot = path.join(root, "resources", "panels", "ai-chat", "vendor");
+/** 各 Webview 共用的 codicons（勿经 node_modules 的 webview URI，新版 VS Code / 安装包下易 404） */
+const commonCodiconsDir = path.join(
+  root,
+  "resources",
+  "panels",
+  "common",
+  "vendor",
+  "codicons",
+  "dist"
+);
 const nm = path.join(root, "node_modules");
 
 const copies = [
@@ -22,18 +33,19 @@ const copies = [
     label: "marked/lib/marked.umd.js",
     recursive: false,
   },
-  // 仅复制 Webview 所需文件；codicons 的 dist 含 .ts 会被 ts-loader 误纳入编译
+];
+
+// 仅复制 Webview 所需文件；codicons 的 dist 含 .ts 会被 ts-loader 误纳入编译
+const codiconCopies = [
   {
     from: path.join(nm, "@vscode", "codicons", "dist", "codicon.css"),
-    to: path.join(vendorRoot, "codicons", "dist", "codicon.css"),
+    to: path.join(commonCodiconsDir, "codicon.css"),
     label: "@vscode/codicons/dist/codicon.css",
-    recursive: false,
   },
   {
     from: path.join(nm, "@vscode", "codicons", "dist", "codicon.ttf"),
-    to: path.join(vendorRoot, "codicons", "dist", "codicon.ttf"),
+    to: path.join(commonCodiconsDir, "codicon.ttf"),
     label: "@vscode/codicons/dist/codicon.ttf",
-    recursive: false,
   },
 ];
 
@@ -63,7 +75,19 @@ function main() {
     }
   }
 
-  console.log("[copy-ai-chat-vendor] 已写入", vendorRoot);
+  fs.rmSync(commonCodiconsDir, { recursive: true, force: true });
+  fs.mkdirSync(commonCodiconsDir, { recursive: true });
+  for (const c of codiconCopies) {
+    if (!fs.existsSync(c.from)) {
+      console.error(
+        `[copy-ai-chat-vendor] 缺少依赖路径: ${c.label}（${c.from}）`
+      );
+      process.exit(1);
+    }
+    fs.copyFileSync(c.from, c.to);
+  }
+
+  console.log("[copy-ai-chat-vendor] 已写入", vendorRoot, "与", commonCodiconsDir);
 }
 
 main();

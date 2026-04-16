@@ -4,7 +4,7 @@
 
 ### 修复
 
-- **AI 数据库助手 · 安装版 Webview 资源 404 / `ChatArea is not defined`（落地）**：从市场安装后，经 `node_modules` 的 Webview URI 加载 `chatarea`、`marked`、`@vscode/codicons` 在新版 VS Code 本地资源管线下易失败。现通过 `scripts/copy-ai-chat-vendor.cjs` 在 `postinstall` 及 `compile` / `watch` / `package` 前将所需静态文件复制到 `resources/panels/ai-chat/vendor/`（`codicons` 仅复制 `codicon.css` 与 `codicon.ttf`，避免 `dist` 内 `.ts` 被 webpack 误编译）；`ai-chat.html` 改为仅从 `{{resources-uri}}/ai-chat/vendor/...` 引用；`vendor/` 列入 `.gitignore` 并由打包流程写入 `.vsix`。
+- **AI 数据库助手 · 安装版 Webview 资源 404 / `ChatArea is not defined`（落地）**：从市场安装后，经 `node_modules` 的 Webview URI 加载 `chatarea`、`marked`、`@vscode/codicons` 在新版 VS Code 本地资源管线下易失败。现通过 `scripts/copy-ai-chat-vendor.cjs` 在 `postinstall` 及 `compile` / `watch` / `package` 前将 `chatarea`、`marked` 复制到 `resources/panels/ai-chat/vendor/`，将 `codicon.css` / `codicon.ttf` 复制到 `resources/panels/common/vendor/codicons/dist/`（避免 `dist` 内 `.ts` 被 webpack 误编译）；`ai-chat.html`、`grid.html`、`settings.html` 经 `{{resources-uri}}/common/vendor/codicons/...` 引用；`vendor/` 目录列入 `.gitignore` 并由打包流程写入 `.vsix`。
 
 ## [0.3.2]
 
