@@ -1,10 +1,16 @@
 # 更新日志
 
+## [0.3.3]
+
+### 修复
+
+- **AI 数据库助手 · 安装版 Webview 资源 404 / `ChatArea is not defined`（落地）**：从市场安装后，经 `node_modules` 的 Webview URI 加载 `chatarea`、`marked`、`@vscode/codicons` 在新版 VS Code 本地资源管线下易失败。现通过 `scripts/copy-ai-chat-vendor.cjs` 在 `postinstall` 及 `compile` / `watch` / `package` 前将所需静态文件复制到 `resources/panels/ai-chat/vendor/`（`codicons` 仅复制 `codicon.css` 与 `codicon.ttf`，避免 `dist` 内 `.ts` 被 webpack 误编译）；`ai-chat.html` 改为仅从 `{{resources-uri}}/ai-chat/vendor/...` 引用；`vendor/` 列入 `.gitignore` 并由打包流程写入 `.vsix`。
+
 ## [0.3.2]
 
 ### 修复
 
-- **AI 数据库助手 · 安装版 Webview 资源 404 / `ChatArea is not defined`**：从市场安装后，通过 `node_modules` 加载 `chatarea`、`marked`、`@vscode/codicons` 时，在新版 VS Code 的 Webview 本地资源管线（`loadLocalResource` / `fileReader`、`vscode-resource`）下易出现加载失败与脚本未定义。现于构建前通过 `scripts/copy-ai-chat-vendor.cjs` 将上述静态文件复制到 `resources/panels/ai-chat/vendor/`，HTML 改为仅从 `resources/panels`（已在 `localResourceRoots` 中）引用，保证打包与安装环境一致可用。
+- **AI 数据库助手 · 安装版 Webview 资源 404 / `ChatArea is not defined`**：问题与修复方向说明；完整实现见 **0.3.3**。
 
 ## [0.3.1]
 
