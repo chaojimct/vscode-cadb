@@ -1,5 +1,61 @@
 # 更新日志
 
+## [0.3.4]
+
+### 修复
+
+- **Webview Codicons（数据表格 / 配置管理 / AI 助手）**：`grid.html`、`settings.html` 仍经 `node_modules` 的 Webview URI 加载 `@vscode/codicons` 时，与 AI 助手同类问题，易导致 Codicon 字体与图标不显示。现通过 `scripts/copy-ai-chat-vendor.cjs` 将 `codicon.css`、`codicon.ttf` 复制到 `resources/panels/common/vendor/codicons/dist/`（仅复制上述二文件，避免 `dist` 内 `.ts` 被 webpack 误编译）；`ai-chat.html`、`grid.html`、`settings.html` 统一经 `{{resources-uri}}/common/vendor/codicons/...` 引用；`resources/panels/common/vendor/` 列入 `.gitignore` 并由打包流程写入 `.vsix`。
+
+### 变更
+
+- **`.vscodeignore`**：移除对 `node_modules/@vscode/codicons/dist` 的打包白名单；运行时改由 `resources/panels/common/vendor` 提供 Codicons，并略减小 `.vsix` 体积。
+
+## [0.3.3]
+
+### 修复
+
+- **AI 数据库助手 · 安装版 Webview 资源 404 / `ChatArea is not defined`（落地）**：从市场安装后，经 `node_modules` 的 Webview URI 加载 `chatarea`、`marked` 在新版 VS Code 本地资源管线下易失败。现通过 `scripts/copy-ai-chat-vendor.cjs` 在 `postinstall` 及 `compile` / `watch` / `package` 前将所需静态文件复制到 `resources/panels/ai-chat/vendor/`；`ai-chat.html` 改为仅从 `{{resources-uri}}/ai-chat/vendor/...` 引用；`resources/panels/ai-chat/vendor/` 列入 `.gitignore` 并由打包流程写入 `.vsix`。
+
+## [0.3.2]
+
+### 修复
+
+- **AI 数据库助手 · 安装版 Webview 资源 404 / `ChatArea is not defined`**：问题与修复方向说明；`chatarea` / `marked` 落地见 **0.3.3**；Codicons 等 Webview 静态资源见 **0.3.4**。
+
+## [0.3.1]
+
+### 修复
+
+- **AI 数据库助手 · 选库列表为空**：在扩展刚加载、数据源树尚未完成同步或未展开时，仅从树同步读取会得到空的「连接 / 数据库」选项。现改为树收集结果为空时，按 `getConnections()` 直连拉取库列表（逻辑与已有表名展开一致），并跳过已手动关闭的连接、遵守侧栏「过滤显示的数据库」；收到树刷新且仍停留在选库界面时会重新填充下拉框。
+
+### 新增
+
+- **GitHub Actions 发版**：推送 `v*` 标签时执行 `vsce publish` 与 `ovsx publish`（见 `.github/workflows/publish.yml`）。需在仓库 **Actions Secrets** 中配置 `VSCE_PAT`（VS Marketplace）；`OVSX_PAT`（Open VSX）可选，未配置时跳过 Open VSX 步骤。
+
+### 变更
+
+- **.vscodeignore**：增加 `.github/**`，避免将 CI 工作流打入 `.vsix`。
+
+## [0.3.0]
+
+### 新增
+
+- **AI 数据库助手**
+  - 基于 Webview 的对话界面：绑定当前数据源与数据库，`@` 插入表名（ChatArea），流式展示助手回复；会话列表、清空、API Key / Base URL / Model 配置（`cadb.ai`）。
+  - **快速查询**：输入区上方开关；开启时通过 [ChatArea `openTipTag`](https://www.jianfv.top/ChatAreaDoc/guide/api) 在输入框前展示模式说明；后端使用 OpenAI 兼容 **function calling**（`tool_choice: required` + 仅 `execute_sql` 工具），**单次**生成并执行最终 SQL，适合明确的数据查询场景。
+  - **结果表格**：助手消息内 Markdown 表格默认收入 **可折叠** 区域（摘要显示行数，点击展开）；支持 **复制表格**（TSV，便于粘贴 Excel）。
+  - **代码块复制**：代码块右上角复制操作与表格复制均改为 **VS Code Codicons** 图标按钮（`@vscode/codicons`）。
+
+### 优化
+
+- **AI 助手 Markdown**：正文与 GFM 表格之间仅单换行时自动补空行，避免「共 N 行。」紧贴 `|` 表头导致表格无法解析、整段显示为乱格式。
+- **代码块展示**：`pre` / `pre code` 使用 `pre-wrap` 与换行策略，长 SQL **自动换行**，**不再出现横向滚动条**。
+- **智能体提示词**：约束最终 SELECT 结果勿大段复述表格内容；强调表格块前须有空行，减少模型输出与渲染错位。
+
+### 文档
+
+- **README**：补充 **AI 数据库助手** 演示截图（`examples/example4.png`）。
+
 ## [0.1.8]
 
 ### 新增

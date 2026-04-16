@@ -23,6 +23,9 @@
   const dbPickerScreen = document.getElementById("dbPickerScreen");
   const dbPicker = document.getElementById("dbPicker");
   const dbPickerConfirm = document.getElementById("dbPickerConfirm");
+  const quickQueryToggle = document.getElementById("quickQueryToggle");
+
+  var QUICK_QUERY_STORAGE_KEY = "cadb.aiChat.quickQuery";
 
   // --- State ---
   let history = [];
@@ -214,7 +217,6 @@
 
   const chat = new ChatArea({
     elm: chatInput,
-    placeholder: "描述需求…（@ 插入表名；Enter 发送，Shift+Enter 换行）",
     maxLength: 8000,
     userList: EMPTY_TABLE_HINT,
     wrapKeyFun: function (event) {
@@ -230,6 +232,34 @@
   } catch (_e) {}
 
   chat.addEventListener("enterSend", onSend);
+
+  function syncQuickQueryTip() {
+    if (!quickQueryToggle) return;
+    var on = quickQueryToggle.checked;
+    try {
+      sessionStorage.setItem(QUICK_QUERY_STORAGE_KEY, on ? "1" : "0");
+    } catch (_e) {}
+    try {
+      if (on) {
+        chat.openTipTag({
+          tagLabel: "快速查询",
+          popoverLabel:
+            "已启用：模型通过单次 function calling 仅调用 execute_sql 一次，直接生成并执行最终语句（不再多步 list_tables / describe_table）。复杂探表请关闭本模式。",
+          codeLabel: "",
+        });
+      } else {
+        void chat.closeTipTag();
+      }
+    } catch (_e) {}
+  }
+
+  if (quickQueryToggle) {
+    try {
+      quickQueryToggle.checked = sessionStorage.getItem(QUICK_QUERY_STORAGE_KEY) === "1";
+    } catch (_e) {}
+    quickQueryToggle.addEventListener("change", syncQuickQueryTip);
+    syncQuickQueryTip();
+  }
 
   function updateTableList(tags) {
     var list = Array.isArray(tags) && tags.length > 0 ? tags : EMPTY_TABLE_HINT;
@@ -266,6 +296,7 @@
       command: "send",
       text: text,
       dbId: cur.dbId,
+      quickSql: !!(quickQueryToggle && quickQueryToggle.checked),
       history: history.map(function (m) {
         return { role: m.role, content: m.content };
       }),
@@ -310,6 +341,9 @@
 
       case "refresh":
         dbOptions = Array.isArray(msg.dbOptions) ? msg.dbOptions : dbOptions;
+        if (dbPickerScreen && !dbPickerScreen.classList.contains("hidden")) {
+          populateDbPicker();
+        }
         break;
 
       case "updateTableTags":
@@ -531,9 +565,148 @@
     requestAnimationFrame(function () { chatMessages.scrollTop = chatMessages.scrollHeight; });
   }
 
+  /** 将复制类按钮设为 codicon 图标（不依赖外部模板字符串） */
+  function setBtnCodicon(btn, codiconName) {
+    btn.innerHTML = '<i class="codicon codicon-' + codiconName + '" aria-hidden="true"></i>';
+  }
+
+  function resetCopyIconButton(btn, defaultCodicon) {
+    setBtnCodicon(btn, defaultCodicon || "clippy");
+  }
+
+  function flashCopyIconButton(btn, ok, defaultCodicon) {
+    var def = defaultCodicon || "clippy";
+    setBtnCodicon(btn, ok ? "check" : "error");
+    setTimeout(function () { setBtnCodicon(btn, def); }, 1500);
+  }
+
+  /** 是否为 GFM 表格分隔行（| --- | --- |） */
+  function isMarkdownTableSeparatorLine(line) {
+    var t = line.trim();
+    return t.length >= 3 && /^\|[\s\-:|]+\|\s*$/.test(t);
+  }
+
+  /** 是否为 GFM 表格数据/表头行（整行以 | 包裹） */
+  function isMarkdownTableRowLine(line) {
+    var t = line.trim();
+    if (t.length < 3 || t.charAt(0) !== "|") return false;
+    if (t.charAt(t.length - 1) !== "|") return false;
+    if (isMarkdownTableSeparatorLine(line)) return true;
+    return /\|[^|]+\|/.test(t);
+  }
+
+  /**
+   * 修复模型常见输出：正文与表格之间只有单个换行，GFM 不会识别为表格，整段会变成「乱码」纯文本。
+   * 在 ``` 围栏外：若上一行不是表格行且非空，下一行是表格行，则插入空行；并处理「共 N 行。|」粘在同一行的情况。
+   */
+  function normalizeMarkdownForGfmTables(src) {
+    if (!src) return src;
+    var parts = src.split(/(```[\s\S]*?```)/g);
+    for (var p = 0; p < parts.length; p++) {
+      if (p % 2 === 1) continue;
+      var chunk = parts[p];
+      chunk = chunk.replace(/([。！？…])\s*\|/g, "$1\n\n|");
+      var lines = chunk.split("\n");
+      var out = [];
+      for (var i = 0; i < lines.length; i++) {
+        if (i > 0) {
+          var prevTrim = lines[i - 1].trim();
+          var curTrim = lines[i].trim();
+          var prevIsTable =
+            prevTrim !== "" &&
+            (isMarkdownTableRowLine(lines[i - 1]) || isMarkdownTableSeparatorLine(lines[i - 1]));
+          var curIsTable =
+            curTrim !== "" &&
+            (isMarkdownTableRowLine(lines[i]) || isMarkdownTableSeparatorLine(lines[i]));
+          if (curIsTable && !prevIsTable && prevTrim !== "") {
+            if (out.length > 0 && out[out.length - 1] !== "") {
+              out.push("");
+            }
+          }
+        }
+        out.push(lines[i]);
+      }
+      parts[p] = out.join("\n");
+    }
+    return parts.join("");
+  }
+
+  /** 将 HTML table 转为 TSV，便于粘贴到 Excel / 表格软件 */
+  function htmlTableToTsv(table) {
+    if (!table || !table.rows) return "";
+    var rows = [];
+    for (var r = 0; r < table.rows.length; r++) {
+      var cells = table.rows[r].cells;
+      var line = [];
+      for (var c = 0; c < cells.length; c++) {
+        var raw = (cells[c].textContent || "").replace(/\r?\n/g, " ").replace(/\t/g, " ");
+        line.push(raw.trim());
+      }
+      rows.push(line.join("\t"));
+    }
+    return rows.join("\n");
+  }
+
+  /**
+   * 将气泡内由 Markdown 渲染出的 table 包成可折叠区域，避免一条消息里多张表占满屏幕。
+   * 默认折叠，用户点击摘要行展开。
+   */
+  function wrapMarkdownTablesCollapsible(root) {
+    if (!root) return;
+    var tables = root.querySelectorAll("table");
+    for (var i = 0; i < tables.length; i++) {
+      var table = tables[i];
+      if (table.closest(".md-table-fold")) continue;
+      var parent = table.parentNode;
+      if (!parent) continue;
+      var rowHint = table.rows && table.rows.length ? table.rows.length + " 行" : "表格";
+      var details = document.createElement("details");
+      details.className = "md-table-fold";
+      var summary = document.createElement("summary");
+      summary.className = "md-table-fold-summary";
+      var titleSpan = document.createElement("span");
+      titleSpan.className = "md-table-fold-title";
+      titleSpan.textContent = "数据表格（" + rowHint + "，点击展开）";
+      var copyBtn = document.createElement("button");
+      copyBtn.type = "button";
+      copyBtn.className = "md-table-copy-btn icon-btn-codicon";
+      copyBtn.title = "复制表格（制表符分隔，可粘贴到 Excel）";
+      copyBtn.setAttribute("aria-label", "复制表格");
+      resetCopyIconButton(copyBtn, "table");
+      copyBtn.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        var tsv = htmlTableToTsv(table);
+        if (!tsv) {
+          flashCopyIconButton(copyBtn, false, "table");
+          return;
+        }
+        navigator.clipboard.writeText(tsv).then(function () {
+          flashCopyIconButton(copyBtn, true, "table");
+        }).catch(function () {
+          flashCopyIconButton(copyBtn, false, "table");
+        });
+      });
+      summary.appendChild(titleSpan);
+      summary.appendChild(copyBtn);
+      var body = document.createElement("div");
+      body.className = "md-table-fold-body";
+      parent.insertBefore(details, table);
+      details.appendChild(summary);
+      body.appendChild(table);
+      details.appendChild(body);
+    }
+  }
+
   function renderMarkdown(bubble, text) {
     if (!text) { bubble.innerHTML = ""; return; }
-    try { bubble.innerHTML = marked.parse(text, { breaks: true, gfm: true }); } catch (_e) { bubble.textContent = text; }
+    try {
+      var normalized = normalizeMarkdownForGfmTables(text);
+      bubble.innerHTML = marked.parse(normalized, { breaks: true, gfm: true });
+      wrapMarkdownTablesCollapsible(bubble);
+    } catch (_e) {
+      bubble.textContent = text;
+    }
   }
 
   function addCopyButtons(bubble) {
@@ -544,13 +717,17 @@
       pre.parentNode.insertBefore(wrapper, pre);
       wrapper.appendChild(pre);
       var btn = document.createElement("button");
-      btn.className = "code-copy-btn";
-      btn.textContent = "复制";
+      btn.type = "button";
+      btn.className = "code-copy-btn icon-btn-codicon";
+      btn.title = "复制";
+      btn.setAttribute("aria-label", "复制代码");
+      resetCopyIconButton(btn, "clippy");
       btn.addEventListener("click", function () {
         var code = pre.querySelector("code");
         navigator.clipboard.writeText((code || pre).textContent || "").then(function () {
-          btn.textContent = "已复制";
-          setTimeout(function () { btn.textContent = "复制"; }, 1500);
+          flashCopyIconButton(btn, true, "clippy");
+        }).catch(function () {
+          flashCopyIconButton(btn, false, "clippy");
         });
       });
       wrapper.appendChild(btn);

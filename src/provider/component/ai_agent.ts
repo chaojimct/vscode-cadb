@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { createAgent, tool } from "langchain";
 import { ChatOpenAI } from "@langchain/openai";
 import type { DatasourceInputData } from "../entity/datasource";
@@ -13,6 +14,8 @@ export interface AgentRunConfig {
   connName: string;
   databaseName: string;
   tableNames: string[];
+  /** true：单次 function calling，仅强制调用 execute_sql 一次，不走多步 ReAct */
+  quickSqlMode?: boolean;
 }
 
 /** 流式回调 */
@@ -174,6 +177,28 @@ function buildTools(connData: DatasourceInputData, databaseName: string) {
   return [executeSql, listTables, describeTable];
 }
 
+function buildQuickSqlSystemPrompt(cfg: AgentRunConfig): string {
+  let prompt =
+    "你是 MySQL 数据库助手，处于「快速查询」模式。\n" +
+    "当前连接信息：\n" +
+    `- 连接: ${cfg.connName}\n` +
+    `- 数据库: ${cfg.databaseName}\n`;
+
+  if (cfg.tableNames.length > 0) {
+    prompt += `- 当前库中的表名（不完整时仍可用 information_schema 推断）: ${cfg.tableNames.join(", ")}\n`;
+  }
+
+  prompt +=
+    "\n**本模式下你必须遵守：**\n" +
+    "1. 你将通过接口「function calling」被强制调用唯一工具 execute_sql 恰好一次。\n" +
+    "2. 这一次调用里的 `sql` 必须是能直接回答用户问题的**最终可执行语句**（以 SELECT 为主；若用户明确要求写操作且安全，也可用 INSERT/UPDATE/DELETE）。\n" +
+    "3. 禁止依赖多步探索：不要假设还能再次 describe 或列表；请根据已知表名、常见业务字段与 information_schema 一次性写对或写保守（不确定时加 LIMIT、避免危险更新）。\n" +
+    "4. SELECT 默认带 LIMIT 100（若用户已指定 LIMIT 则尊重用户）。\n" +
+    "5. 不要输出自然语言解释，只产生工具调用所需的参数。\n";
+
+  return prompt;
+}
+
 function buildSystemPrompt(cfg: AgentRunConfig): string {
   let prompt =
     "你是一个专业的数据库 AI 助手，可以直接在用户的 MySQL 数据库上执行 SQL。\n" +
@@ -195,10 +220,11 @@ function buildSystemPrompt(cfg: AgentRunConfig): string {
     "2. SELECT 查询默认加 LIMIT 100 避免返回过多数据\n" +
     "3. 对于 INSERT/UPDATE/DELETE 等写操作，先确认用户意图\n" +
     "4. 展示你执行的 SQL 时用 ```sql 代码块\n" +
-    "5. 工具已经返回了 Markdown 表格格式的结果，**不要在回复中重复粘贴原始工具输出**，" +
-    "而是用简洁的自然语言总结查询结果，例如：「查询到 12 条记录，结果如下：」然后引用表格\n" +
-    "6. 如果需要展示查询结果表格，直接使用工具返回的 Markdown 表格，不要自行重新排版\n" +
-    "7. 用中文回复\n";
+    "5. 工具返回的 Markdown 表格中通常已带有「共 N 行」等说明。**不要在正文里再逐行复述、讲解表格内容**（不要列举各行列值、不要长篇描述「结果如下几人」），表格本身就是数据结论。\n" +
+    "6. 对于回答用户问题的**最后一次 execute_sql**（多为最终 SELECT）：正文用一两句话收尾即可，例如点明执行了哪类查询、空集时说明无数据；**禁止**再用大段文字重复概括表格里已有信息。\n" +
+    "7. 中间步骤（describe_table、list_tables、为确认字段而执行的 SQL）：正文最多一两句说明意图或下一步即可，同样避免把整张中间表用文字复述一遍。\n" +
+    "8. 若要在回复中展示数据集，直接使用与工具一致的 Markdown 表格，不要凭记忆编造行数据；**表格首行前必须有空行**（「共 N 行。」单独一行，下一行再起表头），不要把句号与 `|` 表头写在同一行，否则无法渲染为表格。\n" +
+    "9. 用中文回复\n";
 
   return prompt;
 }
@@ -208,12 +234,105 @@ interface ChatMessage {
   content: string;
 }
 
+function historyToLcMessages(
+  systemText: string,
+  history: ChatMessage[],
+): (SystemMessage | HumanMessage | AIMessage)[] {
+  const msgs: (SystemMessage | HumanMessage | AIMessage)[] = [
+    new SystemMessage(systemText),
+  ];
+  for (const m of history) {
+    if (m.role === "system") continue;
+    if (m.role === "user") msgs.push(new HumanMessage(m.content));
+    else if (m.role === "assistant") msgs.push(new AIMessage(m.content));
+  }
+  return msgs;
+}
+
+/** 快速查询：OpenAI 兼容 function calling，强制单次 execute_sql */
+async function runQuickSqlFunctionCalling(
+  cfg: AgentRunConfig,
+  history: ChatMessage[],
+  callbacks: AgentStreamCallbacks,
+): Promise<void> {
+  const llm = new ChatOpenAI({
+    apiKey: cfg.apiKey,
+    configuration: { baseURL: cfg.baseUrl.replace(/\/+$/, "") },
+    model: cfg.model,
+    streaming: false,
+  });
+
+  const allTools = buildTools(cfg.connData, cfg.databaseName);
+  const executeSqlTool = allTools[0];
+  const runExecuteSql = executeSqlTool as {
+    invoke: (input: { sql: string }) => Promise<string>;
+  };
+  const systemPrompt = buildQuickSqlSystemPrompt(cfg);
+  const messages = historyToLcMessages(systemPrompt, history);
+
+  const aiMsg = await llm.invoke(messages, {
+    tools: [executeSqlTool],
+    tool_choice: "required",
+    parallel_tool_calls: false,
+  });
+
+  if (!(aiMsg instanceof AIMessage)) {
+    callbacks.onError("模型响应异常");
+    callbacks.onEnd();
+    return;
+  }
+
+  const calls = aiMsg.tool_calls;
+  if (!calls?.length) {
+    callbacks.onError("快速查询模式下模型未返回 SQL 工具调用");
+    callbacks.onEnd();
+    return;
+  }
+
+  const first = calls[0];
+  if (first.name !== "execute_sql") {
+    callbacks.onError(`快速查询仅支持 execute_sql，收到: ${first.name}`);
+    callbacks.onEnd();
+    return;
+  }
+  const args = first.args as { sql?: string };
+  const sql = typeof args?.sql === "string" ? args.sql.trim() : "";
+  if (!sql) {
+    callbacks.onError("模型返回的 SQL 为空");
+    callbacks.onEnd();
+    return;
+  }
+
+  let toolOutput: string;
+  try {
+    toolOutput = await runExecuteSql.invoke({ sql });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    toolOutput = `SQL 执行失败: ${msg}`;
+  }
+
+  const assistantMd =
+    "（快速查询：已一次性生成并执行 SQL）\n\n" +
+    "```sql\n" +
+    sql +
+    "\n```\n\n" +
+    toolOutput;
+
+  callbacks.onToken(assistantMd);
+  callbacks.onEnd();
+}
+
 export async function runAgent(
   cfg: AgentRunConfig,
   history: ChatMessage[],
   callbacks: AgentStreamCallbacks,
 ): Promise<void> {
   try {
+    if (cfg.quickSqlMode) {
+      await runQuickSqlFunctionCalling(cfg, history, callbacks);
+      return;
+    }
+
     const llm = new ChatOpenAI({
       apiKey: cfg.apiKey,
       configuration: { baseURL: cfg.baseUrl.replace(/\/+$/, "") },
