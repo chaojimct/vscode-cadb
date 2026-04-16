@@ -433,7 +433,12 @@
         ],
         "configurationDefaults": {
             "[sql]": {
-                "editor.defaultFormatter": "codingsoul.vscode-cadb"
+                "editor.defaultFormatter": "codingsoul.vscode-cadb",
+                "editor.quickSuggestions": {
+                    "other": true,
+                    "comments": false,
+                    "strings": false
+                }
             }
         },
         "configuration": {
@@ -483,6 +488,12 @@
             }
         },
         "keybindings": [
+            {
+                "command": "cadb.sql.runCurrent",
+                "key": "ctrl+enter",
+                "mac": "cmd+enter",
+                "when": "editorTextFocus && editorLangId == sql && !notebookEditorFocused"
+            },
             {
                 "command": "cadb.sql.runLine",
                 "key": "ctrl+alt+enter",

@@ -970,12 +970,16 @@ export function activate(context: vscode.ExtensionContext) {
   const completionProvider = new CaCompletionItemProvider();
   completionProvider.setProvider(provider);
   completionProvider.setDatabaseManager(databaseManager);
+  completionProvider.setPrepareSqlDocument(async (doc) => {
+    await applyStoredSelectionForDocument(doc);
+  });
   context.subscriptions.push(
     vscode.languages.registerCompletionItemProvider(
       SQL_DOCUMENT_SELECTOR,
       completionProvider,
-      ".", // 触发字符：点号用于 table.column
-      " ", // 触发字符：空格用于关键字后
+      ".", // table.column
+      " ", // 关键字后
+      "`", // MySQL 标识符
     ),
   );
 

@@ -250,12 +250,73 @@ body {
   overflow: auto;
 }
 
+/* ========== 查询结果标签：导出工具栏 + 表格 ========== */
+
+.result-tab-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.result-export-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--vscode-border);
+  background: var(--vscode-bg);
+}
+
+.result-export-label {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #888);
+  margin-right: 2px;
+}
+
+.result-export-btn {
+  font-size: 11px;
+  padding: 2px 10px;
+  border-radius: 2px;
+  border: 1px solid var(--vscode-border);
+  background: var(--vscode-input-bg);
+  color: var(--vscode-input-fg);
+  cursor: pointer;
+}
+
+.result-export-btn:hover {
+  background: var(--vscode-hover);
+}
+
+.result-tab-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.result-tab-body--empty {
+  min-height: 120px;
+  justify-content: center;
+  align-items: center;
+}
+
+.result-tab-body--empty .empty-state {
+  padding: 16px;
+}
+
 /* ========== 结果表格容器（AG Grid） ========== */
 
 .result-grid {
   width: 100%;
+  flex: 1;
+  min-height: 200px;
   height: 100%;
-  min-height: 400px;
+  max-height: 100%;
   --ag-background-color: var(--vscode-editor-background, #1e1e1e);
   --ag-foreground-color: var(--vscode-editor-foreground, #d4d4d4);
   --ag-header-background-color: var(--vscode-editor-background, #1e1e1e);
@@ -268,6 +329,11 @@ body {
   --ag-input-border-color: var(--vscode-input-border, #3e3e42);
   --ag-checkbox-checked-color: var(--vscode-button-background, #0e639c);
   --ag-font-size: 13px;
+}
+
+/* 导出子菜单：默认隐藏，由 JS 按当前标签是否有结果数据切换 */
+.tab-context-menu .export-block {
+  display: none;
 }
 
 /* ========== 自定义右键菜单 - VSCode 主题 ========== */

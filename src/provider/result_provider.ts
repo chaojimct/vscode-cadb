@@ -6,6 +6,127 @@ import { generateNonce } from "./utils";
 const MAX_HISTORY_TABS = 30;
 const MAX_ROWS_PER_HISTORY = 200;
 
+function sanitizeExportBaseName(name: string): string {
+  const t = (name || "query-result").trim() || "query-result";
+  return t.replace(/[/\\?%*:|"<>]/g, "_").replace(/\s+/g, "_").slice(0, 120);
+}
+
+function isBufferLike(v: unknown): v is { type: string; data: number[] } {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    (v as { type?: string }).type === "Buffer" &&
+    Array.isArray((v as { data?: unknown }).data)
+  );
+}
+
+function bufferLikeToHex(v: { data: number[] }): string {
+  return (
+    "0x" +
+    Buffer.from(v.data)
+      .toString("hex")
+      .toUpperCase()
+  );
+}
+
+function serializeCellForDelimited(value: unknown): string {
+  if (value == null) {
+    return "";
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (typeof value === "bigint") {
+    return value.toString();
+  }
+  if (isBufferLike(value)) {
+    return bufferLikeToHex(value);
+  }
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
+function normalizeValueForJson(value: unknown): unknown {
+  if (value == null) {
+    return value;
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (typeof value === "bigint") {
+    return value.toString();
+  }
+  if (isBufferLike(value)) {
+    return bufferLikeToHex(value);
+  }
+  return value;
+}
+
+function escapeDelimitedCell(raw: string, delimiter: string): string {
+  const s = raw == null ? "" : String(raw);
+  const needsQuote =
+    s.includes('"') ||
+    s.includes("\n") ||
+    s.includes("\r") ||
+    s.includes(delimiter);
+  const escaped = s.replace(/"/g, '""');
+  return needsQuote ? `"${escaped}"` : escaped;
+}
+
+function buildExportDelimited(
+  fields: string[],
+  rows: Record<string, unknown>[],
+  delimiter: string,
+): string {
+  const header = fields
+    .map((f) => escapeDelimitedCell(f, delimiter))
+    .join(delimiter);
+  const body = rows.map((row) =>
+    fields
+      .map((f) =>
+        escapeDelimitedCell(serializeCellForDelimited(row?.[f]), delimiter),
+      )
+      .join(delimiter),
+  );
+  return [header, ...body].join("\n") + "\n";
+}
+
+function buildExportJson(
+  fields: string[],
+  rows: Record<string, unknown>[],
+): string {
+  const normalized = rows.map((row) => {
+    const o: Record<string, unknown> = {};
+    for (const f of fields) {
+      o[f] = normalizeValueForJson(row?.[f]);
+    }
+    return o;
+  });
+  return JSON.stringify(normalized, null, 2) + "\n";
+}
+
+function resolveExportFields(
+  columns: { field?: string; name?: string }[],
+  rows: Record<string, unknown>[],
+): string[] {
+  const fromCols = columns
+    .map((c) => String(c.field ?? c.name ?? "").trim())
+    .filter(Boolean);
+  if (fromCols.length > 0) {
+    return fromCols;
+  }
+  if (rows.length > 0 && typeof rows[0] === "object" && rows[0] !== null) {
+    return Object.keys(rows[0] as object);
+  }
+  return [];
+}
+
 /**
  * 查询结果 Webview Provider
  * 显示在 VSCode 底部面板（与终端、输出等一起）
@@ -44,7 +165,7 @@ export class ResultWebviewProvider implements vscode.WebviewViewProvider {
   ): void | Thenable<void> {
     this.webviewView = webviewView;
     this.isWebviewReady = false;
-    this.pendingMessages = [];
+    // 保留已入队的消息，不清空（showResult 可能在 resolve 之前就入队了）
 
     // 配置 webview 选项
     webviewView.webview.options = {
@@ -78,6 +199,8 @@ export class ResultWebviewProvider implements vscode.WebviewViewProvider {
       } else if (message.command === "clearHistory") {
         this.historyTabs = [];
         this.context.globalState.update("cadb.queryHistory", undefined);
+      } else if (message.command === "exportQueryResult") {
+        void this.handleExportQueryResult(message);
       }
     });
 
@@ -237,6 +360,63 @@ export class ResultWebviewProvider implements vscode.WebviewViewProvider {
         command: "restoreHistory",
         tabs: this.historyTabs,
       });
+    }
+  }
+
+  /**
+   * 将当前结果标签中的数据导出为 JSON / CSV / TSV（由 webview 发起）
+   */
+  private async handleExportQueryResult(message: {
+    format?: string;
+    title?: string;
+    columns?: { field?: string; name?: string }[];
+    data?: Record<string, unknown>[];
+  }): Promise<void> {
+    const fmt = message.format;
+    if (fmt !== "json" && fmt !== "csv" && fmt !== "tsv") {
+      return;
+    }
+    const columns = Array.isArray(message.columns) ? message.columns : [];
+    const data = Array.isArray(message.data) ? message.data : [];
+    const fields = resolveExportFields(columns, data);
+    const base = sanitizeExportBaseName(String(message.title ?? "query-result"));
+    const ext = fmt;
+    const filters: Record<string, string[]> =
+      fmt === "json"
+        ? { "JSON": ["json"] }
+        : fmt === "csv"
+          ? { "CSV": ["csv"] }
+          : { "TSV": ["tsv"] };
+
+    const folder =
+      vscode.workspace.workspaceFolders?.[0]?.uri ??
+      this.context.globalStorageUri;
+    const defaultUri = vscode.Uri.joinPath(folder, `${base}.${ext}`);
+
+    const target = await vscode.window.showSaveDialog({
+      defaultUri,
+      filters,
+      saveLabel: "导出",
+    });
+    if (!target) {
+      return;
+    }
+
+    try {
+      const content =
+        fmt === "json"
+          ? buildExportJson(fields, data)
+          : buildExportDelimited(
+              fields,
+              data,
+              fmt === "csv" ? "," : "\t",
+            );
+      await vscode.workspace.fs.writeFile(target, Buffer.from(content, "utf8"));
+      void vscode.window.showInformationMessage(`已导出查询结果：${target.fsPath}`);
+    } catch (e) {
+      void vscode.window.showErrorMessage(
+        `导出失败：${e instanceof Error ? e.message : String(e)}`,
+      );
     }
   }
 

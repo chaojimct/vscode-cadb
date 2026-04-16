@@ -19,6 +19,41 @@ layui.use(["tabs", "layer"], function () {
   // Tabs 实例 ID
   const TABS_ID = "results";
 
+  /** 每个查询结果标签对应的列与行数据，供导出与右键菜单使用 */
+  const resultTabSnapshots = Object.create(null);
+
+  function rememberResultTabSnapshot(tabId, title, columns, data) {
+    if (!tabId || tabId === "welcome") {
+      return;
+    }
+    resultTabSnapshots[tabId] = {
+      title: title || "查询结果",
+      columns: Array.isArray(columns) ? columns : [],
+      data: Array.isArray(data) ? data : [],
+    };
+  }
+
+  function forgetResultTabSnapshot(tabId) {
+    if (tabId) {
+      delete resultTabSnapshots[tabId];
+    }
+  }
+
+  function requestExport(tabId, format) {
+    const snap = resultTabSnapshots[tabId];
+    if (!snap || !vscode) {
+      return;
+    }
+    vscode.postMessage({
+      command: "exportQueryResult",
+      format: format,
+      tabId: tabId,
+      title: snap.title,
+      columns: snap.columns,
+      data: snap.data,
+    });
+  }
+
   // 当前右键菜单的标签
   let contextMenuTabId = null;
 
@@ -32,6 +67,7 @@ layui.use(["tabs", "layer"], function () {
     // 初始化自定义右键菜单
     initContextMenu();
     bindHeaderHorizontalScroll();
+    bindResultExportToolbar();
     
     // 为已存在的标签（欢迎页）绑定右键菜单
     setTimeout(() => {
@@ -44,6 +80,20 @@ layui.use(["tabs", "layer"], function () {
         });
       });
     }, 100);
+  }
+
+  /**
+   * 结果区工具栏：导出 JSON / CSV / TSV
+   */
+  function bindResultExportToolbar() {
+    $(`#${TABS_ID}`).on("click", ".result-export-btn", function (e) {
+      e.preventDefault();
+      const format = $(this).attr("data-export-format");
+      const tabId = $(this).closest(".result-tab-panel").attr("data-tab-id");
+      if (tabId && format) {
+        requestExport(tabId, format);
+      }
+    });
   }
 
   /**
@@ -148,7 +198,22 @@ layui.use(["tabs", "layer"], function () {
           <i class="layui-icon layui-icon-close-fill"></i>
           <span>关闭全部结果</span>
         </div>
-        <div class="tab-context-menu-separator"></div>
+        <div class="export-block">
+          <div class="tab-context-menu-separator"></div>
+          <div class="tab-context-menu-item" data-action="export-json">
+            <i class="layui-icon layui-icon-download-circle"></i>
+            <span>导出为 JSON</span>
+          </div>
+          <div class="tab-context-menu-item" data-action="export-csv">
+            <i class="layui-icon layui-icon-download-circle"></i>
+            <span>导出为 CSV</span>
+          </div>
+          <div class="tab-context-menu-item" data-action="export-tsv">
+            <i class="layui-icon layui-icon-download-circle"></i>
+            <span>导出为 TSV</span>
+          </div>
+          <div class="tab-context-menu-separator"></div>
+        </div>
         <div class="tab-context-menu-item" data-action="clear-history">
           <i class="layui-icon layui-icon-delete"></i>
           <span>清除历史记录</span>
@@ -223,6 +288,10 @@ layui.use(["tabs", "layer"], function () {
     $menu
       .find('[data-action="close-all"]')
       .toggleClass("disabled", !hasClosable);
+
+    const canExport =
+      tabId !== "welcome" && !!resultTabSnapshots[tabId];
+    $menu.find(".export-block").toggle(canExport);
 
     // 定位菜单
     $menu
@@ -310,6 +379,16 @@ layui.use(["tabs", "layer"], function () {
         }
         closeAllUnpinnedTabs();
         break;
+
+      case "export-json":
+        requestExport(tabId, "json");
+        break;
+      case "export-csv":
+        requestExport(tabId, "csv");
+        break;
+      case "export-tsv":
+        requestExport(tabId, "tsv");
+        break;
     }
   }
 
@@ -334,6 +413,7 @@ layui.use(["tabs", "layer"], function () {
 
     // 关闭收集的标签
     toClose.forEach(function (tabId) {
+      forgetResultTabSnapshot(tabId);
       tabs.close(TABS_ID, tabId);
       closedCount++;
     });
@@ -358,6 +438,7 @@ layui.use(["tabs", "layer"], function () {
     });
     // 关闭收集的标签
     toClose.forEach(function (tabId) {
+      forgetResultTabSnapshot(tabId);
       tabs.close(TABS_ID, tabId);
       closedCount++;
     });
@@ -463,6 +544,7 @@ layui.use(["tabs", "layer"], function () {
       return;
     }
 
+    forgetResultTabSnapshot(tabId);
     // 使用 Layui 标准 API 关闭标签
     tabs.close(TABS_ID, tabId);
 
@@ -487,18 +569,43 @@ layui.use(["tabs", "layer"], function () {
    * @param {string} tabId - 标签ID
    * @returns {string} HTML内容
    */
-  function createTableContent(columns, data, tabId) {
+  function buildExportToolbarHtml() {
+    return `
+      <div class="result-export-bar" role="toolbar" aria-label="导出查询结果">
+        <span class="result-export-label">导出</span>
+        <button type="button" class="result-export-btn" data-export-format="json" title="导出为 JSON">JSON</button>
+        <button type="button" class="result-export-btn" data-export-format="csv" title="导出为 CSV">CSV</button>
+        <button type="button" class="result-export-btn" data-export-format="tsv" title="导出为 TSV">TSV</button>
+      </div>`;
+  }
+
+  function createTableContent(columns, data, tabId, title) {
+    rememberResultTabSnapshot(tabId, title, columns, data);
+
+    const panelOpen = `<div class="result-tab-panel" data-tab-id="${tabId}">`;
+    const panelClose = `</div>`;
+    const exportBar = buildExportToolbarHtml();
+
     if (!data || data.length === 0) {
-      return `
-        <div class="empty-state">
-          <i class="layui-icon layui-icon-face-surprised"></i>
-          <p>暂无数据</p>
-        </div>
-      `;
+      return (
+        panelOpen +
+        exportBar +
+        `<div class="result-tab-body result-tab-body--empty">
+          <div class="empty-state">
+            <i class="layui-icon layui-icon-face-surprised"></i>
+            <p>暂无数据</p>
+          </div>
+        </div>` +
+        panelClose
+      );
     }
 
     const containerId = `aggrid-${tabId}`;
-    const html = `<div id="${containerId}" class="result-grid ag-theme-quartz" role="grid"></div>`;
+    const html =
+      panelOpen +
+      exportBar +
+      `<div class="result-tab-body"><div id="${containerId}" class="result-grid ag-theme-quartz" role="grid"></div></div>` +
+      panelClose;
 
     setTimeout(() => {
       initAgGrid(containerId, columns, data);
@@ -526,17 +633,31 @@ layui.use(["tabs", "layer"], function () {
         sortable: true,
         resizable: true,
         filter: true,
-        minWidth: 60,
+        minWidth: 80,
       };
     });
 
+    /**
+     * 列数很多时不要用 sizeColumnsToFit（会把每列压到极窄）。
+     * 按单元格/表头内容自动列宽，总宽超出视口时横向滚动，见：
+     * https://www.ag-grid.com/react-data-grid/column-sizing/
+     */
+    const colCount = columnDefs.length;
     const gridOptions = {
       columnDefs,
       rowData: Array.isArray(data) ? data : [],
+      autoSizeStrategy: {
+        type: "fitCellContents",
+        defaultMinWidth: 96,
+        defaultMaxWidth: 640,
+      },
+      /** 列不太多时关闭列虚拟化，便于首屏为所有列计算内容宽度 */
+      suppressColumnVirtualisation: colCount > 0 && colCount <= 80,
       defaultColDef: {
         sortable: true,
         resizable: true,
         filter: true,
+        minWidth: 80,
       },
       animateRows: false,
       rowSelection: { mode: "singleRow" },
@@ -544,14 +665,7 @@ layui.use(["tabs", "layer"], function () {
       suppressContextMenu: false,
     };
 
-    const api = agGrid.createGrid(container, gridOptions);
-    if (api && typeof api.sizeColumnsToFit === "function") {
-      setTimeout(() => {
-        try {
-          api.sizeColumnsToFit();
-        } catch (_) {}
-      }, 0);
-    }
+    agGrid.createGrid(container, gridOptions);
   }
 
   /**
@@ -596,7 +710,7 @@ layui.use(["tabs", "layer"], function () {
         // 添加新标签（不关闭已有标签，支持 Tab 切换历史记录）
         const { title, columns, data, id, pinned } = message;
         const tabId = id || `result-${Date.now()}`;
-        const content = createTableContent(columns, data, tabId);
+        const content = createTableContent(columns, data, tabId, title || "查询");
 
         addResultTab({
           id: tabId,
@@ -637,7 +751,12 @@ layui.use(["tabs", "layer"], function () {
         const tabs = message.tabs || [];
         tabs.forEach((tab, index) => {
           if (tab.type === "result" && tab.columns && tab.data) {
-            const content = createTableContent(tab.columns, tab.data, tab.id);
+            const content = createTableContent(
+              tab.columns,
+              tab.data,
+              tab.id,
+              tab.title || `结果 #${index + 1}`,
+            );
             addResultTab({
               id: tab.id,
               title: tab.title || `结果 #${index + 1}`,
